@@ -1,0 +1,20 @@
+font_size = 18.0
+font_family = "Cascadia Code NF"
+
+ui_font_size = 18.0
+ui_font_family = "Noto Sans"
+
+window_width = 800
+window_height = 600
+
+# Default profile name (uses first profile if not specified)
+default_profile = "bash"
+
+[[profiles]]
+name = "bash"
+shell = "bash"
+
+[[profiles]]
+name = "fish"
+shell = "fish"
+

@@ -1,0 +1,54 @@
+name: PR
+
+on:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-debug:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y && sudo apt install -y \
+            clang \
+            mold \
+            llvm \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
+
+      - name: Build
+        run: cargo build
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Run coverage (tests included)
+        if: ${{ !(runner.os == 'Windows' && runner.arch == 'ARM64') }}
+        run: |
+          mkdir -p ./coverage
+          cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.info
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info

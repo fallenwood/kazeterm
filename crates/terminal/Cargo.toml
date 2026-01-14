@@ -1,0 +1,25 @@
+[package]
+name = "terminal"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+gpui = { workspace = true, default-features = false }
+gpui-macros.workspace = true
+alacritty_terminal.workspace = true
+itertools.workspace = true
+futures.workspace = true
+regex.workspace = true
+sysinfo.workspace = true
+smol.workspace = true
+smallvec.workspace = true
+libc.workspace = true
+url.workspace = true
+urlencoding.workspace = true
+
+config = { path = "../config" }
+themeing = { path = "../themeing" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows.workspace = true

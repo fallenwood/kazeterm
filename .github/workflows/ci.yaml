@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build-release:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-latest]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y && sudo apt install -y \
+            clang \
+            mold \
+            llvm \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            zstd
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Run coverage (tests included)
+        if: ${{ !(runner.os == 'Windows' && runner.arch == 'ARM64') }}
+        run: |
+          mkdir -p ./coverage
+          cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.info
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+
+      - name: Pack
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          mkdir ./dists
+          mv target\release\kazeterm.exe ./kazeterm.exe
+          $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
+          7z a ./dists/kazeterm-$variant-${{ github.ref_name }}.7z ./kazeterm.exe
+
+      - name: Strip and Pack
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          llvm-strip target/release/kazeterm
+          mkdir -p ./dists
+          $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
+          tar --zstd -cf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.zstd -C ./target/release kazeterm
+
+      - name: Pack
+        if: runner.os == 'macOS'
+        shell: pwsh
+        run: |
+          mkdir -p ./dists
+          $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
+          tar -czf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.gz -C ./target/release kazeterm
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: master
+          prerelease: true
+          files: |
+            ./dists/*

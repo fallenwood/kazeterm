@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "cppvsdbg",
+            "request": "launch",
+            "name": "Launch (Windows)",
+            "program": "${workspaceRoot}/target/debug/kazeterm",
+            "args": [],
+            "env": [],
+            "cwd": "${workspaceRoot}",
+            "preLaunchTask": "rust: cargo build",
+        },
+        {
+            "type": "lldb-dap",
+            "request": "launch",
+            "name": "Launch (Linux)",
+            "program": "${workspaceRoot}/target/debug/kazeterm",
+            "args": [],
+            "env": [],
+            "cwd": "${workspaceRoot}",
+            "preLaunchTask": "rust: cargo build"
+        }
+    ]
+}
