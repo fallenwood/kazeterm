@@ -275,20 +275,25 @@ impl MainWindow {
         return;
       }
 
-      // Adjust active_tab_ix after removal
-      if let Some(active_ix) = self.active_tab_ix {
+      // Determine the new active tab index after removal
+      let new_active_ix = if let Some(active_ix) = self.active_tab_ix {
         if active_ix == pos {
-          // The active tab was removed; select the previous tab, or the first if at position 0
-          self.active_tab_ix = Some(pos.saturating_sub(1).min(self.items.len() - 1));
+          // The active tab was removed; select the next tab (at same position), or the last if we removed the last tab
+          pos.min(self.items.len() - 1)
         } else if active_ix > pos {
           // A tab before the active tab was removed; adjust the index
-          self.active_tab_ix = Some(active_ix - 1);
+          active_ix - 1
+        } else {
+          // If active_ix < pos, no adjustment needed
+          active_ix
         }
-        // If active_ix < pos, no adjustment needed
       } else {
         // No active tab was set, default to first
-        self.active_tab_ix = Some(0);
-      }
+        0
+      };
+
+      // Set the active tab and focus it
+      self.set_active_tab(new_active_ix, window, cx);
     }
 
     cx.notify();
