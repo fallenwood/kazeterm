@@ -17,13 +17,14 @@ use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::search_bar::{SearchBar, SearchBarCloseEvent};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
+use crate::components::split_pane::{SplitContainer, SplitDirection};
 
 pub struct TabItem {
   index: usize,
   title: String,
   shell_path: String,
   _shell_name: String,
-  terminal: Entity<terminal::TerminalView>,
+  split_container: SplitContainer,
   _subscription: gpui::Subscription,
 }
 
@@ -87,13 +88,15 @@ impl MainWindow {
 
     // Update search bar with the new active terminal
     if let Some(item) = self.items.get(ix) {
-      let terminal = item.terminal.clone();
-      self.search_bar.update(cx, |search_bar, _cx| {
-        search_bar.set_terminal_view(terminal.clone());
-      });
+      if let Some(terminal) = item.split_container.get_active_terminal() {
+        let terminal_clone = terminal.clone();
+        self.search_bar.update(cx, |search_bar, _cx| {
+          search_bar.set_terminal_view(terminal_clone.clone());
+        });
 
-      // Focus the terminal
-      window.focus(&terminal.focus_handle(cx));
+        // Focus the terminal
+        window.focus(&terminal.focus_handle(cx));
+      }
     }
 
     cx.notify();
@@ -104,10 +107,11 @@ impl MainWindow {
     if self.search_visible {
       if let Some(active_ix) = self.active_tab_ix {
         if let Some(item) = self.items.get(active_ix) {
-          let terminal = item.terminal.clone();
-          self.search_bar.update(cx, |search_bar, _cx| {
-            search_bar.set_terminal_view(terminal);
-          });
+          if let Some(terminal) = item.split_container.get_active_terminal() {
+            self.search_bar.update(cx, |search_bar, _cx| {
+              search_bar.set_terminal_view(terminal);
+            });
+          }
         }
       }
 
@@ -123,8 +127,9 @@ impl MainWindow {
       // Focus back on terminal
       if let Some(active_ix) = self.active_tab_ix {
         if let Some(item) = self.items.get(active_ix) {
-          let terminal = item.terminal.clone();
-          window.focus(&terminal.focus_handle(cx));
+          if let Some(terminal) = item.split_container.get_active_terminal() {
+            window.focus(&terminal.focus_handle(cx));
+          }
         }
       }
     }
@@ -186,12 +191,14 @@ impl MainWindow {
     );
     let subscription = cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event);
 
+    let split_container = SplitContainer::new(terminal.clone());
+
     let item = TabItem {
       index,
       title: tab_title,
       shell_path,
       _shell_name: shell_name,
-      terminal: terminal.clone(),
+      split_container,
       _subscription: subscription,
     };
     this.items.push(item);
@@ -216,9 +223,34 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     match event {
-      terminal::TerminalEvent::CloseTerminal(tab_index) => {
-        this.remove_tab_by(*tab_index, window, cx);
-        cx.notify();
+      terminal::TerminalEvent::CloseTerminal(terminal_index) => {
+        // Find the tab containing this terminal
+        let tab_position = this.items.iter().position(|item| {
+          item.split_container.all_terminals().iter().any(|(_, t)| t.read(cx).index == *terminal_index)
+        });
+
+        if let Some(tab_pos) = tab_position {
+          // Get the tab index before mutably borrowing
+          let tab_index = this.items[tab_pos].index;
+
+          // Try to close just the pane within the split container
+          let should_close_tab = {
+            let item = &mut this.items[tab_pos];
+            !item.split_container.close_pane_by_terminal_index(*terminal_index, cx)
+          };
+
+          if should_close_tab {
+            // This was the last pane, so close the entire tab
+            this.remove_tab_by(tab_index, window, cx);
+          } else {
+            // Successfully closed a pane (but not the last one)
+            // Focus the newly active terminal
+            if let Some(terminal) = this.items[tab_pos].split_container.get_active_terminal() {
+              window.focus(&terminal.focus_handle(cx));
+            }
+            cx.notify();
+          }
+        }
       }
       terminal::TerminalEvent::Wakeup => {
         // Check if any terminal has bell and play sound
@@ -231,7 +263,9 @@ impl MainWindow {
       terminal::TerminalEvent::UpdateTab => {
         // Update tab title
         let tab_index = terminal_view.read(cx).index;
-        if let Some(item) = this.items.iter_mut().find(|item| item.index == tab_index) {
+        if let Some(item) = this.items.iter_mut().find(|item| {
+          item.split_container.all_terminals().iter().any(|(_, t)| t.read(cx).index == tab_index)
+        }) {
           let new_title = terminal_view
             .read(cx)
             .terminal()
@@ -301,6 +335,75 @@ impl MainWindow {
     }
 
     cx.notify();
+  }
+
+  pub fn split_pane_horizontal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.split_pane(SplitDirection::Horizontal, window, cx);
+  }
+
+  pub fn split_pane_vertical(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.split_pane(SplitDirection::Vertical, window, cx);
+  }
+
+  fn split_pane(&mut self, direction: SplitDirection, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(active_tab_ix) = self.active_tab_ix {
+      if let Some(item) = self.items.get_mut(active_tab_ix) {
+        // Get the active terminal's working directory
+        let working_directory = if let Some(active_terminal) = item.split_container.get_active_terminal() {
+          active_terminal.read(cx).terminal().read(cx).pty_info.current.as_ref().map(|info| {
+            info.cwd.to_string_lossy().to_string()
+          })
+        } else {
+          None
+        };
+
+        // Create a new terminal with the same shell
+        let index = self
+          .tab_index
+          .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let config = cx.global::<::config::Config>();
+        let shell = config.get_shell().clone();
+        let working_directory_path = get_working_directory_pathbuf(working_directory);
+
+        let new_terminal = super::terminal_window::new_terminal_window_with_shell(
+          window,
+          index,
+          &shell,
+          working_directory_path,
+          cx,
+        );
+
+        // Subscribe to the new terminal
+        let subscription = cx.subscribe_in(&new_terminal, window, Self::subscribe_terminal_view_event);
+
+        // Store subscription (we'll need to manage this better in production)
+        // For now, we'll leak it as we don't have a good place to store per-pane subscriptions
+        std::mem::forget(subscription);
+
+        // Split the active pane
+        item.split_container.split_active_pane(direction, new_terminal.clone());
+
+        // Focus the new terminal
+        window.focus(&new_terminal.focus_handle(cx));
+
+        cx.notify();
+      }
+    }
+  }
+
+  pub fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(active_tab_ix) = self.active_tab_ix {
+      if let Some(item) = self.items.get_mut(active_tab_ix) {
+        if item.split_container.close_active_pane() {
+          // Focus the newly active terminal
+          if let Some(terminal) = item.split_container.get_active_terminal() {
+            window.focus(&terminal.focus_handle(cx));
+          }
+          cx.notify();
+        }
+      }
+    }
   }
 }
 
@@ -383,6 +486,12 @@ impl Render for MainWindow {
           this.toggle_search(window, cx);
         } else if e.keystroke.key == "Escape" && this.search_visible {
           this.toggle_search(window, cx);
+        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "d" {
+          this.split_pane_horizontal(window, cx);
+        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "e" {
+          this.split_pane_vertical(window, cx);
+        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "w" {
+          this.close_active_pane(window, cx);
         }
       }))
       .child(
@@ -419,9 +528,9 @@ impl Render for MainWindow {
                         let is_first = tab_ix == 0;
                         let is_last = tab_ix == total_tabs - 1;
                         let is_selected = self.active_tab_ix == Some(tab_ix);
-                        let has_bell = item.terminal.read(cx).has_bell();
+                        let has_bell = item.split_container.all_terminals().iter().any(|(_, t)| t.read(cx).has_bell());
                         let view = cx.entity();
-                        let terminal_for_click = item.terminal.clone();
+                        let all_terminals = item.split_container.all_terminals();
                         // Define colors for selected tab highlight
                         let selected_bg: gpui::Hsla = colors.tab_active_background;
                         let normal_bg = colors.tab_inactive_background;
@@ -429,9 +538,11 @@ impl Render for MainWindow {
                           .selected(is_selected)
                           .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             // Clear bell when clicking on tab
-                            terminal_for_click.update(cx, |terminal_view, cx| {
-                              terminal_view.clear_bell(cx);
-                            });
+                            for (_, terminal) in &all_terminals {
+                              terminal.update(cx, |terminal_view, cx| {
+                                terminal_view.clear_bell(cx);
+                              });
+                            }
                             // Prevent TitleBar from starting window drag when clicking on tabs
                             cx.stop_propagation();
                           })
@@ -502,10 +613,41 @@ impl Render for MainWindow {
                                 move |menu, _window, _cx| {
                                   let view_move_left = view.clone();
                                   let view_move_right = view.clone();
+                                  let view_split_h = view.clone();
+                                  let view_split_v = view.clone();
+                                  let view_close_pane = view.clone();
                                   let view_close_others = view.clone();
                                   let view_close_right = view.clone();
                                   let view_close_tab = view.clone();
                                   menu
+                                    .item(
+                                      PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)").on_click(
+                                        move |_, window, cx| {
+                                          view_split_h.update(cx, |this, cx| {
+                                            this.split_pane_horizontal(window, cx);
+                                          });
+                                        },
+                                      ),
+                                    )
+                                    .item(
+                                      PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)").on_click(
+                                        move |_, window, cx| {
+                                          view_split_v.update(cx, |this, cx| {
+                                            this.split_pane_vertical(window, cx);
+                                          });
+                                        },
+                                      ),
+                                    )
+                                    .item(
+                                      PopupMenuItem::new("Close Pane (Ctrl+Shift+W)").on_click(
+                                        move |_, window, cx| {
+                                          view_close_pane.update(cx, |this, cx| {
+                                            this.close_active_pane(window, cx);
+                                          });
+                                        },
+                                      ),
+                                    )
+                                    .separator()
                                     .item(
                                       PopupMenuItem::new("Move Left").disabled(is_first).on_click(
                                         move |_, _window, cx| {
@@ -636,7 +778,7 @@ impl Render for MainWindow {
             self
               .items
               .get(active_ix)
-              .map(|i| i.terminal.clone().into_any_element())
+              .map(|item| item.split_container.render(window, cx))
               .unwrap_or_else(|| {
                 eprintln!(
                   "render: NO ITEM FOUND at index {}, showing empty div",
