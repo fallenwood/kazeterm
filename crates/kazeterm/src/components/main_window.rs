@@ -17,6 +17,7 @@ use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::search_bar::{SearchBar, SearchBarCloseEvent};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
+use crate::components::tab_switcher::{TabSwitcher, TabSwitcherItem};
 
 pub struct TabItem {
   index: usize,
@@ -38,6 +39,9 @@ pub struct MainWindow {
   _search_bar_subscription: gpui::Subscription,
   tab_scroll_handle: gpui::ScrollHandle,
   scroll_tabs_to_end: bool,
+  tab_switcher_visible: bool,
+  tab_switcher: Option<Entity<TabSwitcher>>,
+  tab_switcher_selection: usize,
 }
 
 impl MainWindow {
@@ -63,6 +67,9 @@ impl MainWindow {
       _search_bar_subscription: search_bar_subscription,
       tab_scroll_handle: gpui::ScrollHandle::new(),
       scroll_tabs_to_end: false,
+      tab_switcher_visible: false,
+      tab_switcher: None,
+      tab_switcher_selection: 0,
     };
     main_window.insert_new_tab(window, cx);
     main_window
@@ -126,6 +133,68 @@ impl MainWindow {
     }
 
     cx.notify();
+  }
+
+  fn show_tab_switcher(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+    if self.items.len() <= 1 {
+      return;
+    }
+
+    if !self.tab_switcher_visible {
+      // First time showing the switcher - initialize selection
+      let current_ix = self.active_tab_ix.unwrap_or(0);
+      self.tab_switcher_selection = if forward {
+        (current_ix + 1) % self.items.len()
+      } else {
+        if current_ix == 0 {
+          self.items.len() - 1
+        } else {
+          current_ix - 1
+        }
+      };
+      self.tab_switcher_visible = true;
+    } else {
+      // Switcher already visible - cycle selection
+      if forward {
+        self.tab_switcher_selection = (self.tab_switcher_selection + 1) % self.items.len();
+      } else {
+        self.tab_switcher_selection = if self.tab_switcher_selection == 0 {
+          self.items.len() - 1
+        } else {
+          self.tab_switcher_selection - 1
+        };
+      }
+    }
+
+    // Switch to the selected tab immediately
+    self.set_active_tab(self.tab_switcher_selection, window, cx);
+    self.update_tab_switcher(cx);
+    cx.notify();
+  }
+
+  fn hide_tab_switcher(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    if self.tab_switcher_visible {
+      self.tab_switcher_visible = false;
+      self.tab_switcher = None;
+      cx.notify();
+    }
+  }
+
+  fn update_tab_switcher(&mut self, cx: &mut Context<Self>) {
+    let items: Vec<TabSwitcherItem> = self
+      .items
+      .iter()
+      .enumerate()
+      .map(|(ix, item)| TabSwitcherItem {
+        index: item.index,
+        title: item.title.clone(),
+        shell_path: item.shell_path.clone(),
+        is_selected: ix == self.tab_switcher_selection,
+      })
+      .collect();
+
+    let tab_switcher = cx.new(|_cx| TabSwitcher::new(items, self.tab_switcher_selection));
+    self.tab_switcher = Some(tab_switcher);
   }
 
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -344,10 +413,20 @@ impl Render for MainWindow {
       .size_full()
       .key_context("MainWindow")
       .on_key_down(cx.listener(move |this, e: &KeyDownEvent, window, cx| {
-        if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "f" {
+        if e.keystroke.modifiers.control && e.keystroke.key == "tab" {
+          // Ctrl+Tab or Ctrl+Shift+Tab
+          let forward = !e.keystroke.modifiers.shift;
+          this.show_tab_switcher(forward, window, cx);
+        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "f" {
           this.toggle_search(window, cx);
         } else if e.keystroke.key == "Escape" && this.search_visible {
           this.toggle_search(window, cx);
+        }
+      }))
+      .on_key_up(cx.listener(move |this, e: &KeyUpEvent, window, cx| {
+        // Hide tab switcher when Ctrl key is released
+        if this.tab_switcher_visible && e.keystroke.key == "control" {
+          this.hide_tab_switcher(window, cx);
         }
       }))
       .child(
@@ -611,6 +690,13 @@ impl Render for MainWindow {
               }),
           )
           .when(search_visible, |this| this.child(search_bar))
+          .when(self.tab_switcher_visible, |this| {
+            if let Some(tab_switcher) = &self.tab_switcher {
+              this.child(tab_switcher.clone())
+            } else {
+              this
+            }
+          })
       })
   }
 }
