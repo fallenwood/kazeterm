@@ -212,13 +212,13 @@ impl Terminal {
   pub fn process_event(&mut self, event: AlacTermEvent, cx: &mut Context<Self>) {
     match event {
       AlacTermEvent::Title(title) => {
-        dbg!("Terminal title changed to: {}", title.clone());
+        tracing::debug!("Terminal title changed to: {}", title);
 
         self.title_text = title;
         cx.emit(Event::TitleChanged);
       }
       AlacTermEvent::ResetTitle => {
-        dbg!("Terminal title reset");
+        tracing::debug!("Terminal title reset");
 
         // if let Some(info) = self.pty_info.current.clone() {
         //   self.title_text = info.name;
@@ -251,7 +251,7 @@ impl Terminal {
         cx.emit(Event::Bell);
       }
       AlacTermEvent::Exit => {
-        eprintln!("Terminal child exited");
+        tracing::info!("Terminal child exited");
         self.register_task_finished(None, cx);
       }
       AlacTermEvent::MouseCursorDirty => {

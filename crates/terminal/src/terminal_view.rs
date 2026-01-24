@@ -400,7 +400,7 @@ impl TerminalView {
 
     let handled = self.terminal.update(cx, |term, _cx| {
       let handled = term.try_keystroke(&event.keystroke, false);
-      dbg!("key {:?} handled: {}", event.keystroke.clone(), handled);
+      tracing::trace!("key {:?} handled: {}", event.keystroke, handled);
       handled
     });
 

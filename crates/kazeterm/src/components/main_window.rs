@@ -772,7 +772,7 @@ impl Render for MainWindow {
               .get(active_ix)
               .map(|i| i.terminal.clone().into_any_element())
               .unwrap_or_else(|| {
-                eprintln!(
+                tracing::warn!(
                   "render: NO ITEM FOUND at index {}, showing empty div",
                   active_ix
                 );

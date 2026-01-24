@@ -183,22 +183,22 @@ impl Config {
       {
         // Create default config file
         if let Err(e) = Self::create_default_config(&config_path) {
-          eprintln!("Failed to create default config: {}", e);
+          tracing::error!("Failed to create default config: {}", e);
           return Self::default();
         } else {
-          eprintln!("Created default config at: {}", config_path.display());
+          tracing::info!("Created default config at: {}", config_path.display());
         }
       }
     }
 
     match Self::load_from_path(&config_path) {
       Ok(config) => {
-        eprintln!("Loaded config from: {}", config_path.display());
-        dbg!("Config: {:?}", config.clone());
+        tracing::info!("Loaded config from: {}", config_path.display());
+        tracing::debug!("Config: {:?}", config);
         return config;
       }
       Err(e) => {
-        eprintln!(
+        tracing::error!(
           "Failed to load config from {}: {}",
           config_path.display(),
           e
@@ -206,7 +206,7 @@ impl Config {
       }
     }
 
-    eprintln!("Using default config");
+    tracing::info!("Using default config");
     Self::default()
   }
 
@@ -281,12 +281,12 @@ impl Config {
     }
 
     if let Some(ref default_name) = self.default_profile {
-      dbg!("Looking for default profile: {}", default_name);
+      tracing::debug!("Looking for default profile: {}", default_name);
       if let Some(profile) = self.profiles.iter().find(|p| &p.name == default_name) {
         return Some(profile);
       }
     } else {
-      eprintln!("not found default profile");
+      tracing::warn!("not found default profile");
     }
 
     self.profiles.first()

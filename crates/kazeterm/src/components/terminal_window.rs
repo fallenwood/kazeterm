@@ -85,7 +85,7 @@ pub fn new_terminal_window_with_shell(
     while let Some(event) = events_rx.next().await {
       match event {
         alacritty_terminal::event::Event::Wakeup => {},
-        _ => println!("Event: {:?}", event),
+        _ => tracing::trace!("Event: {:?}", event),
       };
 
       let terminal = match weak_terminal.upgrade() {
