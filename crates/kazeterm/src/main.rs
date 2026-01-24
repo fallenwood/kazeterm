@@ -12,6 +12,14 @@ mod components;
 mod config;
 
 fn main() {
+  // Initialize tracing
+  tracing_subscriber::fmt()
+    .with_env_filter(
+      tracing_subscriber::EnvFilter::from_default_env()
+        .add_directive(tracing::Level::INFO.into())
+    )
+    .init();
+
   let config = Config::load();
 
   let app = Application::new().with_assets(Assets);

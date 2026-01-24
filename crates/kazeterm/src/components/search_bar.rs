@@ -34,11 +34,11 @@ impl SearchBar {
       window,
       |view, state, event, _window, cx| match event {
         gpui_component::input::InputEvent::Focus => {
-          dbg!("Search input focused");
+          tracing::debug!("Search input focused");
         }
         gpui_component::input::InputEvent::PressEnter { secondary } => {
           _ = secondary;
-          eprintln!("Performing search for query: {}", state.read(cx).value());
+          tracing::debug!("Performing search for query: {}", state.read(cx).value());
           view.query = state.read(cx).value().clone();
           view.perform_search(cx);
         }

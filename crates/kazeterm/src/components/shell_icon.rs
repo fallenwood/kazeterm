@@ -69,7 +69,7 @@ mod windows_impl {
       let mut icon_info = ICONINFO::default();
       if GetIconInfo(hicon, &mut icon_info).is_err() {
         let _ = DestroyIcon(hicon);
-        dbg!("Failed to get icon info for {}", exe_path);
+        tracing::warn!("Failed to get icon info for {}", exe_path);
         return None;
       }
 
@@ -83,7 +83,7 @@ mod windows_impl {
           let _ = DeleteObject(icon_info.hbmMask.into());
         }
         let _ = DestroyIcon(hicon);
-        dbg!("Failed to create compatible DC for {}", exe_path);
+        tracing::warn!("Failed to create compatible DC for {}", exe_path);
         return None;
       }
 
@@ -107,7 +107,7 @@ mod windows_impl {
           let _ = DeleteObject(icon_info.hbmMask.into());
         }
         let _ = DestroyIcon(hicon);
-        dbg!("Failed to get bitmap object for {}", exe_path);
+        tracing::warn!("Failed to get bitmap object for {}", exe_path);
         return None;
       }
 
@@ -124,7 +124,7 @@ mod windows_impl {
           let _ = DeleteObject(icon_info.hbmMask.into());
         }
         let _ = DestroyIcon(hicon);
-        dbg!("Icon has zero width or height for {}", exe_path);
+        tracing::warn!("Icon has zero width or height for {}", exe_path);
         return None;
       }
 
@@ -170,7 +170,7 @@ mod windows_impl {
       let _ = DestroyIcon(hicon);
 
       if result == 0 {
-        dbg!("Failed to get bitmap bits for {}", exe_path);
+        tracing::warn!("Failed to get bitmap bits for {}", exe_path);
         return None;
       }
 
@@ -203,7 +203,7 @@ mod windows_impl {
 
       let frame = image::Frame::new(img_buffer);
 
-      dbg!("Successfully extracted icon for {}", exe_path);
+      tracing::debug!("Successfully extracted icon for {}", exe_path);
       Some(Arc::new(RenderImage::new(vec![frame])))
     }
   }

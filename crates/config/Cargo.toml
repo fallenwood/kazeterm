@@ -7,4 +7,5 @@ edition = "2024"
 serde.workspace = true
 toml.workspace = true
 dirs.workspace = true
+tracing.workspace = true
 gpui = { workspace = true, default-features = false }
