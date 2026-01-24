@@ -39,6 +39,8 @@ pub struct MainWindow {
   _search_bar_subscription: gpui::Subscription,
   tab_scroll_handle: gpui::ScrollHandle,
   scroll_tabs_to_end: bool,
+  scroll_to_active_tab: bool,
+  last_bounds: Option<gpui::Bounds<Pixels>>,
   tab_switcher_visible: bool,
   tab_switcher: Option<Entity<TabSwitcher>>,
   tab_switcher_selection: usize,
@@ -68,6 +70,8 @@ impl MainWindow {
       _search_bar_subscription: search_bar_subscription,
       tab_scroll_handle: gpui::ScrollHandle::new(),
       scroll_tabs_to_end: false,
+      scroll_to_active_tab: false,
+      last_bounds: None,
       tab_switcher_visible: false,
       tab_switcher: None,
       tab_switcher_selection: 0,
@@ -410,7 +414,7 @@ impl Focusable for MainWindow {
 }
 
 impl Render for MainWindow {
-  fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+  fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let search_visible = self.search_visible;
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
@@ -421,6 +425,16 @@ impl Render for MainWindow {
       .map(|s| s.to_string())
       .collect();
 
+    // Get current window bounds to detect resize
+    let current_bounds = window.bounds();
+    let bounds_changed = self.last_bounds.map_or(true, |last| last != current_bounds);
+
+    if bounds_changed {
+      self.last_bounds = Some(current_bounds);
+      // Set flag to scroll active tab into view on resize
+      self.scroll_to_active_tab = true;
+    }
+
     if self.scroll_tabs_to_end {
       self.scroll_tabs_to_end = false;
       let scroll_handle = self.tab_scroll_handle.clone();
@@ -430,6 +444,27 @@ impl Render for MainWindow {
         cx.update(|_cx| {
           let max_offset = scroll_handle.max_offset();
           scroll_handle.set_offset(gpui::point(-max_offset.width, px(0.0)));
+        })
+        .ok();
+      })
+      .detach();
+    }
+
+    if self.scroll_to_active_tab {
+      self.scroll_to_active_tab = false;
+      let scroll_handle = self.tab_scroll_handle.clone();
+      let active_tab_ix = self.active_tab_ix.unwrap_or_default();
+      let total_tabs = self.items.len();
+      cx.spawn(async move |_this, cx| {
+        cx.update(|_cx| {
+          if total_tabs > 0 && active_tab_ix < total_tabs {
+            // Calculate the approximate position of the active tab
+            // This is a simple approach - scroll proportionally based on tab index
+            let max_offset = scroll_handle.max_offset();
+            let scroll_ratio = active_tab_ix as f32 / total_tabs.max(1) as f32;
+            let target_offset = -max_offset.width * scroll_ratio;
+            scroll_handle.set_offset(gpui::point(target_offset, px(0.0)));
+          }
         })
         .ok();
       })
