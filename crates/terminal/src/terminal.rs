@@ -355,8 +355,6 @@ impl Terminal {
         term.scroll_to_point(*point);
       }
       InternalEvent::FindHyperlink(position, open) => {
-        dbg!("Finding hyperlink at position: position={position:?}, open={open:?}");
-
         let point = crate::mappings::mouse::grid_point(
           *position,
           self.last_content.terminal_bounds,
