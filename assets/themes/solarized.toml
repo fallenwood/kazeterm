@@ -1,0 +1,60 @@
+# Solarized Theme for Kazeterm
+name = "Solarized"
+
+[dark]
+# Core colors - Solarized Dark
+background = "#002B36"
+foreground = "#839496"
+accent = "#268BD2"
+border = "#073642"
+
+# ANSI colors
+black = "#073642"
+red = "#DC322F"
+green = "#859900"
+yellow = "#B58900"
+blue = "#268BD2"
+magenta = "#D33682"
+cyan = "#2AA198"
+white = "#EEE8D5"
+
+# Bright variants
+bright_black = "#586E75"
+bright_red = "#CB4B16"
+bright_green = "#93A1A1"
+bright_yellow = "#657B83"
+bright_blue = "#839496"
+bright_magenta = "#6C71C4"
+bright_cyan = "#FDF6E3"
+bright_white = "#FDF6E3"
+
+cursor = "#839496"
+
+[light]
+# Core colors - Solarized Light
+background = "#FDF6E3"
+foreground = "#657B83"
+accent = "#268BD2"
+border = "#EEE8D5"
+
+# ANSI colors
+black = "#073642"
+red = "#DC322F"
+green = "#859900"
+yellow = "#B58900"
+blue = "#268BD2"
+magenta = "#D33682"
+cyan = "#2AA198"
+white = "#EEE8D5"
+
+# Bright variants
+bright_black = "#586E75"
+bright_red = "#CB4B16"
+bright_green = "#93A1A1"
+bright_yellow = "#657B83"
+bright_blue = "#839496"
+bright_magenta = "#6C71C4"
+bright_cyan = "#FDF6E3"
+bright_white = "#FDF6E3"
+
+cursor = "#657B83"
