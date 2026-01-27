@@ -987,6 +987,7 @@ dependencies = [
  "dirs 5.0.1",
  "gpui",
  "serde",
+ "serde_json",
  "toml 0.8.23",
  "tracing",
 ]

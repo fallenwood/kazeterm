@@ -1,7 +1,7 @@
 # Dracula Theme for Kazeterm
 name = "Dracula"
 
-[colors]
+[dark]
 # Core colors
 background = "#282A36"
 foreground = "#F8F8F2"
@@ -19,5 +19,25 @@ cyan = "#8BE9FD"
 white = "#F8F8F2"
 
 # Optional: explicit bright variants
+bright_black = "#6272A4"
+bright_white = "#FFFFFF"
+
+[light]
+# Core colors - Dracula-inspired light variant
+background = "#F8F8F2"
+foreground = "#282A36"
+accent = "#9580FF"
+border = "#D6D6D6"
+
+# ANSI colors
+black = "#282A36"
+red = "#FF5555"
+green = "#50FA7B"
+yellow = "#FFB86C"
+blue = "#9580FF"
+magenta = "#FF79C6"
+cyan = "#80FFEA"
+white = "#F8F8F2"
+
 bright_black = "#6272A4"
 bright_white = "#FFFFFF"

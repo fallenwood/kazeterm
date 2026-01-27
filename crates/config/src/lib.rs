@@ -6,7 +6,7 @@ pub mod palette;
 pub use palette::Palette;
 
 mod theme;
-pub use theme::{ThemeColors, ThemeFile, load_theme, load_theme_from_assets};
+pub use theme::{ThemeColors, ThemeFile, ThemeMode, load_theme, load_theme_from_assets};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
@@ -19,6 +19,7 @@ pub struct Profile {
 #[serde(default)]
 pub struct Config {
   pub theme: String,
+  pub theme_mode: ThemeMode,
   pub default_profile: Option<String>,
   #[serde(default)]
   pub profiles: Vec<Profile>,
@@ -34,6 +35,7 @@ impl Default for Config {
   fn default() -> Self {
     Self {
       theme: "one_dark".to_string(),
+      theme_mode: ThemeMode::default(),
       default_profile: None,
       profiles: default_profiles(),
       font_size: 18.0,
@@ -280,6 +282,7 @@ mod tests {
 
     let config = Config {
       theme: "one_dark".into(),
+      theme_mode: ThemeMode::Dark,
       default_profile: Some("two".into()),
       profiles: profiles.clone(),
       font_size: 12.0,

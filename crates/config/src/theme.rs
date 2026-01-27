@@ -1,20 +1,35 @@
 //! Theme file loading and parsing
 //!
 //! Themes are loaded from TOML files in the assets/themes/ directory.
+//! Each theme can have light and dark variants.
 
 use gpui::{Hsla, Rgba};
 use serde::{Deserialize, Serialize};
 
 use crate::Palette;
 
+/// Theme mode selection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+  /// Always use light theme
+  Light,
+  /// Always use dark theme
+  #[default]
+  Dark,
+  /// Follow system dark mode setting
+  System,
+}
+
 /// Theme file structure for loading from TOML
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ThemeFile {
   /// Display name of the theme
   pub name: String,
-  /// Theme colors
-  #[serde(default)]
-  pub colors: ThemeColors,
+  /// Dark theme colors (required)
+  pub dark: ThemeColors,
+  /// Light theme colors (optional, falls back to dark if not specified)
+  pub light: Option<ThemeColors>,
 }
 
 /// Theme colors - simplified structure with auto-derivation of variants
@@ -119,10 +134,19 @@ pub fn load_theme_from_assets(name: &str) -> Option<ThemeFile> {
 }
 
 /// Load a theme and convert it to a Palette
-pub fn load_theme(name: &str) -> (String, Palette) {
+/// 
+/// The `is_dark` parameter determines which variant to use.
+/// For ThemeMode::System, the caller should detect system preference and pass it here.
+pub fn load_theme(name: &str, is_dark: bool) -> (String, Palette) {
   if let Some(theme_file) = load_theme_from_assets(name) {
-    let palette = theme_file.colors.to_palette();
-    (theme_file.name, palette)
+    let colors = if is_dark {
+      &theme_file.dark
+    } else {
+      theme_file.light.as_ref().unwrap_or(&theme_file.dark)
+    };
+    let palette = colors.to_palette(is_dark);
+    let variant = if is_dark { "" } else { " Light" };
+    (format!("{}{}", theme_file.name, variant), palette)
   } else {
     tracing::info!("Using default palette for theme '{}'", name);
     ("One Dark".to_string(), Palette::default())
@@ -131,7 +155,9 @@ pub fn load_theme(name: &str) -> (String, Palette) {
 
 impl ThemeColors {
   /// Convert ThemeColors to a Palette, deriving missing colors from base colors
-  pub fn to_palette(&self) -> Palette {
+  /// 
+  /// The `is_dark` parameter affects how UI colors are derived from background.
+  pub fn to_palette(&self, is_dark: bool) -> Palette {
     let mut palette = Palette::default();
 
     // Parse core colors
@@ -239,16 +265,30 @@ impl ThemeColors {
     }
 
     // Derive UI colors from background
+    // For dark themes: brighten for elevated, dim for recessed
+    // For light themes: dim for elevated, brighten for recessed
     if let Some(bg) = bg {
-      palette.surface_background = dim(bg);
-      palette.elevated_surface_background = brighten(bg);
-      palette.element_background = dim(bg);
-      palette.element_hover = brighten(bg);
-      palette.element_active = brighten(brighten(bg));
-      palette.element_selected = brighten(brighten(bg));
-      palette.title_bar_background = brighten(bg);
-      palette.title_bar_inactive_background = dim(bg);
-      palette.tab_inactive_background = brighten(bg);
+      if is_dark {
+        palette.surface_background = dim(bg);
+        palette.elevated_surface_background = brighten(bg);
+        palette.element_background = dim(bg);
+        palette.element_hover = brighten(bg);
+        palette.element_active = brighten(brighten(bg));
+        palette.element_selected = brighten(brighten(bg));
+        palette.title_bar_background = brighten(bg);
+        palette.title_bar_inactive_background = dim(bg);
+        palette.tab_inactive_background = brighten(bg);
+      } else {
+        palette.surface_background = brighten(bg);
+        palette.elevated_surface_background = dim(bg);
+        palette.element_background = brighten(bg);
+        palette.element_hover = dim(bg);
+        palette.element_active = dim(dim(bg));
+        palette.element_selected = dim(dim(bg));
+        palette.title_bar_background = dim(bg);
+        palette.title_bar_inactive_background = brighten(bg);
+        palette.tab_inactive_background = dim(bg);
+      }
     }
 
     palette
@@ -306,7 +346,7 @@ mod tests {
     colors.foreground = Some("#FFFFFF".to_string());
     colors.red = Some("#FF0000".to_string());
 
-    let palette = colors.to_palette();
+    let palette = colors.to_palette(true); // dark mode
 
     // Check background was applied
     let bg = palette.background.to_rgb();
@@ -327,11 +367,27 @@ mod tests {
     let mut colors = ThemeColors::default();
     colors.red = Some("#800000".to_string()); // Dark red
 
-    let palette = colors.to_palette();
+    let palette = colors.to_palette(true);
 
     // Bright red should be lighter than base red
     assert!(palette.terminal_ansi_bright_red.l > palette.terminal_ansi_red.l);
     // Dim red should be darker than base red
     assert!(palette.terminal_ansi_dim_red.l < palette.terminal_ansi_red.l);
+  }
+
+  #[test]
+  fn theme_mode_serialization() {
+    assert_eq!(
+      serde_json::to_string(&ThemeMode::Dark).unwrap(),
+      "\"dark\""
+    );
+    assert_eq!(
+      serde_json::to_string(&ThemeMode::Light).unwrap(),
+      "\"light\""
+    );
+    assert_eq!(
+      serde_json::to_string(&ThemeMode::System).unwrap(),
+      "\"system\""
+    );
   }
 }
