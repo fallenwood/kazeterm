@@ -322,8 +322,8 @@ impl Render for SearchBar {
       .shadow_lg()
       .border_1()
       .border_color(theme.border)
-      .p_2()
-      .min_w(px(300.))
+      .py_1()
+      .px_2()
       .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
         cx.stop_propagation();
       })
@@ -342,26 +342,25 @@ impl Render for SearchBar {
           .items_center()
           .child(
             Input::new(&self.search_input_state)
-              .flex_1()
-              .px_2()
-              .py_1()
-              .border_1()
-              .rounded_sm()
+              .w(px(200.))
               .cursor_text(),
           )
           .child(
+            div()
+              .text_sm()
+              .text_color(theme.muted_foreground)
+              .min_w(px(50.))
+              .text_center()
+              .child(format!("{}/{}", self.current_match, self.match_count)),
+          )
+          .child(
             gpui_component::h_flex()
-              .gap_1()
+              .gap_0p5()
               .items_center()
-              .child(
-                div()
-                  .px_2()
-                  .child(format!("{} / {}", self.current_match, self.match_count)),
-              )
               .child(
                 Button::new("prev-match")
                   .ghost()
-                  .xsmall()
+                  .small()
                   .label("↑")
                   .on_click(cx.listener(|this, _, _window, cx| {
                     this.go_to_previous_match(cx);
@@ -370,7 +369,7 @@ impl Render for SearchBar {
               .child(
                 Button::new("next-match")
                   .ghost()
-                  .xsmall()
+                  .small()
                   .label("↓")
                   .on_click(cx.listener(|this, _, _window, cx| {
                     this.go_to_next_match(cx);
@@ -378,39 +377,50 @@ impl Render for SearchBar {
               ),
           )
           .child(
-            Button::new("match-case")
-              .ghost()
-              .xsmall()
-              .label("Aa")
-              .when(self.match_case, |btn| btn.bg(active_bg))
-              .on_click(cx.listener(|this, _, _window, cx| {
-                this.toggle_match_case(cx);
-              })),
+            div()
+              .h(px(16.))
+              .w(px(1.))
+              .bg(theme.border),
           )
           .child(
-            Button::new("match-whole")
-              .ghost()
-              .xsmall()
-              .label("[ ]")
-              .when(self.match_whole, |btn| btn.bg(active_bg))
-              .on_click(cx.listener(|this, _, _window, cx| {
-                this.toggle_match_whole(cx);
-              })),
-          )
-          .child(
-            Button::new("regex")
-              .ghost()
-              .xsmall()
-              .label(".*")
-              .when(self.use_regex, |btn| btn.bg(active_bg))
-              .on_click(cx.listener(|this, _, _window, cx| {
-                this.toggle_use_regex(cx);
-              })),
+            gpui_component::h_flex()
+              .gap_0p5()
+              .items_center()
+              .child(
+                Button::new("match-case")
+                  .ghost()
+                  .small()
+                  .label("Aa")
+                  .when(self.match_case, |btn| btn.bg(active_bg))
+                  .on_click(cx.listener(|this, _, _window, cx| {
+                    this.toggle_match_case(cx);
+                  })),
+              )
+              .child(
+                Button::new("match-whole")
+                  .ghost()
+                  .small()
+                  .label("\"\"")
+                  .when(self.match_whole, |btn| btn.bg(active_bg))
+                  .on_click(cx.listener(|this, _, _window, cx| {
+                    this.toggle_match_whole(cx);
+                  })),
+              )
+              .child(
+                Button::new("regex")
+                  .ghost()
+                  .small()
+                  .label(".*")
+                  .when(self.use_regex, |btn| btn.bg(active_bg))
+                  .on_click(cx.listener(|this, _, _window, cx| {
+                    this.toggle_use_regex(cx);
+                  })),
+              ),
           )
           .child(
             Button::new("close-search")
               .ghost()
-              .xsmall()
+              .small()
               .label("×")
               .on_click(cx.listener(|this, _, _window, cx| {
                 this.close(cx);
