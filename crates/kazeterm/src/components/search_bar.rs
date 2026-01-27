@@ -310,12 +310,14 @@ impl Focusable for SearchBar {
 impl Render for SearchBar {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let theme = cx.theme();
+    let active_bg = theme.accent;
 
     div()
       .absolute()
       .top_2()
       .right_4()
-      .bg(theme.title_bar)
+      .bg(theme.popover)
+      .text_color(theme.popover_foreground)
       .rounded_md()
       .shadow_lg()
       .border_1()
@@ -380,7 +382,7 @@ impl Render for SearchBar {
               .ghost()
               .xsmall()
               .label("Aa")
-              .when(self.match_case, |btn| btn.bg(gpui::rgb(0xddddff)))
+              .when(self.match_case, |btn| btn.bg(active_bg))
               .on_click(cx.listener(|this, _, _window, cx| {
                 this.toggle_match_case(cx);
               })),
@@ -390,7 +392,7 @@ impl Render for SearchBar {
               .ghost()
               .xsmall()
               .label("[ ]")
-              .when(self.match_whole, |btn| btn.bg(gpui::rgb(0xddddff)))
+              .when(self.match_whole, |btn| btn.bg(active_bg))
               .on_click(cx.listener(|this, _, _window, cx| {
                 this.toggle_match_whole(cx);
               })),
@@ -400,7 +402,7 @@ impl Render for SearchBar {
               .ghost()
               .xsmall()
               .label(".*")
-              .when(self.use_regex, |btn| btn.bg(gpui::rgb(0xddddff)))
+              .when(self.use_regex, |btn| btn.bg(active_bg))
               .on_click(cx.listener(|this, _, _window, cx| {
                 this.toggle_use_regex(cx);
               })),

@@ -239,6 +239,7 @@ impl SettingsStore {
       theme.magenta = colors.terminal_ansi_magenta;
       theme.magenta_light = colors.terminal_ansi_bright_magenta;
 
+      theme.primary = colors.text_accent;
       theme.primary_hover = colors.element_hover;
       theme.primary_active = colors.element_active;
 
@@ -250,9 +251,36 @@ impl SettingsStore {
       theme.tab_active_foreground = colors.text;
       theme.tab_foreground = colors.text;
 
-      theme.input = colors.background;
+      // Input styling
+      theme.input = colors.surface_background;
 
+      // Border colors
       theme.border = colors.border;
+
+      // Background and foreground
+      theme.background = colors.background;
+      theme.foreground = colors.text;
+      theme.muted = colors.text_muted;
+      theme.muted_foreground = colors.text_muted;
+
+      // Popup/dropdown menu styling
+      theme.popover = colors.elevated_surface_background;
+      theme.popover_foreground = colors.text;
+
+      // List styling (for dropdown items, menus)
+      theme.list = colors.elevated_surface_background;
+      theme.list_active = colors.element_selected;
+      theme.list_active_border = colors.border_focused;
+      theme.list_hover = colors.element_hover;
+
+      // Secondary colors
+      theme.secondary = colors.element_background;
+      theme.secondary_hover = colors.element_hover;
+      theme.secondary_active = colors.element_active;
+      theme.secondary_foreground = colors.text;
+
+      // Selection
+      theme.selection = colors.element_selection_background;
 
       let config = app.global::<config::Config>();
       theme.font_family = config.ui_font_family.clone().into();
