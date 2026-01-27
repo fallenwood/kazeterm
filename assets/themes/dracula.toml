@@ -1,0 +1,61 @@
+# Dracula Theme for Kazeterm
+name = "Dracula"
+
+[colors]
+# UI colors
+background = "#282A36"
+surface_background = "#21222C"
+elevated_surface_background = "#343746"
+border = "#44475A"
+border_variant = "#21222C"
+text = "#F8F8F2"
+text_muted = "#BFBFBF"
+text_placeholder = "#6272A4"
+text_disabled = "#6272A4"
+text_accent = "#BD93F9"
+
+# Title bar and tabs
+title_bar_background = "#21222C"
+title_bar_inactive_background = "#191A21"
+tab_inactive_background = "#21222C"
+tab_active_background = "#282A36"
+
+# Element colors
+element_background = "#21222C"
+element_hover = "#343746"
+element_active = "#44475A"
+element_selected = "#44475A"
+
+# Terminal colors
+terminal_background = "#282A36"
+terminal_foreground = "#F8F8F2"
+terminal_bright_foreground = "#FFFFFF"
+terminal_dim_foreground = "#BFBFBF"
+terminal_ansi_background = "#282A36"
+terminal_cursor = "#F8F8F2"
+
+# ANSI colors
+terminal_ansi_black = "#21222C"
+terminal_ansi_bright_black = "#6272A4"
+terminal_ansi_dim_black = "#191A21"
+terminal_ansi_red = "#FF5555"
+terminal_ansi_bright_red = "#FF6E6E"
+terminal_ansi_dim_red = "#CC4444"
+terminal_ansi_green = "#50FA7B"
+terminal_ansi_bright_green = "#69FF94"
+terminal_ansi_dim_green = "#40C862"
+terminal_ansi_yellow = "#F1FA8C"
+terminal_ansi_bright_yellow = "#FFFFA5"
+terminal_ansi_dim_yellow = "#C1C870"
+terminal_ansi_blue = "#BD93F9"
+terminal_ansi_bright_blue = "#D6ACFF"
+terminal_ansi_dim_blue = "#9775C7"
+terminal_ansi_magenta = "#FF79C6"
+terminal_ansi_bright_magenta = "#FF92DF"
+terminal_ansi_dim_magenta = "#CC619E"
+terminal_ansi_cyan = "#8BE9FD"
+terminal_ansi_bright_cyan = "#A4FFFF"
+terminal_ansi_dim_cyan = "#6FB9CA"
+terminal_ansi_white = "#F8F8F2"
+terminal_ansi_bright_white = "#FFFFFF"
+terminal_ansi_dim_white = "#BFBFBF"

@@ -1,0 +1,61 @@
+# One Dark Theme for Kazeterm
+name = "One Dark"
+
+[colors]
+# UI colors
+background = "#282C33"
+surface_background = "#24283B"
+elevated_surface_background = "#2F334D"
+border = "#464B57"
+border_variant = "#24283B"
+text = "#DCE0E5"
+text_muted = "#DCE0E5"
+text_placeholder = "#565F89"
+text_disabled = "#414868"
+text_accent = "#74ADE8"
+
+# Title bar and tabs
+title_bar_background = "#2F343E"
+title_bar_inactive_background = "#161925"
+tab_inactive_background = "#2F343E"
+tab_active_background = "#282C33"
+
+# Element colors
+element_background = "#24283B"
+element_hover = "#2F334D"
+element_active = "#3B4261"
+element_selected = "#3B4261"
+
+# Terminal colors
+terminal_background = "#282C33"
+terminal_foreground = "#DCE0E5"
+terminal_bright_foreground = "#FAFAFA"
+terminal_dim_foreground = "#DCE0E5"
+terminal_ansi_background = "#282C33"
+terminal_cursor = "#74ADE8"
+
+# ANSI colors
+terminal_ansi_black = "#282C33"
+terminal_ansi_bright_black = "#525561"
+terminal_ansi_dim_black = "#0F1016"
+terminal_ansi_red = "#D07277"
+terminal_ansi_bright_red = "#673A3C"
+terminal_ansi_dim_red = "#B35667"
+terminal_ansi_green = "#A1C181"
+terminal_ansi_bright_green = "#4F6441"
+terminal_ansi_dim_green = "#72954E"
+terminal_ansi_yellow = "#DEC184"
+terminal_ansi_bright_yellow = "#E5C07B"
+terminal_ansi_dim_yellow = "#A37F4B"
+terminal_ansi_blue = "#74ADE8"
+terminal_ansi_bright_blue = "#385378"
+terminal_ansi_dim_blue = "#5976B3"
+terminal_ansi_magenta = "#B477CF"
+terminal_ansi_bright_magenta = "#D6B4E4"
+terminal_ansi_dim_magenta = "#8870B3"
+terminal_ansi_cyan = "#6EB4BF"
+terminal_ansi_bright_cyan = "#3A565B"
+terminal_ansi_dim_cyan = "#5A95B8"
+terminal_ansi_white = "#DCE0E5"
+terminal_ansi_bright_white = "#FAFAFA"
+terminal_ansi_dim_white = "#DCE0E5"
