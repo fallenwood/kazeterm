@@ -11,6 +11,34 @@ mod assets;
 mod components;
 mod config;
 
+/// Detect system dark mode preference
+/// TODO: Implement proper system detection for each platform
+fn detect_system_dark_mode() -> bool {
+  #[cfg(target_os = "windows")]
+  {
+    // Check Windows registry for dark mode setting
+    use std::process::Command;
+    if let Ok(output) = Command::new("reg")
+      .args([
+        "query",
+        "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "/v",
+        "AppsUseLightTheme",
+      ])
+      .output()
+    {
+      let stdout = String::from_utf8_lossy(&output.stdout);
+      // If AppsUseLightTheme is 0, dark mode is enabled
+      return stdout.contains("0x0");
+    }
+    true // Default to dark mode
+  }
+  #[cfg(not(target_os = "windows"))]
+  {
+    true // Default to dark mode on other platforms
+  }
+}
+
 fn main() {
   // Initialize tracing
   tracing_subscriber::fmt()
@@ -29,7 +57,7 @@ fn main() {
     gpui_component::init(cx);
     terminal::init(cx);
 
-    cx.set_global(crate::config::create_settings_store(&config));
+    cx.set_global(crate::config::create_settings_store(&config, detect_system_dark_mode()));
     cx.set_global(config.clone());
 
     SettingsStore::init_gpui_component_theme(cx);

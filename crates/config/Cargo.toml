@@ -9,3 +9,6 @@ toml.workspace = true
 dirs.workspace = true
 tracing.workspace = true
 gpui = { workspace = true, default-features = false }
+
+[dev-dependencies]
+serde_json = "1.0"
