@@ -17,67 +17,38 @@ pub struct ThemeFile {
   pub colors: ThemeColors,
 }
 
-/// Theme colors from a theme file (all optional to allow partial overrides)
+/// Theme colors - simplified structure with auto-derivation of variants
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ThemeColors {
-  // UI colors
+  // Core colors - most other colors derive from these
   pub background: Option<String>,
-  pub surface_background: Option<String>,
-  pub elevated_surface_background: Option<String>,
+  pub foreground: Option<String>,
+  pub accent: Option<String>,
   pub border: Option<String>,
-  pub border_variant: Option<String>,
-  pub text: Option<String>,
-  pub text_muted: Option<String>,
-  pub text_placeholder: Option<String>,
-  pub text_disabled: Option<String>,
-  pub text_accent: Option<String>,
 
-  // Title bar and tabs
-  pub title_bar_background: Option<String>,
-  pub title_bar_inactive_background: Option<String>,
-  pub tab_inactive_background: Option<String>,
-  pub tab_active_background: Option<String>,
+  // ANSI colors (8 base colors - bright/dim auto-derived if not specified)
+  pub black: Option<String>,
+  pub red: Option<String>,
+  pub green: Option<String>,
+  pub yellow: Option<String>,
+  pub blue: Option<String>,
+  pub magenta: Option<String>,
+  pub cyan: Option<String>,
+  pub white: Option<String>,
 
-  // Element colors
-  pub element_background: Option<String>,
-  pub element_hover: Option<String>,
-  pub element_active: Option<String>,
-  pub element_selected: Option<String>,
+  // Optional bright variants (auto-derived from base if not specified)
+  pub bright_black: Option<String>,
+  pub bright_red: Option<String>,
+  pub bright_green: Option<String>,
+  pub bright_yellow: Option<String>,
+  pub bright_blue: Option<String>,
+  pub bright_magenta: Option<String>,
+  pub bright_cyan: Option<String>,
+  pub bright_white: Option<String>,
 
-  // Terminal colors
-  pub terminal_background: Option<String>,
-  pub terminal_foreground: Option<String>,
-  pub terminal_bright_foreground: Option<String>,
-  pub terminal_dim_foreground: Option<String>,
-  pub terminal_ansi_background: Option<String>,
-  pub terminal_cursor: Option<String>,
-
-  // ANSI colors
-  pub terminal_ansi_black: Option<String>,
-  pub terminal_ansi_bright_black: Option<String>,
-  pub terminal_ansi_dim_black: Option<String>,
-  pub terminal_ansi_red: Option<String>,
-  pub terminal_ansi_bright_red: Option<String>,
-  pub terminal_ansi_dim_red: Option<String>,
-  pub terminal_ansi_green: Option<String>,
-  pub terminal_ansi_bright_green: Option<String>,
-  pub terminal_ansi_dim_green: Option<String>,
-  pub terminal_ansi_yellow: Option<String>,
-  pub terminal_ansi_bright_yellow: Option<String>,
-  pub terminal_ansi_dim_yellow: Option<String>,
-  pub terminal_ansi_blue: Option<String>,
-  pub terminal_ansi_bright_blue: Option<String>,
-  pub terminal_ansi_dim_blue: Option<String>,
-  pub terminal_ansi_magenta: Option<String>,
-  pub terminal_ansi_bright_magenta: Option<String>,
-  pub terminal_ansi_dim_magenta: Option<String>,
-  pub terminal_ansi_cyan: Option<String>,
-  pub terminal_ansi_bright_cyan: Option<String>,
-  pub terminal_ansi_dim_cyan: Option<String>,
-  pub terminal_ansi_white: Option<String>,
-  pub terminal_ansi_bright_white: Option<String>,
-  pub terminal_ansi_dim_white: Option<String>,
+  // Optional: cursor color (defaults to accent)
+  pub cursor: Option<String>,
 }
 
 /// Parse a hex color string to Hsla
@@ -159,79 +130,148 @@ pub fn load_theme(name: &str) -> (String, Palette) {
 }
 
 impl ThemeColors {
-  /// Convert ThemeColors to a Palette, using defaults for unspecified colors
+  /// Convert ThemeColors to a Palette, deriving missing colors from base colors
   pub fn to_palette(&self) -> Palette {
     let mut palette = Palette::default();
 
-    macro_rules! apply_color {
-      ($field:ident) => {
-        if let Some(ref color_str) = self.$field {
-          if let Some(color) = parse_hex_color(color_str) {
-            palette.$field = color;
-          }
-        }
-      };
+    // Parse core colors
+    let bg = self.background.as_ref().and_then(|s| parse_hex_color(s));
+    let fg = self.foreground.as_ref().and_then(|s| parse_hex_color(s));
+    let accent = self.accent.as_ref().and_then(|s| parse_hex_color(s));
+    let border_color = self.border.as_ref().and_then(|s| parse_hex_color(s));
+
+    // Apply core colors
+    if let Some(c) = bg {
+      palette.background = c;
+      palette.terminal_background = c;
+      palette.terminal_ansi_background = c;
+      palette.tab_active_background = c;
+    }
+    if let Some(c) = fg {
+      palette.text = c;
+      palette.text_muted = c;
+      palette.terminal_foreground = c;
+      palette.terminal_ansi_white = c;
+    }
+    if let Some(c) = accent {
+      palette.text_accent = c;
+      palette.terminal_cursor = c;
+      palette.border_focused = c;
+      palette.border_selected = c;
+    }
+    if let Some(c) = border_color {
+      palette.border = c;
     }
 
-    // UI colors
-    apply_color!(background);
-    apply_color!(surface_background);
-    apply_color!(elevated_surface_background);
-    apply_color!(border);
-    apply_color!(border_variant);
-    apply_color!(text);
-    apply_color!(text_muted);
-    apply_color!(text_placeholder);
-    apply_color!(text_disabled);
-    apply_color!(text_accent);
+    // Parse ANSI base colors
+    let black = self.black.as_ref().and_then(|s| parse_hex_color(s));
+    let red = self.red.as_ref().and_then(|s| parse_hex_color(s));
+    let green = self.green.as_ref().and_then(|s| parse_hex_color(s));
+    let yellow = self.yellow.as_ref().and_then(|s| parse_hex_color(s));
+    let blue = self.blue.as_ref().and_then(|s| parse_hex_color(s));
+    let magenta = self.magenta.as_ref().and_then(|s| parse_hex_color(s));
+    let cyan = self.cyan.as_ref().and_then(|s| parse_hex_color(s));
+    let white = self.white.as_ref().and_then(|s| parse_hex_color(s));
 
-    // Title bar and tabs
-    apply_color!(title_bar_background);
-    apply_color!(title_bar_inactive_background);
-    apply_color!(tab_inactive_background);
-    apply_color!(tab_active_background);
+    // Apply ANSI colors with auto-derived bright/dim variants
+    if let Some(c) = black {
+      palette.terminal_ansi_black = c;
+      palette.terminal_ansi_bright_black = self.bright_black.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_black = dim(c);
+    }
+    if let Some(c) = red {
+      palette.terminal_ansi_red = c;
+      palette.terminal_ansi_bright_red = self.bright_red.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_red = dim(c);
+    }
+    if let Some(c) = green {
+      palette.terminal_ansi_green = c;
+      palette.terminal_ansi_bright_green = self.bright_green.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_green = dim(c);
+    }
+    if let Some(c) = yellow {
+      palette.terminal_ansi_yellow = c;
+      palette.terminal_ansi_bright_yellow = self.bright_yellow.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_yellow = dim(c);
+    }
+    if let Some(c) = blue {
+      palette.terminal_ansi_blue = c;
+      palette.terminal_ansi_bright_blue = self.bright_blue.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_blue = dim(c);
+    }
+    if let Some(c) = magenta {
+      palette.terminal_ansi_magenta = c;
+      palette.terminal_ansi_bright_magenta = self.bright_magenta.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_magenta = dim(c);
+    }
+    if let Some(c) = cyan {
+      palette.terminal_ansi_cyan = c;
+      palette.terminal_ansi_bright_cyan = self.bright_cyan.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_cyan = dim(c);
+    }
+    if let Some(c) = white {
+      palette.terminal_ansi_white = c;
+      palette.terminal_ansi_bright_white = self.bright_white.as_ref()
+        .and_then(|s| parse_hex_color(s))
+        .unwrap_or_else(|| brighten(c));
+      palette.terminal_ansi_dim_white = dim(c);
+    }
 
-    // Element colors
-    apply_color!(element_background);
-    apply_color!(element_hover);
-    apply_color!(element_active);
-    apply_color!(element_selected);
+    // Apply cursor if specified (otherwise uses accent)
+    if let Some(ref s) = self.cursor {
+      if let Some(c) = parse_hex_color(s) {
+        palette.terminal_cursor = c;
+      }
+    }
 
-    // Terminal colors
-    apply_color!(terminal_background);
-    apply_color!(terminal_foreground);
-    apply_color!(terminal_bright_foreground);
-    apply_color!(terminal_dim_foreground);
-    apply_color!(terminal_ansi_background);
-    apply_color!(terminal_cursor);
-
-    // ANSI colors
-    apply_color!(terminal_ansi_black);
-    apply_color!(terminal_ansi_bright_black);
-    apply_color!(terminal_ansi_dim_black);
-    apply_color!(terminal_ansi_red);
-    apply_color!(terminal_ansi_bright_red);
-    apply_color!(terminal_ansi_dim_red);
-    apply_color!(terminal_ansi_green);
-    apply_color!(terminal_ansi_bright_green);
-    apply_color!(terminal_ansi_dim_green);
-    apply_color!(terminal_ansi_yellow);
-    apply_color!(terminal_ansi_bright_yellow);
-    apply_color!(terminal_ansi_dim_yellow);
-    apply_color!(terminal_ansi_blue);
-    apply_color!(terminal_ansi_bright_blue);
-    apply_color!(terminal_ansi_dim_blue);
-    apply_color!(terminal_ansi_magenta);
-    apply_color!(terminal_ansi_bright_magenta);
-    apply_color!(terminal_ansi_dim_magenta);
-    apply_color!(terminal_ansi_cyan);
-    apply_color!(terminal_ansi_bright_cyan);
-    apply_color!(terminal_ansi_dim_cyan);
-    apply_color!(terminal_ansi_white);
-    apply_color!(terminal_ansi_bright_white);
-    apply_color!(terminal_ansi_dim_white);
+    // Derive UI colors from background
+    if let Some(bg) = bg {
+      palette.surface_background = dim(bg);
+      palette.elevated_surface_background = brighten(bg);
+      palette.element_background = dim(bg);
+      palette.element_hover = brighten(bg);
+      palette.element_active = brighten(brighten(bg));
+      palette.element_selected = brighten(brighten(bg));
+      palette.title_bar_background = brighten(bg);
+      palette.title_bar_inactive_background = dim(bg);
+      palette.tab_inactive_background = brighten(bg);
+    }
 
     palette
+  }
+}
+
+/// Brighten a color by increasing lightness
+fn brighten(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l + 0.1).min(1.0),
+    a: color.a,
+  }
+}
+
+/// Dim a color by decreasing lightness
+fn dim(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l - 0.1).max(0.0),
+    a: color.a,
   }
 }
 
@@ -260,22 +300,38 @@ mod tests {
   }
 
   #[test]
-  fn theme_colors_to_palette_applies_overrides() {
+  fn theme_colors_to_palette_applies_core_colors() {
     let mut colors = ThemeColors::default();
     colors.background = Some("#000000".to_string());
-    colors.terminal_ansi_red = Some("#FF0000".to_string());
+    colors.foreground = Some("#FFFFFF".to_string());
+    colors.red = Some("#FF0000".to_string());
 
     let palette = colors.to_palette();
 
-    // Check the override was applied
+    // Check background was applied
     let bg = palette.background.to_rgb();
     assert!((bg.r - 0.0).abs() < 0.01);
-    assert!((bg.g - 0.0).abs() < 0.01);
-    assert!((bg.b - 0.0).abs() < 0.01);
 
+    // Check foreground was applied to text
+    let text = palette.text.to_rgb();
+    assert!((text.r - 1.0).abs() < 0.01);
+
+    // Check ANSI red was applied
     let red = palette.terminal_ansi_red.to_rgb();
     assert!((red.r - 1.0).abs() < 0.01);
     assert!((red.g - 0.0).abs() < 0.01);
-    assert!((red.b - 0.0).abs() < 0.01);
+  }
+
+  #[test]
+  fn bright_colors_auto_derived() {
+    let mut colors = ThemeColors::default();
+    colors.red = Some("#800000".to_string()); // Dark red
+
+    let palette = colors.to_palette();
+
+    // Bright red should be lighter than base red
+    assert!(palette.terminal_ansi_bright_red.l > palette.terminal_ansi_red.l);
+    // Dim red should be darker than base red
+    assert!(palette.terminal_ansi_dim_red.l < palette.terminal_ansi_red.l);
   }
 }
