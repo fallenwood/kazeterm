@@ -4,11 +4,11 @@
 //! configuration and theme changes without restarting the application.
 
 use std::path::PathBuf;
-use std::sync::mpsc;
 use std::time::Duration;
 
 use gpui::{App, AsyncApp};
-use notify_debouncer_mini::{DebouncedEventKind, new_debouncer};
+use notify_debouncer_mini::{DebounceEventResult, DebouncedEventKind, new_debouncer};
+use smol::channel::unbounded;
 
 use crate::config::create_settings_store;
 use ::config::Config;
@@ -58,10 +58,13 @@ async fn run_file_watcher(
   config_path: Option<PathBuf>,
   themes_path: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-  let (tx, rx) = mpsc::channel();
+  let (tx, rx) = unbounded::<DebounceEventResult>();
 
-  // Create debounced watcher
-  let mut debouncer = new_debouncer(Duration::from_millis(DEBOUNCE_MS), tx)?;
+  // Create debounced watcher with async-compatible channel
+  let mut debouncer = new_debouncer(Duration::from_millis(DEBOUNCE_MS), move |result| {
+    // Send result through async channel (non-blocking)
+    let _ = tx.send_blocking(result);
+  })?;
 
   // Watch config file
   if let Some(path) = &config_path {
@@ -83,9 +86,9 @@ async fn run_file_watcher(
     }
   }
 
-  // Process events
+  // Process events asynchronously
   loop {
-    match rx.recv() {
+    match rx.recv().await {
       Ok(result) => match result {
         Ok(events) => {
           for event in events {
