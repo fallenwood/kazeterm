@@ -17,6 +17,7 @@ use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::search_bar::{SearchBar, SearchBarCloseEvent};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
+use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
 use crate::components::tab_switcher::{TabSwitcher, TabSwitcherItem};
 
 /// Maximum width for tab labels before truncation
@@ -25,10 +26,19 @@ const TAB_LABEL_MAX_WIDTH: f32 = 150.0;
 pub struct TabItem {
   index: usize,
   title: String,
+  /// Custom title set by the user. When Some, auto-title updates are ignored.
+  custom_title: Option<String>,
   shell_path: String,
   _shell_name: String,
   terminal: Entity<terminal::TerminalView>,
   _subscription: gpui::Subscription,
+}
+
+impl TabItem {
+  /// Returns the display title (custom title if set, otherwise the auto-assigned title)
+  fn display_title(&self) -> &str {
+    self.custom_title.as_deref().unwrap_or(&self.title)
+  }
 }
 
 pub struct MainWindow {
@@ -48,6 +58,9 @@ pub struct MainWindow {
   tab_switcher: Option<Entity<TabSwitcher>>,
   tab_switcher_selection: usize,
   last_known_ctrl_state: bool,
+  /// Tab rename dialog state
+  rename_dialog: Option<Entity<TabRenameDialog>>,
+  _rename_dialog_subscription: Option<gpui::Subscription>,
 }
 
 impl MainWindow {
@@ -79,6 +92,8 @@ impl MainWindow {
       tab_switcher: None,
       tab_switcher_selection: 0,
       last_known_ctrl_state: false,
+      rename_dialog: None,
+      _rename_dialog_subscription: None,
     };
     main_window.insert_new_tab(window, cx);
     main_window
@@ -231,7 +246,7 @@ impl MainWindow {
       .enumerate()
       .map(|(ix, item)| TabSwitcherItem {
         index: item.index,
-        title: item.title.clone(),
+        title: item.display_title().to_string(),
         shell_path: item.shell_path.clone(),
         is_selected: ix == self.tab_switcher_selection,
       })
@@ -298,6 +313,7 @@ impl MainWindow {
     let item = TabItem {
       index,
       title: tab_title,
+      custom_title: None,
       shell_path,
       _shell_name: shell_name,
       terminal: terminal.clone(),
@@ -338,9 +354,13 @@ impl MainWindow {
         cx.notify();
       }
       terminal::TerminalEvent::UpdateTab => {
-        // Update tab title
+        // Update tab title only if no custom title is set
         let tab_index = terminal_view.read(cx).index;
         if let Some(item) = this.items.iter_mut().find(|item| item.index == tab_index) {
+          // Skip update if user has set a custom title
+          if item.custom_title.is_some() {
+            return;
+          }
           let new_title = terminal_view
             .read(cx)
             .terminal()
@@ -407,6 +427,58 @@ impl MainWindow {
 
       // Set the active tab and focus it
       self.set_active_tab(new_active_ix, window, cx);
+    }
+
+    cx.notify();
+  }
+
+  fn show_rename_dialog(&mut self, tab_index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    // Find the tab's current display title
+    let current_title = self
+      .items
+      .iter()
+      .find(|item| item.index == tab_index)
+      .map(|item| item.display_title().to_string())
+      .unwrap_or_default();
+
+    let dialog = cx.new(|cx| TabRenameDialog::new(tab_index, &current_title, window, cx));
+
+    let subscription = cx.subscribe_in(&dialog, window, Self::on_rename_dialog_event);
+
+    // Focus the dialog
+    dialog.update(cx, |dialog, cx| {
+      dialog.focus(window, cx);
+    });
+
+    self.rename_dialog = Some(dialog);
+    self._rename_dialog_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  fn on_rename_dialog_event(
+    &mut self,
+    _dialog: &Entity<TabRenameDialog>,
+    event: &TabRenameEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let tab_index = event.tab_index;
+    let new_title = event.new_title.clone();
+
+    // Find the tab and update its custom_title
+    if let Some(item) = self.items.iter_mut().find(|item| item.index == tab_index) {
+      item.custom_title = new_title;
+    }
+
+    // Close the dialog
+    self.rename_dialog = None;
+    self._rename_dialog_subscription = None;
+
+    // Refocus the terminal
+    if let Some(active_ix) = self.active_tab_ix {
+      if let Some(item) = self.items.get(active_ix) {
+        window.focus(&item.terminal.focus_handle(cx));
+      }
     }
 
     cx.notify();
@@ -563,7 +635,7 @@ impl Render for MainWindow {
                       .map(|(tab_ix, item)| {
                         let shell_icon = ShellIcon::new(&item.shell_path);
                         let tab_index = item.index;
-                        let tab_title = item.title.clone();
+                        let tab_title = item.display_title().to_string();
                         let total_tabs = self.items.len();
                         let is_first = tab_ix == 0;
                         let is_last = tab_ix == total_tabs - 1;
@@ -723,12 +795,21 @@ impl Render for MainWindow {
                                       .context_menu({
                                         let view = view.clone();
                                         move |menu, _window, _cx| {
+                                          let view_rename = view.clone();
                                           let view_move_left = view.clone();
                                           let view_move_right = view.clone();
                                           let view_close_others = view.clone();
                                           let view_close_right = view.clone();
                                           let view_close_tab = view.clone();
                                           menu
+                                            .item(PopupMenuItem::new("Rename Tab").on_click(
+                                              move |_, window, cx| {
+                                                view_rename.update(cx, |this, cx| {
+                                                  this.show_rename_dialog(tab_index, window, cx);
+                                                });
+                                              },
+                                            ))
+                                            .separator()
                                             .item(
                                               PopupMenuItem::new("Move Left")
                                                 .disabled(is_first)
@@ -880,6 +961,13 @@ impl Render for MainWindow {
           .when(self.tab_switcher_visible, |this| {
             if let Some(tab_switcher) = &self.tab_switcher {
               this.child(tab_switcher.clone())
+            } else {
+              this
+            }
+          })
+          .when(self.rename_dialog.is_some(), |this| {
+            if let Some(rename_dialog) = &self.rename_dialog {
+              this.child(rename_dialog.clone())
             } else {
               this
             }

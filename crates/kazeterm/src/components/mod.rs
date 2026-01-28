@@ -3,6 +3,7 @@ mod main_window;
 mod search_bar;
 mod shell_icon;
 mod tab_button;
+mod tab_rename_dialog;
 mod tab_switcher;
 mod terminal_window;
 
