@@ -5,6 +5,17 @@ use std::path::PathBuf;
 pub mod palette;
 pub use palette::Palette;
 
+mod shell;
+pub use shell::{DetectedShell, detect_shells, get_default_shell};
+
+mod theme;
+pub use theme::{
+  EmbeddedThemeLister, EmbeddedThemeLoader, ThemeColors, ThemeFile, ThemeMode,
+  get_custom_themes_path, list_available_themes, load_theme, load_theme_from_assets,
+  parse_hex_color, parse_theme_content, register_embedded_theme_lister,
+  register_embedded_theme_loader, set_custom_themes_path,
+};
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
   pub name: String,
@@ -12,91 +23,14 @@ pub struct Profile {
   pub working_directory: Option<String>,
 }
 
-/// Theme color configuration from TOML file
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(default)]
-pub struct ThemeColorsConfig {
-  // Terminal colors
-  pub terminal_background: Option<String>,
-  pub terminal_foreground: Option<String>,
-  pub terminal_cursor: Option<String>,
-  pub terminal_ansi_black: Option<String>,
-  pub terminal_ansi_red: Option<String>,
-  pub terminal_ansi_green: Option<String>,
-  pub terminal_ansi_yellow: Option<String>,
-  pub terminal_ansi_blue: Option<String>,
-  pub terminal_ansi_magenta: Option<String>,
-  pub terminal_ansi_cyan: Option<String>,
-  pub terminal_ansi_white: Option<String>,
-  pub terminal_ansi_bright_black: Option<String>,
-  pub terminal_ansi_bright_red: Option<String>,
-  pub terminal_ansi_bright_green: Option<String>,
-  pub terminal_ansi_bright_yellow: Option<String>,
-  pub terminal_ansi_bright_blue: Option<String>,
-  pub terminal_ansi_bright_magenta: Option<String>,
-  pub terminal_ansi_bright_cyan: Option<String>,
-  pub terminal_ansi_bright_white: Option<String>,
-  // UI colors
-  pub background: Option<String>,
-  pub surface_background: Option<String>,
-  pub text: Option<String>,
-  pub text_muted: Option<String>,
-  pub border: Option<String>,
-  pub tab_active_background: Option<String>,
-  pub tab_inactive_background: Option<String>,
-  pub title_bar_background: Option<String>,
-}
-
-impl Default for ThemeColorsConfig {
-  fn default() -> Self {
-    let palette = Palette::default();
-    ThemeColorsConfig {
-      terminal_background: Some(to_hex_string(&palette.terminal_background.to_rgb())),
-      terminal_foreground: Some(to_hex_string(&palette.terminal_foreground.to_rgb())),
-      terminal_cursor: Some(to_hex_string(&palette.terminal_cursor.to_rgb())),
-      terminal_ansi_black: Some(to_hex_string(&palette.terminal_ansi_black.to_rgb())),
-      terminal_ansi_red: Some(to_hex_string(&palette.terminal_ansi_red.to_rgb())),
-      terminal_ansi_green: Some(to_hex_string(&palette.terminal_ansi_green.to_rgb())),
-      terminal_ansi_yellow: Some(to_hex_string(&palette.terminal_ansi_yellow.to_rgb())),
-      terminal_ansi_blue: Some(to_hex_string(&palette.terminal_ansi_blue.to_rgb())),
-      terminal_ansi_magenta: Some(to_hex_string(&palette.terminal_ansi_magenta.to_rgb())),
-      terminal_ansi_cyan: Some(to_hex_string(&palette.terminal_ansi_cyan.to_rgb())),
-      terminal_ansi_white: Some(to_hex_string(&palette.terminal_ansi_white.to_rgb())),
-      terminal_ansi_bright_black: Some(to_hex_string(&palette.terminal_ansi_bright_black.to_rgb())),
-      terminal_ansi_bright_red: Some(to_hex_string(&palette.terminal_ansi_bright_red.to_rgb())),
-      terminal_ansi_bright_green: Some(to_hex_string(&palette.terminal_ansi_bright_green.to_rgb())),
-      terminal_ansi_bright_yellow: Some(to_hex_string(&palette.terminal_ansi_bright_yellow.to_rgb())),
-      terminal_ansi_bright_blue: Some(to_hex_string(&palette.terminal_ansi_bright_blue.to_rgb())),
-      terminal_ansi_bright_magenta: Some(to_hex_string(&palette.terminal_ansi_bright_magenta.to_rgb())),
-      terminal_ansi_bright_cyan: Some(to_hex_string(&palette.terminal_ansi_bright_cyan.to_rgb())),
-      terminal_ansi_bright_white: Some(to_hex_string(&palette.terminal_ansi_bright_white.to_rgb())),
-      background: Some(to_hex_string(&palette.background.to_rgb())),
-      surface_background: Some(to_hex_string(&palette.surface_background.to_rgb())),
-      text: Some(to_hex_string(&palette.text.to_rgb())),
-      text_muted: Some(to_hex_string(&palette.text_muted.to_rgb())),
-      border: Some(to_hex_string(&palette.border.to_rgb())),
-      tab_active_background: Some(to_hex_string(&palette.tab_active_background.to_rgb())),
-      tab_inactive_background: Some(to_hex_string(&palette.tab_inactive_background.to_rgb())),
-      title_bar_background: Some(to_hex_string(&palette.title_bar_background.to_rgb())),
-    }
-  }
-}
-/// Theme configuration from TOML file
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(default)]
-pub struct ThemeConfig {
-  pub name: Option<String>,
-  #[serde(default)]
-  pub colors: ThemeColorsConfig,
-  pub minimum_contrast: Option<f32>,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
   pub theme: String,
-  #[serde(default)]
-  pub theme_config: ThemeConfig,
+  pub theme_mode: ThemeMode,
+  /// Custom themes directory path
+  /// Themes in this directory take priority over embedded themes
+  pub themes_path: Option<String>,
   pub default_profile: Option<String>,
   #[serde(default)]
   pub profiles: Vec<Profile>,
@@ -111,8 +45,9 @@ pub struct Config {
 impl Default for Config {
   fn default() -> Self {
     Self {
-      theme: "one dark".to_string(),
-      theme_config: ThemeConfig::default(),
+      theme: "one_dark".to_string(),
+      theme_mode: ThemeMode::default(),
+      themes_path: None,
       default_profile: None,
       profiles: default_profiles(),
       font_size: 18.0,
@@ -129,49 +64,25 @@ impl Default for Config {
 }
 
 fn default_profiles() -> Vec<Profile> {
-  match std::env::consts::OS {
-    "windows" => vec![
-      Profile {
-        name: "PowerShell".to_string(),
-        shell: "powershell.exe".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Command Prompt".to_string(),
-        shell: "cmd.exe".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Pwsh 7".to_string(),
-        shell: "pwsh.exe".to_string(),
-        working_directory: None,
-      },
-    ],
-    "macos" => vec![
-      Profile {
-        name: "Zsh".to_string(),
-        shell: "zsh".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Bash".to_string(),
-        shell: "bash".to_string(),
-        working_directory: None,
-      },
-    ],
-    _ => vec![
-      Profile {
-        name: "sh".to_string(),
-        shell: "sh".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Bash".to_string(),
-        shell: "bash".to_string(),
-        working_directory: None,
-      },
-    ],
+  let detected = shell::detect_shells();
+
+  if detected.is_empty() {
+    // Fallback if no shells detected (should be rare)
+    return vec![Profile {
+      name: "Shell".to_string(),
+      shell: shell::fallback_shell(),
+      working_directory: None,
+    }];
   }
+
+  detected
+    .into_iter()
+    .map(|s| Profile {
+      name: s.name,
+      shell: s.command,
+      working_directory: None,
+    })
+    .collect()
 }
 
 impl Config {
@@ -183,22 +94,22 @@ impl Config {
       {
         // Create default config file
         if let Err(e) = Self::create_default_config(&config_path) {
-          eprintln!("Failed to create default config: {}", e);
+          tracing::error!("Failed to create default config: {}", e);
           return Self::default();
         } else {
-          eprintln!("Created default config at: {}", config_path.display());
+          tracing::info!("Created default config at: {}", config_path.display());
         }
       }
     }
 
     match Self::load_from_path(&config_path) {
       Ok(config) => {
-        eprintln!("Loaded config from: {}", config_path.display());
-        dbg!("Config: {:?}", config.clone());
+        tracing::info!("Loaded config from: {}", config_path.display());
+        tracing::debug!("Config: {:?}", config);
         return config;
       }
       Err(e) => {
-        eprintln!(
+        tracing::error!(
           "Failed to load config from {}: {}",
           config_path.display(),
           e
@@ -206,7 +117,7 @@ impl Config {
       }
     }
 
-    eprintln!("Using default config");
+    tracing::info!("Using default config");
     Self::default()
   }
 
@@ -267,11 +178,8 @@ impl Config {
       .get_default_profile()
       .map(|p| p.shell.clone())
       .unwrap_or_else(|| {
-        std::env::var("SHELL").unwrap_or_else(|_| match std::env::consts::OS {
-          "windows" => "powershell.exe".to_string(),
-          "macos" => "zsh".to_string(),
-          _ => "bash".to_string(),
-        })
+        // Try to get the first detected shell, or fall back to platform default
+        shell::get_default_shell().unwrap_or_else(shell::fallback_shell)
       })
   }
 
@@ -281,12 +189,12 @@ impl Config {
     }
 
     if let Some(ref default_name) = self.default_profile {
-      dbg!("Looking for default profile: {}", default_name);
+      tracing::debug!("Looking for default profile: {}", default_name);
       if let Some(profile) = self.profiles.iter().find(|p| &p.name == default_name) {
         return Some(profile);
       }
     } else {
-      eprintln!("not found default profile");
+      tracing::warn!("not found default profile");
     }
 
     self.profiles.first()
@@ -358,8 +266,9 @@ mod tests {
     ];
 
     let config = Config {
-      theme: "one dark".into(),
-      theme_config: ThemeConfig::default(),
+      theme: "one_dark".into(),
+      theme_mode: ThemeMode::Dark,
+      themes_path: None,
       default_profile: Some("two".into()),
       profiles: profiles.clone(),
       font_size: 12.0,
@@ -381,30 +290,14 @@ mod tests {
     assert_eq!(config.get_default_profile().unwrap().name, "two");
 
     // get_shell_for_profile
-    assert_eq!(config.get_shell_for_profile("two").unwrap(), "bash".to_string());
+    assert_eq!(
+      config.get_shell_for_profile("two").unwrap(),
+      "bash".to_string()
+    );
     assert!(config.get_shell_for_profile("missing").is_none());
 
     // get_profile_names preserves order
     let names = config.get_profile_names();
     assert_eq!(names, vec!["one", "two"]);
-  }
-
-  #[test]
-  fn theme_colors_config_default_populates_all_fields() {
-    let cfg = ThemeColorsConfig::default();
-    // Ensure none of the fields are left as None
-    assert!(cfg.terminal_background.is_some());
-    assert!(cfg.terminal_foreground.is_some());
-    assert!(cfg.terminal_cursor.is_some());
-    assert!(cfg.terminal_ansi_black.is_some());
-    assert!(cfg.terminal_ansi_bright_white.is_some());
-    assert!(cfg.background.is_some());
-    assert!(cfg.surface_background.is_some());
-    assert!(cfg.text.is_some());
-    assert!(cfg.text_muted.is_some());
-    assert!(cfg.border.is_some());
-    assert!(cfg.tab_active_background.is_some());
-    assert!(cfg.tab_inactive_background.is_some());
-    assert!(cfg.title_bar_background.is_some());
   }
 }

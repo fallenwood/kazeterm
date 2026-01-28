@@ -76,6 +76,8 @@ pub struct Terminal {
   pub scroll_px: Pixels,
   pub title_text: String,
   pub next_link_id: usize,
+  /// Timestamp of last process change, used to ignore shell title updates immediately after
+  pub process_changed_at: Option<std::time::Instant>,
 }
 
 impl Terminal {
@@ -100,6 +102,7 @@ impl Terminal {
       scroll_px: px(0.),
       title_text: "".to_string(),
       next_link_id: 0,
+      process_changed_at: None,
     };
   }
   pub fn last_content(&self) -> &TerminalContent {
@@ -212,17 +215,52 @@ impl Terminal {
   pub fn process_event(&mut self, event: AlacTermEvent, cx: &mut Context<Self>) {
     match event {
       AlacTermEvent::Title(title) => {
-        dbg!("Terminal title changed to: {}", title.clone());
+        tracing::debug!(
+          "Terminal title changed to: '{}', current pty_info: {:?}",
+          title,
+          self.pty_info.current
+        );
 
-        self.title_text = title;
+        // Ignore shell title updates that come immediately after a process change
+        // (e.g., bash's PROMPT_COMMAND setting title right after we switch back to bash)
+        const PROCESS_CHANGE_GRACE_PERIOD: std::time::Duration =
+          std::time::Duration::from_millis(100);
+        if let Some(changed_at) = self.process_changed_at {
+          if changed_at.elapsed() < PROCESS_CHANGE_GRACE_PERIOD {
+            tracing::debug!(
+              "Ignoring title update '{}' within grace period after process change",
+              title
+            );
+            return;
+          }
+        }
+
+        if title.is_empty() {
+          // Fall back to current process name when title is empty
+          if let Some(name) = self.pty_info.current_process_name() {
+            tracing::debug!("Empty title, falling back to process name: '{}'", name);
+            self.title_text = name;
+          } else {
+            tracing::debug!("Empty title, but no process name available");
+          }
+        } else {
+          self.title_text = title;
+        }
         cx.emit(Event::TitleChanged);
       }
       AlacTermEvent::ResetTitle => {
-        dbg!("Terminal title reset");
+        tracing::debug!(
+          "Terminal title reset, current pty_info: {:?}",
+          self.pty_info.current
+        );
 
-        // if let Some(info) = self.pty_info.current.clone() {
-        //   self.title_text = info.name;
-        // }
+        // Reset to current process name
+        if let Some(name) = self.pty_info.current_process_name() {
+          tracing::debug!("Reset title to process name: '{}'", name);
+          self.title_text = name;
+        } else {
+          tracing::debug!("Reset title, but no process name available");
+        }
         cx.emit(Event::TitleChanged);
       }
       AlacTermEvent::ClipboardStore(_, data) => {
@@ -251,7 +289,7 @@ impl Terminal {
         cx.emit(Event::Bell);
       }
       AlacTermEvent::Exit => {
-        eprintln!("Terminal child exited");
+        tracing::info!("Terminal child exited");
         self.register_task_finished(None, cx);
       }
       AlacTermEvent::MouseCursorDirty => {
@@ -261,7 +299,19 @@ impl Terminal {
         cx.emit(Event::Wakeup);
 
         if self.pty_info.has_changed() {
-          cx.emit(Event::TitleChanged);
+          // Update title to current process name when foreground process changes
+          if let Some(info) = &self.pty_info.current {
+            tracing::debug!(
+              "Process changed, updating title to: '{}' (was: '{}')",
+              info.name,
+              self.title_text
+            );
+            self.title_text = info.name.clone();
+            // Record when process changed so we can ignore shell title updates
+            // that arrive shortly after (e.g., bash's PROMPT_COMMAND)
+            self.process_changed_at = Some(std::time::Instant::now());
+            cx.emit(Event::TitleChanged);
+          }
         }
       }
       AlacTermEvent::ColorRequest(index, format) => {
@@ -355,8 +405,6 @@ impl Terminal {
         term.scroll_to_point(*point);
       }
       InternalEvent::FindHyperlink(position, open) => {
-        dbg!("Finding hyperlink at position: position={position:?}, open={open:?}");
-
         let point = crate::mappings::mouse::grid_point(
           *position,
           self.last_content.terminal_bounds,

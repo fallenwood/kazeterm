@@ -17,6 +17,7 @@ smallvec.workspace = true
 libc.workspace = true
 url.workspace = true
 urlencoding.workspace = true
+tracing.workspace = true
 
 config = { path = "../config" }
 themeing = { path = "../themeing" }

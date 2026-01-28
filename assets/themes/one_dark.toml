@@ -1,0 +1,44 @@
+# One Dark Theme for Kazeterm
+name = "One Dark"
+
+[dark]
+# Core colors
+background = "#282C33"
+foreground = "#DCE0E5"
+accent = "#74ADE8"
+border = "#464B57"
+
+# ANSI colors (bright/dim variants auto-derived)
+black = "#282C33"
+red = "#D07277"
+green = "#A1C181"
+yellow = "#DEC184"
+blue = "#74ADE8"
+magenta = "#B477CF"
+cyan = "#6EB4BF"
+white = "#DCE0E5"
+
+# Optional: explicit bright variants
+bright_black = "#525561"
+bright_white = "#FAFAFA"
+
+[light]
+# Core colors
+background = "#FAFAFA"
+foreground = "#383A42"
+accent = "#4078F2"
+border = "#D3D3D3"
+
+# ANSI colors
+black = "#383A42"
+red = "#E45649"
+green = "#50A14F"
+yellow = "#C18401"
+blue = "#4078F2"
+magenta = "#A626A4"
+cyan = "#0184BC"
+white = "#FAFAFA"
+
+# Optional: explicit bright variants
+bright_black = "#696C77"
+bright_white = "#FFFFFF"

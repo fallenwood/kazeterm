@@ -400,7 +400,7 @@ impl TerminalView {
 
     let handled = self.terminal.update(cx, |term, _cx| {
       let handled = term.try_keystroke(&event.keystroke, false);
-      dbg!("key {:?} handled: {}", event.keystroke.clone(), handled);
+      tracing::trace!("key {:?} handled: {}", event.keystroke, handled);
       handled
     });
 
@@ -524,7 +524,8 @@ fn subscribe_for_terminal_events(
           .zip(terminal.read(cx).last_content.last_hovered_word.as_ref())
         {
           Some((url, hovered_word)) => {
-            if Some(hovered_word) != terminal_view
+            if Some(hovered_word)
+              != terminal_view
                 .hover
                 .as_ref()
                 .map(|hover| &hover.hovered_word)

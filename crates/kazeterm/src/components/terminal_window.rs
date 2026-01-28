@@ -10,7 +10,8 @@ use crate::components::MainWindow;
 
 fn new_terminal(
   shell: String,
-  working_directory: Option<PathBuf>) -> (
+  working_directory: Option<PathBuf>,
+) -> (
   terminal::Terminal,
   futures::channel::mpsc::UnboundedReceiver<alacritty_terminal::event::Event>,
 ) {
@@ -84,8 +85,8 @@ pub fn new_terminal_window_with_shell(
   cx.spawn(async move |_, cx| {
     while let Some(event) = events_rx.next().await {
       match event {
-        alacritty_terminal::event::Event::Wakeup => {},
-        _ => println!("Event: {:?}", event),
+        alacritty_terminal::event::Event::Wakeup => {}
+        _ => tracing::trace!("Event: {:?}", event),
       };
 
       let terminal = match weak_terminal.upgrade() {

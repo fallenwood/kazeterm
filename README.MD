@@ -1,71 +1,68 @@
-Kaze Term
----
+# Kaze Term
 
-# !! [Under development]
+## Under development
 
-A lightweight cross-platform terminal app based on alacritty, inspired by windows terminal
+A lightweight cross-platform terminal app based on Alacritty, inspired by Windows Terminal.
 
-# Screenshot
+## Screenshot
 
-![screenshot1](./assets/screenshots/screenshot1.avif "")
+![screenshot1](./assets/screenshots/screenshot1.avif "Screenshot")
 
-# How to build
+## How to Build
 
-## Environment Setup
+### Environment Setup
 
-### Windows
+#### Windows
 
-msvc target is needed
+MSVC target is required.
 
-### Fedora
+#### Fedora
 
 ```
 dnf install -y \
   clang \
-  mold \
   llvm \
   libxcb-devel \
   libxkbcommon-devel \
   libxkbcommon-x11-devel
 ```
 
-### Ubuntu
+#### Ubuntu
 
 ```
 apt install -y \
   clang \
-  mold \
   llvm \
   libxcb1-dev \
   libxkbcommon-dev \
   libxkbcommon-x11-dev
 ```
 
-### macOS
-No special requirements needed
+#### macOS
+No special requirements are needed.
 
-## Run Build Commands
+### Run Build Commands
 
-For debug build, run
+For debug build, run:
 
 ```
 cargo build
 ```
 
-For release build, run
+For release build, run:
 
 ```
 cargo build --release
 ```
 
-On windows the debug symbols is store in pdb files, and on linux it's in the binary.
-To strip the symbols from binary, run
+On Windows, debug symbols are stored in PDB files, and on Linux they are in the binary.
+To strip symbols from the binary, run:
 
 ```
 llvm-objcopy --strip-all ./target/release/kazeterm
 ```
 
-# Testing & Coverage
+## Testing and Coverage
 
 Run all unit tests:
 
@@ -81,8 +78,8 @@ cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.inf
 
 This produces `coverage/lcov.info`.
 
-# LICENSE
+## License
 
-- As some code picked from Zed, the code inhrients Zed's LICENSE of GPL-v3
+- Some code is derived from Zed; this code inherits Zed's GPL-v3 license.
 
-- The bundled Cascadia Code fonts follows SIL OPEN FONT LICENSE
+- The bundled Cascadia Code fonts follow the SIL Open Font License.

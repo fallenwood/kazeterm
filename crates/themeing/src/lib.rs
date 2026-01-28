@@ -239,6 +239,7 @@ impl SettingsStore {
       theme.magenta = colors.terminal_ansi_magenta;
       theme.magenta_light = colors.terminal_ansi_bright_magenta;
 
+      theme.primary = colors.text_accent;
       theme.primary_hover = colors.element_hover;
       theme.primary_active = colors.element_active;
 
@@ -250,9 +251,36 @@ impl SettingsStore {
       theme.tab_active_foreground = colors.text;
       theme.tab_foreground = colors.text;
 
-      theme.input = colors.background;
+      // Input styling
+      theme.input = colors.surface_background;
 
+      // Border colors
       theme.border = colors.border;
+
+      // Background and foreground
+      theme.background = colors.background;
+      theme.foreground = colors.text;
+      theme.muted = colors.text_muted;
+      theme.muted_foreground = colors.text_muted;
+
+      // Popup/dropdown menu styling
+      theme.popover = colors.elevated_surface_background;
+      theme.popover_foreground = colors.text;
+
+      // List styling (for dropdown items, menus)
+      theme.list = colors.elevated_surface_background;
+      theme.list_active = colors.element_selected;
+      theme.list_active_border = colors.border_focused;
+      theme.list_hover = colors.element_hover;
+
+      // Secondary colors
+      theme.secondary = colors.element_background;
+      theme.secondary_hover = colors.element_hover;
+      theme.secondary_active = colors.element_active;
+      theme.secondary_foreground = colors.text;
+
+      // Selection
+      theme.selection = colors.element_selection_background;
 
       let config = app.global::<config::Config>();
       theme.font_family = config.ui_font_family.clone().into();
@@ -328,13 +356,28 @@ mod tests {
     let colors = theme.colors();
 
     // Named
-    assert_eq!(convert_color(&Color::Named(NamedColor::Red), &theme), colors.terminal_ansi_red);
-    assert_eq!(convert_color(&Color::Named(NamedColor::BrightBlue), &theme), colors.terminal_ansi_bright_blue);
-    assert_eq!(convert_color(&Color::Named(NamedColor::Cursor), &theme), colors.terminal_cursor);
+    assert_eq!(
+      convert_color(&Color::Named(NamedColor::Red), &theme),
+      colors.terminal_ansi_red
+    );
+    assert_eq!(
+      convert_color(&Color::Named(NamedColor::BrightBlue), &theme),
+      colors.terminal_ansi_bright_blue
+    );
+    assert_eq!(
+      convert_color(&Color::Named(NamedColor::Cursor), &theme),
+      colors.terminal_cursor
+    );
 
     // Indexed
-    assert_eq!(convert_color(&Color::Indexed(0), &theme), colors.terminal_ansi_black);
-    assert_eq!(convert_color(&Color::Indexed(9), &theme), colors.terminal_ansi_bright_red);
+    assert_eq!(
+      convert_color(&Color::Indexed(0), &theme),
+      colors.terminal_ansi_black
+    );
+    assert_eq!(
+      convert_color(&Color::Indexed(9), &theme),
+      colors.terminal_ansi_bright_red
+    );
 
     // 6x6x6 cube
     let c = convert_color(&Color::Indexed(16 + 36 * 1 + 6 * 2 + 3), &theme);
@@ -342,7 +385,14 @@ mod tests {
     assert_rgb(c, 95, 135, 175);
 
     // Spec
-    let spec = convert_color(&Color::Spec(Rgb { r: 10, g: 20, b: 30 }), &theme);
+    let spec = convert_color(
+      &Color::Spec(Rgb {
+        r: 10,
+        g: 20,
+        b: 30,
+      }),
+      &theme,
+    );
     assert_rgb(spec, 10, 20, 30);
   }
 }

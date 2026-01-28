@@ -576,7 +576,7 @@ impl Element for TerminalElement {
         let font_weight = FontWeight::NORMAL;
         let font_features = FontFeatures::default();
 
-        let minimum_contrast = config.theme_config.minimum_contrast.unwrap_or(45.0);
+        let minimum_contrast = 45.0;
 
         let theme = cx.theme().clone();
 

@@ -112,7 +112,8 @@ impl PtyProcessInfo {
     let pid = self.pid_getter.pid()?;
     if self
       .system
-      .refresh_processes_specifics(sysinfo::ProcessesToUpdate::Some(&[pid]), self.refresh_kind) == 1
+      .refresh_processes_specifics(sysinfo::ProcessesToUpdate::Some(&[pid]), self.refresh_kind)
+      == 1
     {
       self.system.process(pid)
     } else {
@@ -133,22 +134,30 @@ impl PtyProcessInfo {
         .filter_map(|s| s.to_str().map(ToOwned::to_owned))
         .collect(),
     };
-    self.current = Some(info.clone());
     Some(info)
   }
 
   /// Updates the cached process info, returns whether the Zed-relevant info has changed
   pub fn has_changed(&mut self) -> bool {
-    let current = self.load();
-    let has_changed = match (self.current.as_ref(), current.as_ref()) {
+    let new_info = self.load();
+    let has_changed = match (&self.current, &new_info) {
       (None, None) => false,
       (Some(prev), Some(now)) => prev.cwd != now.cwd || prev.name != now.name,
       _ => true,
     };
     if has_changed {
-      self.current = current;
+      self.current = new_info;
     }
     has_changed
+  }
+
+  /// Refreshes and returns the current process name
+  pub fn current_process_name(&mut self) -> Option<String> {
+    let info = self.load();
+    if info.is_some() {
+      self.current = info.clone();
+    }
+    info.map(|i| i.name)
   }
 
   pub fn pid(&self) -> Option<Pid> {

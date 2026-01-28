@@ -1,30 +1,33 @@
+mod apca_contrast;
+mod background_region;
+mod batched_text_run;
+mod cursor_layout;
+mod highlighted_range_line;
+mod hover_target;
+mod ime_state;
+mod indexed_cell;
+mod layout_rect;
+mod mappings;
+mod mouse;
+mod pty_info;
 mod terminal;
 mod terminal_bounds;
-mod terminal_view;
-mod indexed_cell;
-mod terminal_element;
-mod batched_text_run;
-mod layout_rect;
-mod background_region;
 mod terminal_content;
-mod hover_target;
-mod terminal_input_handler;
-mod cursor_layout;
-mod ime_state;
-mod pty_info;
-mod highlighted_range_line;
-mod mouse;
-mod mappings;
-mod apca_contrast;
+mod terminal_element;
 mod terminal_hyperlinks;
+mod terminal_input_handler;
+mod terminal_view;
 
-pub use terminal::{Terminal, TerminalEventListener, SelectionPhase};
-pub use terminal_view::{TerminalView, TerminalEvent};
-pub use terminal_bounds::TerminalBounds;
 pub use pty_info::PtyProcessInfo;
+pub use terminal::{SelectionPhase, Terminal, TerminalEventListener};
+pub use terminal_bounds::TerminalBounds;
+pub use terminal_view::{TerminalEvent, TerminalView};
 
 use gpui::{App, KeyBinding};
-use terminal_view::{Copy, Paste, ScrollPageDown, ScrollPageUp, SendPageDown, SendPageUp, SendTab, SendTabPrev, ZoomIn, ZoomOut, ZoomReset};
+use terminal_view::{
+  Copy, Paste, ScrollPageDown, ScrollPageUp, SendPageDown, SendPageUp, SendTab, SendTabPrev,
+  ZoomIn, ZoomOut, ZoomReset,
+};
 
 pub fn init(cx: &mut App) {
   // Initialize ZoomState global
@@ -40,7 +43,11 @@ pub fn init(cx: &mut App) {
     KeyBinding::new("pagedown", SendPageDown, Some("Terminal && screen == alt")),
     // In normal mode, scroll the scrollback buffer
     KeyBinding::new("pageup", ScrollPageUp, Some("Terminal && screen == normal")),
-    KeyBinding::new("pagedown", ScrollPageDown, Some("Terminal && screen == normal")),
+    KeyBinding::new(
+      "pagedown",
+      ScrollPageDown,
+      Some("Terminal && screen == normal"),
+    ),
     KeyBinding::new("shift-pageup", ScrollPageUp, Some("Terminal")),
     KeyBinding::new("shift-pagedown", ScrollPageDown, Some("Terminal")),
     // Zoom in/out

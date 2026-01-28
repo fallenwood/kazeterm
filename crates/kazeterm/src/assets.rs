@@ -8,7 +8,31 @@ use std::borrow::Cow;
 #[folder = "../../assets"]
 #[include = "icons/**/*.svg"]
 #[include = "fonts/*.ttf"]
+#[include = "themes/*.toml"]
 pub struct Assets;
+
+impl Assets {
+  /// Get a theme file by name from embedded assets
+  /// Returns the raw TOML bytes if found
+  pub fn get_theme(name: &str) -> Option<Cow<'static, [u8]>> {
+    let path = format!("themes/{}.toml", name);
+    Self::get(&path).map(|f| f.data)
+  }
+
+  /// List all available embedded theme names
+  pub fn list_themes() -> Vec<String> {
+    Self::iter()
+      .filter(|p| p.starts_with("themes/") && p.ends_with(".toml"))
+      .map(|p| {
+        p.strip_prefix("themes/")
+          .unwrap_or(&p)
+          .strip_suffix(".toml")
+          .unwrap_or(&p)
+          .to_string()
+      })
+      .collect()
+  }
+}
 
 impl AssetSource for Assets {
   fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
@@ -46,4 +70,15 @@ impl Assets {
 
     cx.text_system().add_fonts(embedded_fonts)
   }
+}
+
+/// Wrapper function for embedded theme loader registration
+/// Returns Vec<u8> to match the EmbeddedThemeLoader type signature
+pub fn embedded_theme_loader(name: &str) -> Option<Vec<u8>> {
+  Assets::get_theme(name).map(|cow| cow.to_vec())
+}
+
+/// Wrapper function for embedded theme lister registration
+pub fn embedded_theme_lister() -> Vec<String> {
+  Assets::list_themes()
 }

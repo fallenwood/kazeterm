@@ -1,0 +1,60 @@
+# GitHub Theme for Kazeterm
+name = "GitHub"
+
+[dark]
+# Core colors - GitHub Dark
+background = "#0D1117"
+foreground = "#C9D1D9"
+accent = "#58A6FF"
+border = "#30363D"
+
+# ANSI colors
+black = "#484F58"
+red = "#FF7B72"
+green = "#3FB950"
+yellow = "#D29922"
+blue = "#58A6FF"
+magenta = "#BC8CFF"
+cyan = "#39C5CF"
+white = "#B1BAC4"
+
+# Bright variants
+bright_black = "#6E7681"
+bright_red = "#FFA198"
+bright_green = "#56D364"
+bright_yellow = "#E3B341"
+bright_blue = "#79C0FF"
+bright_magenta = "#D2A8FF"
+bright_cyan = "#56D4DD"
+bright_white = "#F0F6FC"
+
+cursor = "#58A6FF"
+
+[light]
+# Core colors - GitHub Light
+background = "#FFFFFF"
+foreground = "#24292F"
+accent = "#0969DA"
+border = "#D0D7DE"
+
+# ANSI colors
+black = "#24292F"
+red = "#CF222E"
+green = "#116329"
+yellow = "#4D2D00"
+blue = "#0969DA"
+magenta = "#8250DF"
+cyan = "#1B7C83"
+white = "#6E7781"
+
+# Bright variants
+bright_black = "#57606A"
+bright_red = "#A40E26"
+bright_green = "#1A7F37"
+bright_yellow = "#633C01"
+bright_blue = "#218BFF"
+bright_magenta = "#A475F9"
+bright_cyan = "#3192AA"
+bright_white = "#8C959F"
+
+cursor = "#0969DA"
