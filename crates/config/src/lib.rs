@@ -9,7 +9,12 @@ mod shell;
 pub use shell::{DetectedShell, detect_shells, get_default_shell};
 
 mod theme;
-pub use theme::{ThemeColors, ThemeFile, ThemeMode, load_theme, load_theme_from_assets};
+pub use theme::{
+  EmbeddedThemeLister, EmbeddedThemeLoader, ThemeColors, ThemeFile, ThemeMode,
+  get_custom_themes_path, list_available_themes, load_theme, load_theme_from_assets,
+  parse_hex_color, parse_theme_content, register_embedded_theme_lister,
+  register_embedded_theme_loader, set_custom_themes_path,
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
@@ -23,6 +28,9 @@ pub struct Profile {
 pub struct Config {
   pub theme: String,
   pub theme_mode: ThemeMode,
+  /// Custom themes directory path
+  /// Themes in this directory take priority over embedded themes
+  pub themes_path: Option<String>,
   pub default_profile: Option<String>,
   #[serde(default)]
   pub profiles: Vec<Profile>,
@@ -39,6 +47,7 @@ impl Default for Config {
     Self {
       theme: "one_dark".to_string(),
       theme_mode: ThemeMode::default(),
+      themes_path: None,
       default_profile: None,
       profiles: default_profiles(),
       font_size: 18.0,
@@ -259,6 +268,7 @@ mod tests {
     let config = Config {
       theme: "one_dark".into(),
       theme_mode: ThemeMode::Dark,
+      themes_path: None,
       default_profile: Some("two".into()),
       profiles: profiles.clone(),
       font_size: 12.0,
