@@ -191,7 +191,7 @@ pub fn detect_shells() -> Vec<DetectedShell> {
   for candidate in candidates {
     if shell_exists(candidate.command, candidate.paths) {
       // Avoid duplicating the $SHELL entry
-      let already_added = detected.iter().any(|d| {
+      let already_added = detected.iter().any(|d: &DetectedShell| {
         d.command == candidate.command || d.command.ends_with(&format!("/{}", candidate.command))
       });
 
