@@ -88,7 +88,89 @@ fn get_shell_candidates() -> Vec<ShellCandidate> {
       command: "wsl.exe",
       paths: &["C:\\Windows\\System32\\wsl.exe"],
     },
+    ShellCandidate {
+      name: "Nushell",
+      command: "nu.exe",
+      paths: &[],
+    },
   ]
+}
+
+/// Detect Visual Studio Developer Command Prompts on Windows.
+#[cfg(target_os = "windows")]
+fn detect_vs_dev_shells() -> Vec<DetectedShell> {
+  let mut shells = Vec::new();
+
+  // Common Visual Studio installation paths
+  // VS 2026 (v18) uses version number in path instead of year
+  let vs_paths = [
+    (
+      "Visual Studio 2026",
+      "C:\\Program Files\\Microsoft Visual Studio\\18",
+    ),
+    (
+      "Visual Studio 2022",
+      "C:\\Program Files\\Microsoft Visual Studio\\2022",
+    ),
+    (
+      "Visual Studio 2019",
+      "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019",
+    ),
+    (
+      "Visual Studio 2017",
+      "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017",
+    ),
+  ];
+
+  let editions = ["Enterprise", "Professional", "Community", "BuildTools"];
+
+  for (vs_name, base_path) in &vs_paths {
+    for edition in &editions {
+      let vcvars_path = format!(
+        "{}\\{}\\VC\\Auxiliary\\Build\\vcvars64.bat",
+        base_path, edition
+      );
+      if Path::new(&vcvars_path).exists() {
+        // Use cmd.exe with /k to initialize the VS environment
+        shells.push(DetectedShell {
+          name: format!("{} {} Developer Command Prompt", vs_name, edition),
+          command: format!("cmd.exe /k \"{}\"", vcvars_path),
+        });
+        // Also add x86 variant if available
+        let vcvars32_path = format!(
+          "{}\\{}\\VC\\Auxiliary\\Build\\vcvars32.bat",
+          base_path, edition
+        );
+        if Path::new(&vcvars32_path).exists() {
+          shells.push(DetectedShell {
+            name: format!("{} {} Developer Command Prompt (x86)", vs_name, edition),
+            command: format!("cmd.exe /k \"{}\"", vcvars32_path),
+          });
+        }
+      }
+    }
+  }
+
+  // Also check for Visual Studio Developer PowerShell
+  for (vs_name, base_path) in &vs_paths {
+    for edition in &editions {
+      let launch_devshell = format!(
+        "{}\\{}\\Common7\\Tools\\Launch-VsDevShell.ps1",
+        base_path, edition
+      );
+      if Path::new(&launch_devshell).exists() {
+        shells.push(DetectedShell {
+          name: format!("{} {} Developer PowerShell", vs_name, edition),
+          command: format!(
+            "powershell.exe -NoExit -Command \"& '{}'\"",
+            launch_devshell
+          ),
+        });
+      }
+    }
+  }
+
+  shells
 }
 
 /// Get shell candidates for macOS with priority ordering.
@@ -155,6 +237,123 @@ fn get_shell_candidates() -> Vec<ShellCandidate> {
   ]
 }
 
+/// Detect Linux containers (Docker, Podman, distrobox) that can be used as shell environments.
+/// This works on Linux and macOS where container runtimes are commonly available.
+#[cfg(unix)]
+fn detect_container_shells() -> Vec<DetectedShell> {
+  let mut shells = Vec::new();
+
+  // Detect Docker containers
+  if let Ok(output) = std::process::Command::new("docker")
+    .args(["ps", "--format", "{{.Names}}"])
+    .output()
+  {
+    if output.status.success() {
+      let containers = String::from_utf8_lossy(&output.stdout);
+      for container in containers.lines() {
+        let container = container.trim();
+        if !container.is_empty() {
+          shells.push(DetectedShell {
+            name: format!("Docker: {}", container),
+            command: format!("docker exec -it {} /bin/sh", container),
+          });
+        }
+      }
+    }
+  }
+
+  // Detect Podman containers
+  if let Ok(output) = std::process::Command::new("podman")
+    .args(["ps", "--format", "{{.Names}}"])
+    .output()
+  {
+    if output.status.success() {
+      let containers = String::from_utf8_lossy(&output.stdout);
+      for container in containers.lines() {
+        let container = container.trim();
+        if !container.is_empty() {
+          shells.push(DetectedShell {
+            name: format!("Podman: {}", container),
+            command: format!("podman exec -it {} /bin/sh", container),
+          });
+        }
+      }
+    }
+  }
+
+  // Detect distrobox containers
+  if let Ok(output) = std::process::Command::new("distrobox")
+    .args(["list", "--no-color"])
+    .output()
+  {
+    if output.status.success() {
+      let containers = String::from_utf8_lossy(&output.stdout);
+      for line in containers.lines().skip(1) {
+        // Skip header line
+        // distrobox list format: ID | NAME | STATUS | IMAGE
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() >= 2 {
+          let container_name = parts[1].trim();
+          if !container_name.is_empty() && container_name != "NAME" {
+            shells.push(DetectedShell {
+              name: format!("Distrobox: {}", container_name),
+              command: format!("distrobox enter {}", container_name),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  shells
+}
+
+/// Detect Linux containers on Windows (via Docker Desktop or WSL).
+#[cfg(target_os = "windows")]
+fn detect_container_shells() -> Vec<DetectedShell> {
+  let mut shells = Vec::new();
+
+  // Detect Docker containers (Docker Desktop on Windows)
+  if let Ok(output) = std::process::Command::new("docker")
+    .args(["ps", "--format", "{{.Names}}"])
+    .output()
+  {
+    if output.status.success() {
+      let containers = String::from_utf8_lossy(&output.stdout);
+      for container in containers.lines() {
+        let container = container.trim();
+        if !container.is_empty() {
+          shells.push(DetectedShell {
+            name: format!("Docker: {}", container),
+            command: format!("docker exec -it {} /bin/sh", container),
+          });
+        }
+      }
+    }
+  }
+
+  // Detect Podman containers (Podman Desktop on Windows)
+  if let Ok(output) = std::process::Command::new("podman")
+    .args(["ps", "--format", "{{.Names}}"])
+    .output()
+  {
+    if output.status.success() {
+      let containers = String::from_utf8_lossy(&output.stdout);
+      for container in containers.lines() {
+        let container = container.trim();
+        if !container.is_empty() {
+          shells.push(DetectedShell {
+            name: format!("Podman: {}", container),
+            command: format!("podman exec -it {} /bin/sh", container),
+          });
+        }
+      }
+    }
+  }
+
+  shells
+}
+
 /// Detect all available shells on the system, ordered by priority.
 pub fn detect_shells() -> Vec<DetectedShell> {
   let candidates = get_shell_candidates();
@@ -203,6 +402,15 @@ pub fn detect_shells() -> Vec<DetectedShell> {
       }
     }
   }
+
+  // Add Visual Studio Developer Command Prompts on Windows
+  #[cfg(target_os = "windows")]
+  {
+    detected.extend(detect_vs_dev_shells());
+  }
+
+  // Add container shells (Docker, Podman, distrobox)
+  detected.extend(detect_container_shells());
 
   detected
 }
