@@ -5,6 +5,9 @@ use std::path::PathBuf;
 pub mod palette;
 pub use palette::Palette;
 
+mod shell;
+pub use shell::{DetectedShell, detect_shells, get_default_shell};
+
 mod theme;
 pub use theme::{ThemeColors, ThemeFile, ThemeMode, load_theme, load_theme_from_assets};
 
@@ -52,49 +55,25 @@ impl Default for Config {
 }
 
 fn default_profiles() -> Vec<Profile> {
-  match std::env::consts::OS {
-    "windows" => vec![
-      Profile {
-        name: "PowerShell".to_string(),
-        shell: "powershell.exe".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Command Prompt".to_string(),
-        shell: "cmd.exe".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Pwsh 7".to_string(),
-        shell: "pwsh.exe".to_string(),
-        working_directory: None,
-      },
-    ],
-    "macos" => vec![
-      Profile {
-        name: "Zsh".to_string(),
-        shell: "zsh".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Bash".to_string(),
-        shell: "bash".to_string(),
-        working_directory: None,
-      },
-    ],
-    _ => vec![
-      Profile {
-        name: "sh".to_string(),
-        shell: "sh".to_string(),
-        working_directory: None,
-      },
-      Profile {
-        name: "Bash".to_string(),
-        shell: "bash".to_string(),
-        working_directory: None,
-      },
-    ],
+  let detected = shell::detect_shells();
+
+  if detected.is_empty() {
+    // Fallback if no shells detected (should be rare)
+    return vec![Profile {
+      name: "Shell".to_string(),
+      shell: shell::fallback_shell(),
+      working_directory: None,
+    }];
   }
+
+  detected
+    .into_iter()
+    .map(|s| Profile {
+      name: s.name,
+      shell: s.command,
+      working_directory: None,
+    })
+    .collect()
 }
 
 impl Config {
@@ -190,11 +169,8 @@ impl Config {
       .get_default_profile()
       .map(|p| p.shell.clone())
       .unwrap_or_else(|| {
-        std::env::var("SHELL").unwrap_or_else(|_| match std::env::consts::OS {
-          "windows" => "powershell.exe".to_string(),
-          "macos" => "zsh".to_string(),
-          _ => "bash".to_string(),
-        })
+        // Try to get the first detected shell, or fall back to platform default
+        shell::get_default_shell().unwrap_or_else(shell::fallback_shell)
       })
   }
 
