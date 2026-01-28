@@ -102,7 +102,12 @@ fn detect_vs_dev_shells() -> Vec<DetectedShell> {
   let mut shells = Vec::new();
 
   // Common Visual Studio installation paths
+  // VS 2026 (v18) uses version number in path instead of year
   let vs_paths = [
+    (
+      "Visual Studio 2026",
+      "C:\\Program Files\\Microsoft Visual Studio\\18",
+    ),
     (
       "Visual Studio 2022",
       "C:\\Program Files\\Microsoft Visual Studio\\2022",
