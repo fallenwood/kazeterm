@@ -200,19 +200,8 @@ impl SplitPane {
   ) -> AnyElement {
     match self {
       SplitPane::Terminal { id, terminal } => {
-        let is_active = Some(*id) == active_pane_id;
-        let border_color = if is_active {
-          let setting_store = cx.global::<themeing::SettingsStore>();
-          let theme = setting_store.theme();
-          theme.colors().border_focused
-        } else {
-          gpui::transparent_black()
-        };
-
         div()
           .size_full()
-          .border_2()
-          .border_color(border_color)
           .child(terminal.clone())
           .into_any_element()
       }
