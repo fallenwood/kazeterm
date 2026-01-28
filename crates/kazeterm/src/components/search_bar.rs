@@ -376,12 +376,7 @@ impl Render for SearchBar {
                   })),
               ),
           )
-          .child(
-            div()
-              .h(px(16.))
-              .w(px(1.))
-              .bg(theme.border),
-          )
+          .child(div().h(px(16.)).w(px(1.)).bg(theme.border))
           .child(
             gpui_component::h_flex()
               .gap_0p5()

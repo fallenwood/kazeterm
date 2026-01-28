@@ -43,8 +43,7 @@ fn main() {
   // Initialize tracing
   tracing_subscriber::fmt()
     .with_env_filter(
-      tracing_subscriber::EnvFilter::from_default_env()
-        .add_directive(tracing::Level::INFO.into())
+      tracing_subscriber::EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()),
     )
     .init();
 
@@ -57,7 +56,10 @@ fn main() {
     gpui_component::init(cx);
     terminal::init(cx);
 
-    cx.set_global(crate::config::create_settings_store(&config, detect_system_dark_mode()));
+    cx.set_global(crate::config::create_settings_store(
+      &config,
+      detect_system_dark_mode(),
+    ));
     cx.set_global(config.clone());
 
     SettingsStore::init_gpui_component_theme(cx);
@@ -96,5 +98,3 @@ fn main() {
     .detach();
   });
 }
-
-

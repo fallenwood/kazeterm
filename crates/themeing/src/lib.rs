@@ -356,13 +356,28 @@ mod tests {
     let colors = theme.colors();
 
     // Named
-    assert_eq!(convert_color(&Color::Named(NamedColor::Red), &theme), colors.terminal_ansi_red);
-    assert_eq!(convert_color(&Color::Named(NamedColor::BrightBlue), &theme), colors.terminal_ansi_bright_blue);
-    assert_eq!(convert_color(&Color::Named(NamedColor::Cursor), &theme), colors.terminal_cursor);
+    assert_eq!(
+      convert_color(&Color::Named(NamedColor::Red), &theme),
+      colors.terminal_ansi_red
+    );
+    assert_eq!(
+      convert_color(&Color::Named(NamedColor::BrightBlue), &theme),
+      colors.terminal_ansi_bright_blue
+    );
+    assert_eq!(
+      convert_color(&Color::Named(NamedColor::Cursor), &theme),
+      colors.terminal_cursor
+    );
 
     // Indexed
-    assert_eq!(convert_color(&Color::Indexed(0), &theme), colors.terminal_ansi_black);
-    assert_eq!(convert_color(&Color::Indexed(9), &theme), colors.terminal_ansi_bright_red);
+    assert_eq!(
+      convert_color(&Color::Indexed(0), &theme),
+      colors.terminal_ansi_black
+    );
+    assert_eq!(
+      convert_color(&Color::Indexed(9), &theme),
+      colors.terminal_ansi_bright_red
+    );
 
     // 6x6x6 cube
     let c = convert_color(&Color::Indexed(16 + 36 * 1 + 6 * 2 + 3), &theme);
@@ -370,7 +385,14 @@ mod tests {
     assert_rgb(c, 95, 135, 175);
 
     // Spec
-    let spec = convert_color(&Color::Spec(Rgb { r: 10, g: 20, b: 30 }), &theme);
+    let spec = convert_color(
+      &Color::Spec(Rgb {
+        r: 10,
+        g: 20,
+        b: 30,
+      }),
+      &theme,
+    );
     assert_rgb(spec, 10, 20, 30);
   }
 }

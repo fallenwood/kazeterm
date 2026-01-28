@@ -75,7 +75,10 @@ mod tests {
   #[test]
   fn cannot_merge_different_colors_or_non_adjacent() {
     let color = Hsla::black();
-    let other_color = Hsla { a: color.a, ..Hsla::white() };
+    let other_color = Hsla {
+      a: color.a,
+      ..Hsla::white()
+    };
     let r1 = BackgroundRegion::new(0, 0, color);
     let r2 = BackgroundRegion::new(0, 2, color);
     let r3 = BackgroundRegion::new(0, 1, other_color);

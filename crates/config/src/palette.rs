@@ -291,8 +291,17 @@ mod tests {
   #[test]
   fn palette_defaults_match_expected_hex() {
     let palette = Palette::default();
-    assert_eq!(to_hex_string(&palette.terminal_background.to_rgb()), "#282C33FF");
-    assert_eq!(to_hex_string(&palette.terminal_foreground.to_rgb()), "#DCE0E5FF");
-    assert_eq!(to_hex_string(&palette.terminal_cursor.to_rgb()), "#74ADE8FF");
+    assert_eq!(
+      to_hex_string(&palette.terminal_background.to_rgb()),
+      "#282C33FF"
+    );
+    assert_eq!(
+      to_hex_string(&palette.terminal_foreground.to_rgb()),
+      "#DCE0E5FF"
+    );
+    assert_eq!(
+      to_hex_string(&palette.terminal_cursor.to_rgb()),
+      "#74ADE8FF"
+    );
   }
 }

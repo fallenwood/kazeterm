@@ -1,6 +1,4 @@
-use alacritty_terminal::
-  term::TermMode
-;
+use alacritty_terminal::term::TermMode;
 use gpui::{App, Bounds, Entity, InputHandler, Pixels, Point, UTF16Selection, Window};
 
 use crate::{Terminal, TerminalView};

@@ -19,6 +19,9 @@ use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
 use crate::components::tab_switcher::{TabSwitcher, TabSwitcherItem};
 
+/// Maximum width for tab labels before truncation
+const TAB_LABEL_MAX_WIDTH: f32 = 150.0;
+
 pub struct TabItem {
   index: usize,
   title: String,
@@ -194,20 +197,23 @@ impl MainWindow {
         // Check if Ctrl is still pressed (always true for now)
         let ctrl_pressed = true; // Can't reliably check on Wayland without X11 libs
 
-        let should_hide = cx.update(|_cx| {
-          if let Some(this) = this_weak.upgrade() {
-            let switcher_visible = this.read(_cx).tab_switcher_visible;
-            switcher_visible
-          } else {
-            false
-          }
-        }).unwrap_or(false);
+        let should_hide = cx
+          .update(|_cx| {
+            if let Some(this) = this_weak.upgrade() {
+              let switcher_visible = this.read(_cx).tab_switcher_visible;
+              switcher_visible
+            } else {
+              false
+            }
+          })
+          .unwrap_or(false);
 
         if !should_hide {
           break;
         }
       }
-    }).detach();
+    })
+    .detach();
   }
 
   fn hide_tab_switcher(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -499,7 +505,10 @@ impl Render for MainWindow {
             }
           };
           this.set_active_tab(next_ix, window, cx);
-        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "f" {
+        } else if e.keystroke.modifiers.shift
+          && e.keystroke.modifiers.control
+          && e.keystroke.key == "f"
+        {
           this.toggle_search(window, cx);
         } else if e.keystroke.key == "Escape" && this.search_visible {
           this.toggle_search(window, cx);
@@ -513,12 +522,18 @@ impl Render for MainWindow {
         // Track Ctrl state from mouse events
         this.last_known_ctrl_state = _e.modifiers.control;
       }))
-      .on_mouse_down(MouseButton::Left, cx.listener(move |_this, _e: &MouseDownEvent, _window, _cx| {
-        // No-op
-      }))
-      .on_mouse_down(MouseButton::Right, cx.listener(move |_this, _e: &MouseDownEvent, _window, _cx| {
-        // No-op
-      }))
+      .on_mouse_down(
+        MouseButton::Left,
+        cx.listener(move |_this, _e: &MouseDownEvent, _window, _cx| {
+          // No-op
+        }),
+      )
+      .on_mouse_down(
+        MouseButton::Right,
+        cx.listener(move |_this, _e: &MouseDownEvent, _window, _cx| {
+          // No-op
+        }),
+      )
       .child(
         TitleBar::new()
           .on_close_window(|_: &ClickEvent, window: &mut Window, _cx: &mut App| {
@@ -556,9 +571,16 @@ impl Render for MainWindow {
                         let has_bell = item.terminal.read(cx).has_bell();
                         let view = cx.entity();
                         let terminal_for_click = item.terminal.clone();
-                        // Define colors for selected tab highlight
+
+                        // Define colors for tab styling
                         let selected_bg: gpui::Hsla = colors.tab_active_background;
                         let normal_bg = colors.tab_inactive_background;
+                        let hover_bg = colors.element_hover;
+                        let text_color = colors.text;
+                        let text_muted = colors.text_muted;
+                        let accent_color = colors.text_accent;
+                        let warning_color = colors.terminal_ansi_yellow;
+
                         Tab::new()
                           .selected(is_selected)
                           .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -571,138 +593,208 @@ impl Render for MainWindow {
                           })
                           .child(
                             div()
-                              .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
-                              .cursor(CursorStyle::OpenHand)
-                              .on_drag(
-                                DraggedTab {
-                                  from_ix: tab_ix,
-                                  title: tab_title.clone(),
-                                  shell_path: item.shell_path.clone(),
-                                },
-                                |dragged: &DraggedTab, _offset, _window, cx| {
-                                  cx.new(|_cx| DraggedTabView::new(dragged.title.clone(), dragged.shell_path.clone()))
-                                },
-                              )
-                              .drag_over::<DraggedTab>(move |style, _dragged, _window, _cx| {
-                                style.bg(selected_bg.blend(gpui::black().opacity(0.1)))
-                              })
-                              .on_drop(cx.listener(move |this, dragged: &DraggedTab, _window, cx| {
-                                let from_ix = dragged.from_ix;
-                                let to_ix = tab_ix;
-                                if from_ix != to_ix {
-                                  // Remove the item from the original position and insert at new position
-                                  let item = this.items.remove(from_ix);
-                                  let insert_ix = if from_ix < to_ix { to_ix } else { to_ix };
-                                  this.items.insert(insert_ix, item);
-                                  // Update active tab index
-                                  if let Some(active) = this.active_tab_ix {
-                                    if active == from_ix {
-                                      this.active_tab_ix = Some(insert_ix);
-                                    } else if from_ix < active && active <= to_ix {
-                                      this.active_tab_ix = Some(active - 1);
-                                    } else if to_ix <= active && active < from_ix {
-                                      this.active_tab_ix = Some(active + 1);
-                                    }
-                                  }
-                                  cx.notify();
-                                }
-                              }))
+                              .id(ElementId::NamedInteger(
+                                "tab-container".into(),
+                                tab_ix as u64,
+                              ))
+                              .group("tab-item")
                               .child(
-                                h_flex()
-                                  .gap_2()
-                                  .px_2()
-                                  .py_1()
-                                  .items_center()
-                                  .border_color(colors.border)
-                                  .bg(if is_selected { selected_bg } else { normal_bg })
-                                  .rounded_md()
-                                  .child(shell_icon.into_element(px(14.0)))
-                                  .when(has_bell, |this| {
-                                    this
-                                      .child(Icon::new(IconName::Bell).size_3().text_color(colors.text))
-                                  })
-                                  .child(Label::new(tab_title.clone()).text_color(colors.text))
-                                  .child(TabButton::new("close", tab_index).on_click(cx.listener(
-                                    |this, e: &TabButtonClickEvent, window, cx| {
-                                      let tab_index = e.index;
-                                      this.remove_tab_by(tab_index, window, cx);
+                                div()
+                                  .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
+                                  .cursor(CursorStyle::OpenHand)
+                                  .on_drag(
+                                    DraggedTab {
+                                      from_ix: tab_ix,
+                                      title: tab_title.clone(),
+                                      shell_path: item.shell_path.clone(),
                                     },
-                                  )))
-                                  .on_mouse_down(MouseButton::Right, |_, _, cx| {
-                                    cx.stop_propagation();
+                                    |dragged: &DraggedTab, _offset, _window, cx| {
+                                      cx.new(|_cx| {
+                                        DraggedTabView::new(
+                                          dragged.title.clone(),
+                                          dragged.shell_path.clone(),
+                                        )
+                                      })
+                                    },
+                                  )
+                                  .drag_over::<DraggedTab>(move |style, _dragged, _window, _cx| {
+                                    // Visual feedback during drag - show drop indicator
+                                    style
+                                      .bg(accent_color.opacity(0.15))
+                                      .border_l_2()
+                                      .border_color(accent_color)
                                   })
-                                  .context_menu({
-                                let view = view.clone();
-                                move |menu, _window, _cx| {
-                                  let view_move_left = view.clone();
-                                  let view_move_right = view.clone();
-                                  let view_close_others = view.clone();
-                                  let view_close_right = view.clone();
-                                  let view_close_tab = view.clone();
-                                  menu
-                                    .item(
-                                      PopupMenuItem::new("Move Left").disabled(is_first).on_click(
-                                        move |_, _window, cx| {
-                                          view_move_left.update(cx, |this, cx| {
-                                            if tab_ix > 0 {
-                                              this.items.swap(tab_ix, tab_ix - 1);
-                                              this.active_tab_ix = Some(tab_ix - 1);
-                                              cx.notify();
-                                            }
-                                          });
-                                        },
-                                      ),
-                                    )
-                                    .item(
-                                      PopupMenuItem::new("Move Right").disabled(is_last).on_click(
-                                        move |_, _window, cx| {
-                                          view_move_right.update(cx, |this, cx| {
-                                            if tab_ix + 1 < this.items.len() {
-                                              this.items.swap(tab_ix, tab_ix + 1);
-                                              this.active_tab_ix = Some(tab_ix + 1);
-                                              cx.notify();
-                                            }
-                                          });
-                                        },
-                                      ),
-                                    )
-                                    .separator()
-                                    .item(
-                                      PopupMenuItem::new("Close Other Tabs")
-                                        .disabled(total_tabs <= 1)
-                                        .on_click(move |_, _window, cx| {
-                                          view_close_others.update(cx, |this, cx| {
-                                            let keep_index = tab_index;
-                                            this.items.retain(|tab| tab.index == keep_index);
-                                            this.active_tab_ix = Some(0);
-                                            cx.notify();
-                                          });
-                                        }),
-                                    )
-                                    .item(
-                                      PopupMenuItem::new("Close Tabs to Right")
-                                        .disabled(is_last)
-                                        .on_click(move |_, _window, cx| {
-                                          view_close_right.update(cx, |this, cx| {
-                                            let right_ix = tab_ix + 1;
-                                            if right_ix < this.items.len() {
-                                              this.items.truncate(right_ix);
-                                              this.active_tab_ix = Some(tab_ix);
-                                              cx.notify();
-                                            }
-                                          });
-                                        }),
-                                    )
-                                    .item(PopupMenuItem::new("Close Tab").on_click(
-                                      move |_, window, cx| {
-                                        view_close_tab.update(cx, |this, cx| {
-                                          this.remove_tab_by(tab_index, window, cx);
-                                        });
-                                      },
-                                    ))
-                                }
-                              }),
-                              )
+                                  .on_drop(cx.listener(
+                                    move |this, dragged: &DraggedTab, _window, cx| {
+                                      let from_ix = dragged.from_ix;
+                                      let to_ix = tab_ix;
+                                      if from_ix != to_ix {
+                                        // Remove the item from the original position and insert at new position
+                                        let item = this.items.remove(from_ix);
+                                        let insert_ix = if from_ix < to_ix { to_ix } else { to_ix };
+                                        this.items.insert(insert_ix, item);
+                                        // Update active tab index
+                                        if let Some(active) = this.active_tab_ix {
+                                          if active == from_ix {
+                                            this.active_tab_ix = Some(insert_ix);
+                                          } else if from_ix < active && active <= to_ix {
+                                            this.active_tab_ix = Some(active - 1);
+                                          } else if to_ix <= active && active < from_ix {
+                                            this.active_tab_ix = Some(active + 1);
+                                          }
+                                        }
+                                        cx.notify();
+                                      }
+                                    },
+                                  ))
+                                  .child(
+                                    h_flex()
+                                      .id(ElementId::NamedInteger(
+                                        "tab-inner".into(),
+                                        tab_ix as u64,
+                                      ))
+                                      .gap_1p5()
+                                      .pl_2p5()
+                                      .pr_1()
+                                      .py_1()
+                                      .items_center()
+                                      .min_w(px(60.0))
+                                      .max_w(px(TAB_LABEL_MAX_WIDTH + 50.0))
+                                      // Background styling
+                                      .when(is_selected, |this| {
+                                        this.bg(selected_bg).border_b_2().border_color(accent_color)
+                                      })
+                                      .when(!is_selected, |this| {
+                                        this.bg(normal_bg).hover(|style| style.bg(hover_bg))
+                                      })
+                                      .rounded_t_md()
+                                      // Shell icon
+                                      .child(
+                                        div()
+                                          .flex_shrink_0()
+                                          .child(shell_icon.into_element(px(14.0))),
+                                      )
+                                      // Bell indicator
+                                      .when(has_bell, |this| {
+                                        this.child(
+                                          div().flex_shrink_0().child(
+                                            Icon::new(IconName::Bell)
+                                              .size_3()
+                                              .text_color(warning_color),
+                                          ),
+                                        )
+                                      })
+                                      // Tab label with text truncation
+                                      .child(
+                                        div().flex_1().min_w_0().overflow_x_hidden().child(
+                                          Label::new(tab_title.clone())
+                                            .text_color(if is_selected {
+                                              text_color
+                                            } else {
+                                              text_muted
+                                            })
+                                            .whitespace_nowrap(),
+                                        ),
+                                      )
+                                      // Close button - visible on hover or when selected
+                                      .child({
+                                        let close_visible = is_selected;
+                                        div()
+                                          .flex_shrink_0()
+                                          .when(!close_visible, |this| {
+                                            this
+                                              .invisible()
+                                              .group_hover("tab-item", |style| style.visible())
+                                          })
+                                          .child(
+                                            TabButton::new("close", tab_index)
+                                              .visible(true)
+                                              .on_click(cx.listener(
+                                                |this, e: &TabButtonClickEvent, window, cx| {
+                                                  let tab_index = e.index;
+                                                  this.remove_tab_by(tab_index, window, cx);
+                                                },
+                                              )),
+                                          )
+                                      })
+                                      .on_mouse_down(MouseButton::Right, |_, _, cx| {
+                                        cx.stop_propagation();
+                                      })
+                                      .context_menu({
+                                        let view = view.clone();
+                                        move |menu, _window, _cx| {
+                                          let view_move_left = view.clone();
+                                          let view_move_right = view.clone();
+                                          let view_close_others = view.clone();
+                                          let view_close_right = view.clone();
+                                          let view_close_tab = view.clone();
+                                          menu
+                                            .item(
+                                              PopupMenuItem::new("Move Left")
+                                                .disabled(is_first)
+                                                .on_click(move |_, _window, cx| {
+                                                  view_move_left.update(cx, |this, cx| {
+                                                    if tab_ix > 0 {
+                                                      this.items.swap(tab_ix, tab_ix - 1);
+                                                      this.active_tab_ix = Some(tab_ix - 1);
+                                                      cx.notify();
+                                                    }
+                                                  });
+                                                }),
+                                            )
+                                            .item(
+                                              PopupMenuItem::new("Move Right")
+                                                .disabled(is_last)
+                                                .on_click(move |_, _window, cx| {
+                                                  view_move_right.update(cx, |this, cx| {
+                                                    if tab_ix + 1 < this.items.len() {
+                                                      this.items.swap(tab_ix, tab_ix + 1);
+                                                      this.active_tab_ix = Some(tab_ix + 1);
+                                                      cx.notify();
+                                                    }
+                                                  });
+                                                }),
+                                            )
+                                            .separator()
+                                            .item(
+                                              PopupMenuItem::new("Close Other Tabs")
+                                                .disabled(total_tabs <= 1)
+                                                .on_click(move |_, _window, cx| {
+                                                  view_close_others.update(cx, |this, cx| {
+                                                    let keep_index = tab_index;
+                                                    this
+                                                      .items
+                                                      .retain(|tab| tab.index == keep_index);
+                                                    this.active_tab_ix = Some(0);
+                                                    cx.notify();
+                                                  });
+                                                }),
+                                            )
+                                            .item(
+                                              PopupMenuItem::new("Close Tabs to Right")
+                                                .disabled(is_last)
+                                                .on_click(move |_, _window, cx| {
+                                                  view_close_right.update(cx, |this, cx| {
+                                                    let right_ix = tab_ix + 1;
+                                                    if right_ix < this.items.len() {
+                                                      this.items.truncate(right_ix);
+                                                      this.active_tab_ix = Some(tab_ix);
+                                                      cx.notify();
+                                                    }
+                                                  });
+                                                }),
+                                            )
+                                            .item(PopupMenuItem::new("Close Tab").on_click(
+                                              move |_, window, cx| {
+                                                view_close_tab.update(cx, |this, cx| {
+                                                  this.remove_tab_by(tab_index, window, cx);
+                                                });
+                                              },
+                                            ))
+                                        }
+                                      }),
+                                  ),
+                              ),
                           )
                       })
                       .collect::<Vec<_>>(),
@@ -740,7 +832,12 @@ impl Render for MainWindow {
                         menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
                           move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             view_clone.update(cx, |this, cx| {
-                              this.insert_new_tab_with_profile(Some(&profile_name), None, window, cx);
+                              this.insert_new_tab_with_profile(
+                                Some(&profile_name),
+                                None,
+                                window,
+                                cx,
+                              );
                             });
                           },
                         ));

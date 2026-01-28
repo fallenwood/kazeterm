@@ -112,7 +112,8 @@ impl PtyProcessInfo {
     let pid = self.pid_getter.pid()?;
     if self
       .system
-      .refresh_processes_specifics(sysinfo::ProcessesToUpdate::Some(&[pid]), self.refresh_kind) == 1
+      .refresh_processes_specifics(sysinfo::ProcessesToUpdate::Some(&[pid]), self.refresh_kind)
+      == 1
     {
       self.system.process(pid)
     } else {

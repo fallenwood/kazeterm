@@ -1,6 +1,6 @@
 use alacritty_terminal::vte::ansi::CursorShape;
 use gpui::{
-  AnyElement, App, BorderStyle, Bounds, Hsla, Pixels, ShapedLine, Window, fill, outline, px, size
+  AnyElement, App, BorderStyle, Bounds, Hsla, Pixels, ShapedLine, Window, fill, outline, px, size,
 };
 
 pub struct CursorLayout {
