@@ -2,11 +2,101 @@
 //!
 //! Themes are loaded from TOML files in the assets/themes/ directory.
 //! Each theme can have light and dark variants.
+//!
+//! Theme loading priority:
+//! 1. Custom theme path (if specified in config)
+//! 2. Embedded binary themes (provided by main crate)
+//! 3. Fallback to default palette
 
 use gpui::{Hsla, Rgba};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
 
 use crate::Palette;
+
+/// Type alias for embedded theme loader function
+/// This function takes a theme name and returns the raw TOML bytes if found
+pub type EmbeddedThemeLoader = fn(&str) -> Option<Vec<u8>>;
+
+/// Type alias for embedded theme lister function
+/// This function returns a list of all available embedded theme names
+pub type EmbeddedThemeLister = fn() -> Vec<String>;
+
+/// Global holder for embedded theme loader function
+static EMBEDDED_THEME_LOADER: OnceLock<EmbeddedThemeLoader> = OnceLock::new();
+
+/// Global holder for embedded theme lister function
+static EMBEDDED_THEME_LISTER: OnceLock<EmbeddedThemeLister> = OnceLock::new();
+
+/// Global holder for custom themes path
+static CUSTOM_THEMES_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+/// Register the embedded theme loader function
+///
+/// This should be called once at startup from the main crate.
+/// The loader function should return the raw TOML bytes for a theme by name.
+pub fn register_embedded_theme_loader(loader: EmbeddedThemeLoader) {
+  let _ = EMBEDDED_THEME_LOADER.set(loader);
+}
+
+/// Register the embedded theme lister function
+///
+/// This should be called once at startup from the main crate.
+/// The lister function should return all available embedded theme names.
+pub fn register_embedded_theme_lister(lister: EmbeddedThemeLister) {
+  let _ = EMBEDDED_THEME_LISTER.set(lister);
+}
+
+/// Set the custom themes directory path
+///
+/// Themes in this directory take priority over embedded themes.
+/// Path should be a directory containing `{theme_name}.toml` files.
+pub fn set_custom_themes_path(path: PathBuf) {
+  if let Ok(mut guard) = CUSTOM_THEMES_PATH.write() {
+    *guard = Some(path);
+  }
+}
+
+/// Get the custom themes directory path
+pub fn get_custom_themes_path() -> Option<PathBuf> {
+  CUSTOM_THEMES_PATH.read().ok().and_then(|g| g.clone())
+}
+
+/// Parse a hex color string to Hsla
+pub fn parse_hex_color(hex: &str) -> Option<Hsla> {
+  let hex = hex.trim_start_matches('#');
+  if hex.len() == 6 {
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some(
+      Rgba {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a: 1.0,
+      }
+      .into(),
+    )
+  } else if hex.len() == 8 {
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+    Some(
+      Rgba {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a: a as f32 / 255.0,
+      }
+      .into(),
+    )
+  } else {
+    None
+  }
+}
 
 /// Theme mode selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -66,46 +156,56 @@ pub struct ThemeColors {
   pub cursor: Option<String>,
 }
 
-/// Parse a hex color string to Hsla
-pub fn parse_hex_color(hex: &str) -> Option<Hsla> {
-  let hex = hex.trim_start_matches('#');
-  if hex.len() == 6 {
-    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-    Some(
-      Rgba {
-        r: r as f32 / 255.0,
-        g: g as f32 / 255.0,
-        b: b as f32 / 255.0,
-        a: 1.0,
+/// Parse a theme from TOML content
+pub fn parse_theme_content(content: &str) -> Option<ThemeFile> {
+  toml::from_str::<ThemeFile>(content).ok()
+}
+
+/// Load a theme from the custom themes directory
+fn load_theme_from_custom_path(name: &str) -> Option<ThemeFile> {
+  let custom_path = get_custom_themes_path()?;
+  let theme_path = custom_path.join(format!("{}.toml", name));
+
+  if theme_path.exists() {
+    tracing::debug!("Loading theme from custom path: {}", theme_path.display());
+    if let Ok(content) = std::fs::read_to_string(&theme_path) {
+      if let Some(theme) = parse_theme_content(&content) {
+        return Some(theme);
+      } else {
+        tracing::warn!("Failed to parse theme file: {}", theme_path.display());
       }
-      .into(),
-    )
-  } else if hex.len() == 8 {
-    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-    let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
-    Some(
-      Rgba {
-        r: r as f32 / 255.0,
-        g: g as f32 / 255.0,
-        b: b as f32 / 255.0,
-        a: a as f32 / 255.0,
-      }
-      .into(),
-    )
-  } else {
-    None
+    }
   }
+  None
+}
+
+/// Load a theme from embedded binary assets
+fn load_theme_from_embedded(name: &str) -> Option<ThemeFile> {
+  let loader = EMBEDDED_THEME_LOADER.get()?;
+  let bytes = loader(name)?;
+
+  let content = String::from_utf8(bytes).ok()?;
+  tracing::debug!("Loading theme '{}' from embedded assets", name);
+  parse_theme_content(&content)
 }
 
 /// Load a theme from assets by name
 ///
 /// Looks for a theme file at `assets/themes/{name}.toml` relative to the executable.
+/// Priority: Custom path > Embedded > Filesystem fallback
 pub fn load_theme_from_assets(name: &str) -> Option<ThemeFile> {
-  // Try to find the assets directory relative to the executable
+  // 1. Try custom themes path first
+  if let Some(theme) = load_theme_from_custom_path(name) {
+    return Some(theme);
+  }
+
+  // 2. Try embedded themes
+  if let Some(theme) = load_theme_from_embedded(name) {
+    return Some(theme);
+  }
+
+  // 3. Fallback: Try to find the assets directory relative to the executable
+  //    This is mainly for development mode
   let exe_path = std::env::current_exe().ok()?;
   let exe_dir = exe_path.parent()?;
 
@@ -136,7 +236,7 @@ pub fn load_theme_from_assets(name: &str) -> Option<ThemeFile> {
 
   for path in &possible_paths {
     if path.exists() {
-      tracing::debug!("Loading theme from: {}", path.display());
+      tracing::debug!("Loading theme from filesystem: {}", path.display());
       if let Ok(content) = std::fs::read_to_string(path) {
         if let Ok(theme) = toml::from_str::<ThemeFile>(&content) {
           return Some(theme);
@@ -147,6 +247,40 @@ pub fn load_theme_from_assets(name: &str) -> Option<ThemeFile> {
 
   tracing::warn!("Theme '{}' not found in assets", name);
   None
+}
+
+/// List all available themes
+///
+/// Returns theme names from both embedded themes and custom themes path.
+/// Custom themes are listed first.
+pub fn list_available_themes() -> Vec<String> {
+  let mut themes = Vec::new();
+
+  // 1. List themes from custom path
+  if let Some(custom_path) = get_custom_themes_path() {
+    if let Ok(entries) = std::fs::read_dir(&custom_path) {
+      for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "toml") {
+          if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+            themes.push(name.to_string());
+          }
+        }
+      }
+    }
+  }
+
+  // 2. List embedded themes
+  if let Some(lister) = EMBEDDED_THEME_LISTER.get() {
+    for name in lister() {
+      if !themes.contains(&name) {
+        themes.push(name);
+      }
+    }
+  }
+
+  themes.sort();
+  themes
 }
 
 /// Load a theme and convert it to a Palette

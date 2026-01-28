@@ -10,6 +10,59 @@ use ::config::Config;
 mod assets;
 mod components;
 mod config;
+mod config_watcher;
+
+/// Initialize theme system with embedded assets and custom path from config
+fn init_theme_system(config: &Config) {
+  use std::path::PathBuf;
+
+  // Register embedded theme loader and lister
+  ::config::register_embedded_theme_loader(crate::assets::embedded_theme_loader);
+  ::config::register_embedded_theme_lister(crate::assets::embedded_theme_lister);
+
+  // Set custom themes path if configured
+  if let Some(ref themes_path) = config.themes_path {
+    let path = PathBuf::from(themes_path);
+    if path.exists() && path.is_dir() {
+      tracing::info!("Using custom themes path: {}", path.display());
+      ::config::set_custom_themes_path(path);
+    } else {
+      tracing::warn!(
+        "Custom themes path does not exist or is not a directory: {}",
+        themes_path
+      );
+    }
+  } else {
+    // Default themes path: ~/.config/kazeterm/themes/ (Linux) or %APPDATA%/kazeterm/themes/ (Windows)
+    #[cfg(target_os = "windows")]
+    {
+      if let Some(app_data) = dirs::data_dir() {
+        let default_themes_path = app_data.join("kazeterm").join("themes");
+        if default_themes_path.exists() && default_themes_path.is_dir() {
+          tracing::debug!(
+            "Using default themes path: {}",
+            default_themes_path.display()
+          );
+          ::config::set_custom_themes_path(default_themes_path);
+        }
+      }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+      if let Some(home_dir) = dirs::home_dir() {
+        let default_themes_path = home_dir.join(".config").join("kazeterm").join("themes");
+        if default_themes_path.exists() && default_themes_path.is_dir() {
+          tracing::debug!(
+            "Using default themes path: {}",
+            default_themes_path.display()
+          );
+          ::config::set_custom_themes_path(default_themes_path);
+        }
+      }
+    }
+  }
+}
 
 /// Detect system dark mode preference
 /// TODO: Implement proper system detection for each platform
@@ -49,6 +102,13 @@ fn main() {
 
   let config = Config::load();
 
+  // Initialize theme system with embedded assets and custom path
+  init_theme_system(&config);
+
+  // Log available themes
+  let available_themes = ::config::list_available_themes();
+  tracing::info!("Available themes: {:?}", available_themes);
+
   let app = Application::new().with_assets(Assets);
 
   app.run(move |cx: &mut App| {
@@ -63,6 +123,9 @@ fn main() {
     cx.set_global(config.clone());
 
     SettingsStore::init_gpui_component_theme(cx);
+
+    // Start config and theme hot reload watcher
+    config_watcher::start_config_watcher(cx);
 
     let window_width = config.window_width;
     let window_height = config.window_height;
