@@ -121,7 +121,7 @@ impl Render for TabRenameDialog {
           .border_1()
           .border_color(theme.border)
           .p_4()
-          .min_w(px(300.0))
+          .w(px(350.0))
           .on_key_down(cx.listener(|this, e: &KeyDownEvent, _window, cx| {
             if e.keystroke.key == "Escape" {
               this.cancel(cx);
@@ -132,13 +132,18 @@ impl Render for TabRenameDialog {
               .flex()
               .flex_col()
               .gap_3()
+              .w_full()
               .child(
                 div()
                   .text_base()
                   .font_weight(FontWeight::SEMIBOLD)
                   .child("Rename Tab"),
               )
-              .child(Input::new(&self.input_state).w_full())
+              .child(
+                div()
+                  .w_full()
+                  .child(Input::new(&self.input_state).w_full().appearance(false)),
+              )
               .child(
                 div()
                   .text_xs()
