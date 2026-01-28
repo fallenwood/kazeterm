@@ -1,16 +1,20 @@
-use gpui::{AnyElement, IntoElement, Pixels, Styled};
+#[cfg(target_os = "windows")]
+use gpui::Styled;
+use gpui::{AnyElement, IntoElement, Pixels};
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+#[cfg(target_os = "windows")]
+use std::sync::Arc;
+use std::sync::{LazyLock, Mutex};
 
 #[cfg(target_os = "windows")]
 mod windows_impl {
   use gpui::RenderImage;
   use std::sync::Arc;
   use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, SelectObject, BITMAP,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+    BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC,
+    DeleteObject, GetDIBits, GetObjectW, SelectObject,
   };
-  use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON};
+  use windows::Win32::UI::Shell::{SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON, SHGetFileInfoW};
   use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
   use windows::core::PCWSTR;
 
@@ -268,12 +272,10 @@ impl ShellIcon {
   pub fn into_element(self, size: Pixels) -> AnyElement {
     match self {
       #[cfg(target_os = "windows")]
-      ShellIcon::Extracted(render_image) => {
-        gpui::img(gpui::ImageSource::Render(render_image))
-          .w(size)
-          .h(size)
-          .into_any_element()
-      }
+      ShellIcon::Extracted(render_image) => gpui::img(gpui::ImageSource::Render(render_image))
+        .w(size)
+        .h(size)
+        .into_any_element(),
       ShellIcon::Default(path) => {
         use gpui_component::{Icon, Sizable};
         Icon::empty().path(path).small().into_any_element()
@@ -281,4 +283,3 @@ impl ShellIcon {
     }
   }
 }
-

@@ -304,7 +304,10 @@ mod tests {
     assert_eq!(config.get_default_profile().unwrap().name, "two");
 
     // get_shell_for_profile
-    assert_eq!(config.get_shell_for_profile("two").unwrap(), "bash".to_string());
+    assert_eq!(
+      config.get_shell_for_profile("two").unwrap(),
+      "bash".to_string()
+    );
     assert!(config.get_shell_for_profile("missing").is_none());
 
     // get_profile_names preserves order

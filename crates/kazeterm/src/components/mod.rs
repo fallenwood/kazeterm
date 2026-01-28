@@ -1,9 +1,9 @@
+mod dragged_tab;
 mod main_window;
-mod terminal_window;
-mod tab_button;
 mod search_bar;
 mod shell_icon;
-mod dragged_tab;
+mod tab_button;
 mod tab_switcher;
+mod terminal_window;
 
 pub use main_window::MainWindow;

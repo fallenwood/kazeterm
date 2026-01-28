@@ -35,16 +35,22 @@ impl Render for DraggedTabView {
     let shell_icon = ShellIcon::new(&self.shell_path);
 
     h_flex()
-      .gap_2()
-      .px_2()
+      .gap_1p5()
+      .pl_2p5()
+      .pr_2()
       .py_1()
       .items_center()
       .bg(colors.tab_active_background)
       .border_1()
-      .border_color(colors.border)
-      .rounded_md()
-      .shadow_md()
+      .border_color(colors.text_accent)
+      .rounded_t_md()
+      .shadow_lg()
+      .opacity(0.9)
       .child(shell_icon.into_element(px(14.0)))
-      .child(Label::new(self.title.clone()).text_color(colors.text))
+      .child(
+        Label::new(self.title.clone())
+          .text_color(colors.text)
+          .whitespace_nowrap(),
+      )
   }
 }

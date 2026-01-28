@@ -111,11 +111,27 @@ pub fn load_theme_from_assets(name: &str) -> Option<ThemeFile> {
 
   // Try multiple possible locations for assets
   let possible_paths = [
-    exe_dir.join("assets").join("themes").join(format!("{}.toml", name)),
-    exe_dir.join("..").join("assets").join("themes").join(format!("{}.toml", name)),
-    exe_dir.join("..").join("..").join("assets").join("themes").join(format!("{}.toml", name)),
+    exe_dir
+      .join("assets")
+      .join("themes")
+      .join(format!("{}.toml", name)),
+    exe_dir
+      .join("..")
+      .join("assets")
+      .join("themes")
+      .join(format!("{}.toml", name)),
+    exe_dir
+      .join("..")
+      .join("..")
+      .join("assets")
+      .join("themes")
+      .join(format!("{}.toml", name)),
     // For development: relative to current working directory
-    std::env::current_dir().ok()?.join("assets").join("themes").join(format!("{}.toml", name)),
+    std::env::current_dir()
+      .ok()?
+      .join("assets")
+      .join("themes")
+      .join(format!("{}.toml", name)),
   ];
 
   for path in &possible_paths {
@@ -134,7 +150,7 @@ pub fn load_theme_from_assets(name: &str) -> Option<ThemeFile> {
 }
 
 /// Load a theme and convert it to a Palette
-/// 
+///
 /// The `is_dark` parameter determines which variant to use.
 /// For ThemeMode::System, the caller should detect system preference and pass it here.
 pub fn load_theme(name: &str, is_dark: bool) -> (String, Palette) {
@@ -155,7 +171,7 @@ pub fn load_theme(name: &str, is_dark: bool) -> (String, Palette) {
 
 impl ThemeColors {
   /// Convert ThemeColors to a Palette, deriving missing colors from base colors
-  /// 
+  ///
   /// The `is_dark` parameter affects how UI colors are derived from background.
   pub fn to_palette(&self, is_dark: bool) -> Palette {
     let mut palette = Palette::default();
@@ -202,56 +218,72 @@ impl ThemeColors {
     // Apply ANSI colors with auto-derived bright/dim variants
     if let Some(c) = black {
       palette.terminal_ansi_black = c;
-      palette.terminal_ansi_bright_black = self.bright_black.as_ref()
+      palette.terminal_ansi_bright_black = self
+        .bright_black
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_black = dim(c);
     }
     if let Some(c) = red {
       palette.terminal_ansi_red = c;
-      palette.terminal_ansi_bright_red = self.bright_red.as_ref()
+      palette.terminal_ansi_bright_red = self
+        .bright_red
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_red = dim(c);
     }
     if let Some(c) = green {
       palette.terminal_ansi_green = c;
-      palette.terminal_ansi_bright_green = self.bright_green.as_ref()
+      palette.terminal_ansi_bright_green = self
+        .bright_green
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_green = dim(c);
     }
     if let Some(c) = yellow {
       palette.terminal_ansi_yellow = c;
-      palette.terminal_ansi_bright_yellow = self.bright_yellow.as_ref()
+      palette.terminal_ansi_bright_yellow = self
+        .bright_yellow
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_yellow = dim(c);
     }
     if let Some(c) = blue {
       palette.terminal_ansi_blue = c;
-      palette.terminal_ansi_bright_blue = self.bright_blue.as_ref()
+      palette.terminal_ansi_bright_blue = self
+        .bright_blue
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_blue = dim(c);
     }
     if let Some(c) = magenta {
       palette.terminal_ansi_magenta = c;
-      palette.terminal_ansi_bright_magenta = self.bright_magenta.as_ref()
+      palette.terminal_ansi_bright_magenta = self
+        .bright_magenta
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_magenta = dim(c);
     }
     if let Some(c) = cyan {
       palette.terminal_ansi_cyan = c;
-      palette.terminal_ansi_bright_cyan = self.bright_cyan.as_ref()
+      palette.terminal_ansi_bright_cyan = self
+        .bright_cyan
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_cyan = dim(c);
     }
     if let Some(c) = white {
       palette.terminal_ansi_white = c;
-      palette.terminal_ansi_bright_white = self.bright_white.as_ref()
+      palette.terminal_ansi_bright_white = self
+        .bright_white
+        .as_ref()
         .and_then(|s| parse_hex_color(s))
         .unwrap_or_else(|| brighten(c));
       palette.terminal_ansi_dim_white = dim(c);
@@ -377,10 +409,7 @@ mod tests {
 
   #[test]
   fn theme_mode_serialization() {
-    assert_eq!(
-      serde_json::to_string(&ThemeMode::Dark).unwrap(),
-      "\"dark\""
-    );
+    assert_eq!(serde_json::to_string(&ThemeMode::Dark).unwrap(), "\"dark\"");
     assert_eq!(
       serde_json::to_string(&ThemeMode::Light).unwrap(),
       "\"light\""
