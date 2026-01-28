@@ -40,6 +40,8 @@ pub struct Config {
   pub ui_font_size: f32,
   pub window_width: f32,
   pub window_height: f32,
+  /// Enable the terminal minimap (shows a zoomed-out preview of scrollback)
+  pub minimap_enabled: bool,
 }
 
 impl Default for Config {
@@ -59,6 +61,7 @@ impl Default for Config {
       ui_font_size: 18.0,
       window_width: 800.0,
       window_height: 600.0,
+      minimap_enabled: false,
     }
   }
 }
@@ -280,6 +283,7 @@ mod tests {
       ui_font_size: 12.0,
       window_width: 100.0,
       window_height: 50.0,
+      minimap_enabled: false,
     };
 
     // get_profile

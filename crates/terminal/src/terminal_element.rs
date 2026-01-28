@@ -4,6 +4,7 @@ use crate::{
   background_region::BackgroundRegion,
   cursor_layout::CursorLayout,
   highlighted_range_line::{HighlightedRange, HighlightedRangeLine},
+  scrollbar::{SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
   terminal_input_handler::TerminalInputHandler,
 };
 use alacritty_terminal::{
@@ -509,6 +510,8 @@ pub struct LayoutState {
   gutter: Pixels,
   // block_below_cursor_element: Option<AnyElement>,
   base_text_style: TextStyle,
+  scrollbar_state: Option<ScrollbarState>,
+  scrollbar_bounds: Option<gpui::Bounds<Pixels>>,
 }
 
 impl Element for TerminalElement {
@@ -610,6 +613,7 @@ impl Element for TerminalElement {
 
         let text_system = cx.text_system();
         let gutter;
+        let scrollbar_width = px(SCROLLBAR_WIDTH);
         let (dimensions, _line_height_px) = {
           let rem_size = window.rem_size();
           let font_pixels = text_style.font_size.to_pixels(rem_size);
@@ -624,7 +628,8 @@ impl Element for TerminalElement {
           gutter = cell_width;
 
           let mut size = bounds.size;
-          size.width -= gutter;
+          // Reserve space for gutter and scrollbar
+          size.width -= gutter + scrollbar_width;
 
           // https://github.com/zed-industries/zed/issues/2750
           // if the terminal is one column wide, rendering 🦀
@@ -691,11 +696,13 @@ impl Element for TerminalElement {
           search_matches,
           current_search_match_index,
           last_hovered_word,
+          history_size,
           ..
         } = &self.terminal.read(cx).last_content;
 
         let mode = *mode;
         let display_offset = *display_offset;
+        let history_size = *history_size;
         let current_match_idx = *current_search_match_index;
 
         // Create link style for hovered links
@@ -789,6 +796,28 @@ impl Element for TerminalElement {
           )
         };
 
+        // Calculate scrollbar state
+        let visible_lines = dimensions.screen_lines();
+        let total_lines = visible_lines + history_size;
+        let scrollbar_state =
+          ScrollbarState::new(total_lines, visible_lines, display_offset, history_size);
+
+        // Calculate scrollbar bounds (on the right edge of the terminal)
+        let scrollbar_bounds = if scrollbar_state.should_show() {
+          Some(Bounds {
+            origin: Point {
+              x: bounds.origin.x + bounds.size.width - scrollbar_width,
+              y: bounds.origin.y,
+            },
+            size: gpui::Size {
+              width: scrollbar_width,
+              height: bounds.size.height,
+            },
+          })
+        } else {
+          None
+        };
+
         LayoutState {
           hitbox,
           batched_text_runs,
@@ -803,6 +832,12 @@ impl Element for TerminalElement {
           gutter,
           // block_below_cursor_element,
           base_text_style: text_style,
+          scrollbar_state: if scrollbar_state.should_show() {
+            Some(scrollbar_state)
+          } else {
+            None
+          },
+          scrollbar_bounds,
         }
       },
     )
@@ -933,6 +968,45 @@ impl Element for TerminalElement {
           //                 }
         },
       );
+
+      // Paint scrollbar outside the main terminal content area
+      if let (Some(scrollbar_state), Some(scrollbar_bounds)) =
+        (&layout.scrollbar_state, &layout.scrollbar_bounds)
+      {
+        let theme = cx.theme();
+        let track_color = theme.colors().scrollbar_track_background;
+        let thumb_color = theme.colors().scrollbar_thumb_background;
+        let hovered = scrollbar_bounds.contains(&window.mouse_position());
+        paint_scrollbar(
+          *scrollbar_bounds,
+          scrollbar_state,
+          track_color,
+          thumb_color,
+          hovered,
+          window,
+        );
+
+        // Add scrollbar click handler
+        let scrollbar_bounds = *scrollbar_bounds;
+        let scrollbar_state = scrollbar_state.clone();
+        let terminal = self.terminal.clone();
+        window.on_mouse_event(move |e: &gpui::MouseDownEvent, _phase, _window, cx| {
+          if e.button == MouseButton::Left && scrollbar_bounds.contains(&e.position) {
+            // Calculate the position ratio within the scrollbar
+            let relative_y = e.position.y - scrollbar_bounds.origin.y;
+            // Pixels / Pixels gives a scalar f32
+            let position_ratio = (relative_y / scrollbar_bounds.size.height) as f32;
+            let new_offset = scrollbar_state.position_to_offset(position_ratio);
+
+            terminal.update(cx, |terminal, cx| {
+              terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+                new_offset as i32 - terminal.last_content.display_offset as i32,
+              ));
+              cx.notify();
+            });
+          }
+        });
+      }
     });
   }
 }
