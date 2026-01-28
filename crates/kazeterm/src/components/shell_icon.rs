@@ -1,5 +1,9 @@
+#[cfg(target_os = "windows")]
+use gpui::Styled;
 use gpui::{AnyElement, IntoElement, Pixels};
 use std::collections::HashMap;
+#[cfg(target_os = "windows")]
+use std::sync::Arc;
 use std::sync::{LazyLock, Mutex};
 
 #[cfg(target_os = "windows")]
