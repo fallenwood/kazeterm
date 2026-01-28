@@ -30,7 +30,6 @@ jobs:
         run: |
           sudo apt-get update -y && sudo apt install -y \
             clang \
-            mold \
             llvm \
             libxcb1-dev \
             libxkbcommon-dev \
@@ -38,7 +37,7 @@ jobs:
             zstd
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --profile=release-fast
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
@@ -65,11 +64,10 @@ jobs:
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           7z a ./dists/kazeterm-$variant-${{ github.ref_name }}.7z ./kazeterm.exe
 
-      - name: Strip and Pack
+      - name: Pack
         if: runner.os == 'Linux'
         shell: pwsh
         run: |
-          llvm-strip target/release/kazeterm
           mkdir -p ./dists
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           tar --zstd -cf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.zstd -C ./target/release kazeterm

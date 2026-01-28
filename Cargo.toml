@@ -97,13 +97,12 @@ debug = "limited"
 lto = "thin"
 codegen-units = 1
 
-[profile.release.package]
-
 [profile.release-fast]
 inherits = "release"
 debug = "full"
 lto = false
 codegen-units = 16
+strip = true
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow" }
