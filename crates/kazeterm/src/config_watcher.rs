@@ -3,21 +3,23 @@
 //! This module provides file watching capabilities to automatically reload
 //! configuration and theme changes without restarting the application.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use futures::FutureExt;
 use gpui::{App, AsyncApp};
-use notify_debouncer_mini::{DebounceEventResult, DebouncedEventKind, new_debouncer};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher, event::ModifyKind};
 use smol::channel::unbounded;
 
 use crate::config::create_settings_store;
 use ::config::Config;
 
 /// Debounce duration for file changes (in milliseconds)
-const DEBOUNCE_MS: u64 = 300;
+const DEBOUNCE_MS: u64 = 500;
 
 /// Represents the type of file that was changed
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FileChangeType {
   /// The main config file changed
   Config,
@@ -52,27 +54,40 @@ pub fn start_config_watcher(cx: &mut App) {
   .detach();
 }
 
+/// Check if an event kind represents an actual content change
+fn is_content_change(kind: &EventKind) -> bool {
+  matches!(
+    kind,
+    // Data modification (actual file content changed)
+    EventKind::Modify(ModifyKind::Data(_))
+      // Some editors use create + rename pattern
+      | EventKind::Create(_)
+      // Rename/move can mean atomic save (write to temp, rename to target)
+      | EventKind::Modify(ModifyKind::Name(_))
+  )
+}
+
 /// Run the file watcher loop
 async fn run_file_watcher(
   cx: &mut AsyncApp,
   config_path: Option<PathBuf>,
   themes_path: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-  let (tx, rx) = unbounded::<DebounceEventResult>();
+  let (tx, rx) = unbounded::<notify::Result<notify::Event>>();
 
-  // Create debounced watcher with async-compatible channel
-  let mut debouncer = new_debouncer(Duration::from_millis(DEBOUNCE_MS), move |result| {
-    // Send result through async channel (non-blocking)
-    let _ = tx.send_blocking(result);
-  })?;
+  // Create watcher with raw notify (not debounced) so we can filter events
+  let mut watcher: RecommendedWatcher = Watcher::new(
+    move |result| {
+      let _ = tx.send_blocking(result);
+    },
+    notify::Config::default(),
+  )?;
 
   // Watch config file
   if let Some(path) = &config_path {
     if path.exists() {
       tracing::info!("Watching config file: {}", path.display());
-      debouncer
-        .watcher()
-        .watch(path, notify::RecursiveMode::NonRecursive)?;
+      watcher.watch(path, RecursiveMode::NonRecursive)?;
     }
   }
 
@@ -80,36 +95,74 @@ async fn run_file_watcher(
   if let Some(path) = &themes_path {
     if path.exists() && path.is_dir() {
       tracing::info!("Watching themes directory: {}", path.display());
-      debouncer
-        .watcher()
-        .watch(path, notify::RecursiveMode::Recursive)?;
+      watcher.watch(path, RecursiveMode::Recursive)?;
     }
   }
 
+  // Track pending changes for debouncing
+  let mut pending_changes: HashSet<FileChangeType> = HashSet::new();
+  let mut debounce_timer: Option<smol::Timer> = None;
+
   // Process events asynchronously
   loop {
-    match rx.recv().await {
-      Ok(result) => match result {
-        Ok(events) => {
-          for event in events {
-            if event.kind == DebouncedEventKind::Any {
-              let change_type = determine_change_type(&event.path, &config_path, &themes_path);
-              tracing::info!("File changed: {:?} ({:?})", event.path, change_type);
-
-              // Handle the reload
-              if let Err(e) = handle_file_change(cx, change_type).await {
-                tracing::error!("Failed to reload config/theme: {}", e);
-              }
+    // Use select to handle both incoming events and debounce timer
+    futures::select_biased! {
+      result = rx.recv().fuse() => {
+        match result {
+          Ok(Ok(event)) => {
+            // Filter: only process actual content changes
+            if !is_content_change(&event.kind) {
+              tracing::debug!("Ignoring non-content event: {:?}", event.kind);
+              continue;
             }
+
+            // Determine what changed and add to pending set
+            for path in &event.paths {
+              let change_type = determine_change_type(path, &config_path, &themes_path);
+              tracing::debug!("Content change detected: {:?} ({:?})", path, change_type);
+              pending_changes.insert(change_type);
+            }
+
+            // Reset debounce timer
+            debounce_timer = Some(smol::Timer::after(Duration::from_millis(DEBOUNCE_MS)));
+          }
+          Ok(Err(error)) => {
+            tracing::warn!("File watcher error: {:?}", error);
+          }
+          Err(e) => {
+            tracing::error!("File watcher channel error: {}", e);
+            break;
           }
         }
-        Err(error) => {
-          tracing::warn!("File watcher error: {:?}", error);
+      }
+
+      _ = async {
+        if let Some(timer) = &mut debounce_timer {
+          timer.await;
+        } else {
+          // No timer, wait forever (will be interrupted by rx.recv)
+          futures::future::pending::<()>().await;
         }
-      },
-      Err(e) => {
-        tracing::error!("File watcher channel error: {}", e);
-        break;
+      }.fuse() => {
+        // Debounce timer fired, process pending changes
+        debounce_timer = None;
+
+        if !pending_changes.is_empty() {
+          // Prioritize config reload (it includes theme)
+          let change_type = if pending_changes.contains(&FileChangeType::Config) {
+            FileChangeType::Config
+          } else {
+            FileChangeType::Theme
+          };
+
+          tracing::info!("Processing file change: {:?}", change_type);
+
+          if let Err(e) = handle_file_change(cx, change_type).await {
+            tracing::error!("Failed to reload config/theme: {}", e);
+          }
+
+          pending_changes.clear();
+        }
       }
     }
   }
