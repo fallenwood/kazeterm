@@ -6,7 +6,7 @@ A lightweight cross-platform terminal app based on Alacritty, inspired by Window
 
 ## Screenshot
 
-![screenshot1](./assets/screenshots/screenshot1.avif "Screenshot")
+![screenshot2](./assets/screenshots/screenshot2.webp "Screenshot")
 
 ## How to Build
 
