@@ -80,7 +80,7 @@ fn detect_system_dark_mode() -> bool {
       let subkey = w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
       let value_name = w!("AppsUseLightTheme");
 
-      if RegOpenKeyExW(HKEY_CURRENT_USER, subkey, 0, KEY_READ, &mut key).is_ok() {
+      if RegOpenKeyExW(HKEY_CURRENT_USER, subkey, Some(0), KEY_READ, &mut key).is_ok() {
         let mut data: u32 = 1;
         let mut data_size = std::mem::size_of::<u32>() as u32;
         let mut value_type = REG_DWORD;
