@@ -4,6 +4,22 @@
 //! with priority ordering for each platform.
 
 use std::path::Path;
+use std::process::Command;
+
+/// Create a Command that won't show a console window on Windows.
+#[cfg(windows)]
+fn hidden_command(program: &str) -> Command {
+  use std::os::windows::process::CommandExt;
+  const CREATE_NO_WINDOW: u32 = 0x08000000;
+  let mut cmd = Command::new(program);
+  cmd.creation_flags(CREATE_NO_WINDOW);
+  cmd
+}
+
+#[cfg(not(windows))]
+fn hidden_command(program: &str) -> Command {
+  Command::new(program)
+}
 
 /// Represents a detected shell with its display name and command.
 #[derive(Debug, Clone)]
@@ -29,28 +45,8 @@ fn shell_exists(command: &str, paths: &[&str]) -> bool {
     }
   }
 
-  // Then check if it's in PATH using `which` on Unix or `where` on Windows
-  #[cfg(unix)]
-  {
-    std::process::Command::new("which")
-      .arg(command)
-      .stdout(std::process::Stdio::null())
-      .stderr(std::process::Stdio::null())
-      .status()
-      .map(|s| s.success())
-      .unwrap_or(false)
-  }
-
-  #[cfg(windows)]
-  {
-    std::process::Command::new("where")
-      .arg(command)
-      .stdout(std::process::Stdio::null())
-      .stderr(std::process::Stdio::null())
-      .status()
-      .map(|s| s.success())
-      .unwrap_or(false)
-  }
+  // Then check if it's in PATH using the `which` crate
+  which::which(command).is_ok()
 }
 
 /// Get shell candidates for Windows with priority ordering.
@@ -244,7 +240,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
   let mut shells = Vec::new();
 
   // Detect Docker containers
-  if let Ok(output) = std::process::Command::new("docker")
+  if let Ok(output) = hidden_command("docker")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
   {
@@ -263,7 +259,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
   }
 
   // Detect Podman containers
-  if let Ok(output) = std::process::Command::new("podman")
+  if let Ok(output) = hidden_command("podman")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
   {
@@ -282,7 +278,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
   }
 
   // Detect distrobox containers
-  if let Ok(output) = std::process::Command::new("distrobox")
+  if let Ok(output) = hidden_command("distrobox")
     .args(["list", "--no-color"])
     .output()
   {
@@ -314,7 +310,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
   let mut shells = Vec::new();
 
   // Detect Docker containers (Docker Desktop on Windows)
-  if let Ok(output) = std::process::Command::new("docker")
+  if let Ok(output) = hidden_command("docker")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
   {
@@ -333,7 +329,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
   }
 
   // Detect Podman containers (Podman Desktop on Windows)
-  if let Ok(output) = std::process::Command::new("podman")
+  if let Ok(output) = hidden_command("podman")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
   {
