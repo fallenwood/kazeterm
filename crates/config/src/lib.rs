@@ -45,7 +45,7 @@ pub struct Config {
 impl Default for Config {
   fn default() -> Self {
     Self {
-      theme: "one_dark".to_string(),
+      theme: "one".to_string(),
       theme_mode: ThemeMode::default(),
       themes_path: None,
       default_profile: None,
@@ -266,7 +266,7 @@ mod tests {
     ];
 
     let config = Config {
-      theme: "one_dark".into(),
+      theme: "one".into(),
       theme_mode: ThemeMode::Dark,
       themes_path: None,
       default_profile: Some("two".into()),

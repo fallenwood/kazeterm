@@ -16,7 +16,7 @@ use crate::config::create_settings_store;
 use ::config::Config;
 
 /// Debounce duration for file changes (in milliseconds)
-const DEBOUNCE_MS: u64 = 500;
+const DEBOUNCE_MS: u64 = 200;
 
 /// Represents the type of file that was changed
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -58,12 +58,12 @@ pub fn start_config_watcher(cx: &mut App) {
 fn is_content_change(kind: &EventKind) -> bool {
   matches!(
     kind,
-    // Data modification (actual file content changed)
-    EventKind::Modify(ModifyKind::Data(_))
+    // Any modification (data, metadata, rename, etc.)
+    EventKind::Modify(_)
       // Some editors use create + rename pattern
       | EventKind::Create(_)
-      // Rename/move can mean atomic save (write to temp, rename to target)
-      | EventKind::Modify(ModifyKind::Name(_))
+      // Atomic save patterns can remove/recreate files
+      | EventKind::Remove(_)
   )
 }
 
@@ -83,9 +83,17 @@ async fn run_file_watcher(
     notify::Config::default(),
   )?;
 
-  // Watch config file
+  // Watch config directory (more reliable for atomic save/rename)
   if let Some(path) = &config_path {
-    if path.exists() {
+    if let Some(parent) = path.parent() {
+      if parent.exists() {
+        tracing::info!("Watching config directory: {}", parent.display());
+        watcher.watch(parent, RecursiveMode::NonRecursive)?;
+      } else if path.exists() {
+        tracing::info!("Watching config file: {}", path.display());
+        watcher.watch(path, RecursiveMode::NonRecursive)?;
+      }
+    } else if path.exists() {
       tracing::info!("Watching config file: {}", path.display());
       watcher.watch(path, RecursiveMode::NonRecursive)?;
     }
@@ -180,6 +188,17 @@ fn determine_change_type(
   if let Some(cp) = config_path {
     if changed_path == cp {
       return FileChangeType::Config;
+    }
+
+    // If we're watching the parent directory, match by filename + same parent
+    if let (Some(cp_parent), Some(cp_name)) = (cp.parent(), cp.file_name()) {
+      if let (Some(changed_parent), Some(changed_name)) =
+        (changed_path.parent(), changed_path.file_name())
+      {
+        if cp_parent == changed_parent && cp_name == changed_name {
+          return FileChangeType::Config;
+        }
+      }
     }
   }
 

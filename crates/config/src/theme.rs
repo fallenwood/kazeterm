@@ -299,7 +299,7 @@ pub fn load_theme(name: &str, is_dark: bool) -> (String, Palette) {
     (format!("{}{}", theme_file.name, variant), palette)
   } else {
     tracing::info!("Using default palette for theme '{}'", name);
-    ("One Dark".to_string(), Palette::default())
+    ("One".to_string(), Palette::default())
   }
 }
 
