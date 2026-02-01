@@ -236,7 +236,7 @@ fn get_shell_candidates() -> Vec<ShellCandidate> {
 /// Detect Linux containers (Docker, Podman, distrobox) that can be used as shell environments.
 /// This works on Linux and macOS where container runtimes are commonly available.
 #[cfg(unix)]
-fn detect_container_shells() -> Vec<DetectedShell> {
+pub fn detect_container_shells() -> Vec<DetectedShell> {
   let mut shells = Vec::new();
 
   // Detect Docker containers
@@ -250,7 +250,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
         let container = container.trim();
         if !container.is_empty() {
           shells.push(DetectedShell {
-            name: format!("Docker: {}", container),
+            name: format!("[Docker] {}", container),
             command: format!("docker exec -it {} /bin/sh", container),
           });
         }
@@ -269,7 +269,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
         let container = container.trim();
         if !container.is_empty() {
           shells.push(DetectedShell {
-            name: format!("Podman: {}", container),
+            name: format!("[Podman] {}", container),
             command: format!("podman exec -it {} /bin/sh", container),
           });
         }
@@ -292,7 +292,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
           let container_name = parts[1].trim();
           if !container_name.is_empty() && container_name != "NAME" {
             shells.push(DetectedShell {
-              name: format!("Distrobox: {}", container_name),
+              name: format!("[Distrobox] {}", container_name),
               command: format!("distrobox enter {}", container_name),
             });
           }
@@ -306,7 +306,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
 
 /// Detect Linux containers on Windows (via Docker Desktop or WSL).
 #[cfg(target_os = "windows")]
-fn detect_container_shells() -> Vec<DetectedShell> {
+pub fn detect_container_shells() -> Vec<DetectedShell> {
   let mut shells = Vec::new();
 
   // Detect Docker containers (Docker Desktop on Windows)
@@ -320,7 +320,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
         let container = container.trim();
         if !container.is_empty() {
           shells.push(DetectedShell {
-            name: format!("Docker: {}", container),
+            name: format!("[Docker] {}", container),
             command: format!("docker exec -it {} /bin/sh", container),
           });
         }
@@ -339,7 +339,7 @@ fn detect_container_shells() -> Vec<DetectedShell> {
         let container = container.trim();
         if !container.is_empty() {
           shells.push(DetectedShell {
-            name: format!("Podman: {}", container),
+            name: format!("[Podman] {}", container),
             command: format!("podman exec -it {} /bin/sh", container),
           });
         }
@@ -406,7 +406,7 @@ pub fn detect_shells() -> Vec<DetectedShell> {
   }
 
   // Add container shells (Docker, Podman, distrobox)
-  detected.extend(detect_container_shells());
+  // detected.extend(detect_container_shells());
 
   detected
 }

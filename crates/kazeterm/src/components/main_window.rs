@@ -279,37 +279,54 @@ impl MainWindow {
 
     let config = cx.global::<::config::Config>();
 
-    let (shell_path, tab_title, shell_name, working_directory) = if let Some(name) = profile_name {
-      let profile = config.get_profile(name);
-      let shell: String = profile
-        .map(|e| e.shell.clone())
-        .unwrap_or_else(|| config.get_shell());
-      let working_directory =
-        working_directory.or(profile.map(|e| e.working_directory.clone()).flatten());
-      let shell_name = std::path::Path::new(&shell)
-        .file_stem()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&shell)
-        .to_lowercase();
-      let working_directory = get_working_directory_pathbuf(working_directory);
+    let (shell_program, shell_args, tab_title, shell_name, working_directory) =
+      if let Some(name) = profile_name {
+        let profile = config.get_profile(name);
 
-      (shell, name.to_string(), shell_name, working_directory)
-    } else {
-      let shell = config.get_shell().clone();
-      let shell_name = std::path::Path::new(&shell)
-        .file_stem()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&shell)
-        .to_lowercase();
-      let working_directory = get_working_directory_pathbuf(working_directory);
+        let (program, args) = if let Some(p) = profile {
+          (p.shell.clone(), p.args.clone())
+        } else {
+          let ssh_hosts = ::config::get_ssh_hosts();
+          if ssh_hosts.contains(&name.to_string()) {
+            ("ssh".to_string(), vec![name.to_string()])
+          } else {
+            (config.get_shell(), vec![])
+          }
+        };
 
-      (shell, shell_name.clone(), shell_name, working_directory)
-    };
+        let working_directory =
+          working_directory.or(profile.map(|e| e.working_directory.clone()).flatten());
+        let shell_name = std::path::Path::new(&program)
+          .file_stem()
+          .and_then(|n| n.to_str())
+          .unwrap_or(&program)
+          .to_lowercase();
+        let working_directory = get_working_directory_pathbuf(working_directory);
+
+        (program, args, name.to_string(), shell_name, working_directory)
+      } else {
+        let shell = config.get_shell().clone();
+        let shell_name = std::path::Path::new(&shell)
+          .file_stem()
+          .and_then(|n| n.to_str())
+          .unwrap_or(&shell)
+          .to_lowercase();
+        let working_directory = get_working_directory_pathbuf(working_directory);
+
+        (
+          shell,
+          vec![],
+          shell_name.clone(),
+          shell_name,
+          working_directory,
+        )
+      };
 
     let terminal = super::terminal_window::new_terminal_window_with_shell(
       window,
       index,
-      &shell_path,
+      &shell_program,
+      shell_args,
       working_directory,
       cx,
     );
@@ -321,7 +338,7 @@ impl MainWindow {
       index,
       title: tab_title,
       custom_title: None,
-      shell_path,
+      shell_path: shell_program,
       _shell_name: shell_name,
       split_container,
       _subscription: subscription,
@@ -499,6 +516,7 @@ impl MainWindow {
           window,
           index,
           &shell,
+          vec![],
           working_directory_path,
           cx,
         );
@@ -602,11 +620,9 @@ impl Render for MainWindow {
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
     let setting_store = cx.global::<SettingsStore>();
-    let profile_names: Vec<String> = config
-      .get_profile_names()
-      .iter()
-      .map(|s| s.to_string())
-      .collect();
+    let local_profiles = config.get_local_profile_names();
+    let container_profiles = config.get_container_profile_names();
+    let ssh_hosts = ::config::Config::get_ssh_hosts();
 
     // Get current window bounds to detect resize
     let current_bounds = window.bounds();
@@ -1050,7 +1066,8 @@ impl Render for MainWindow {
                     move |menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
                       let mut menu = menu;
 
-                      for name in profile_names.iter() {
+                      // Local profiles
+                      for name in local_profiles.iter() {
                         let profile_name = name.clone();
                         let view_clone = view.clone();
                         menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
@@ -1067,8 +1084,57 @@ impl Render for MainWindow {
                         ));
                       }
 
+                      // Container profiles
+                      if !container_profiles.is_empty() {
+                        menu = menu.separator();
+                        for name in container_profiles.iter() {
+                          let profile_name = name.clone();
+                          let view_clone = view.clone();
+                          menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
+                            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                              view_clone.update(cx, |this, cx| {
+                                this.insert_new_tab_with_profile(
+                                  Some(&profile_name),
+                                  None,
+                                  window,
+                                  cx,
+                                );
+                              });
+                            },
+                          ));
+                        }
+                      }
+
+                      // SSH Hosts
+                      if !ssh_hosts.is_empty() {
+                        menu = menu.separator();
+                        for name in ssh_hosts.iter() {
+                          let profile_name = name.clone();
+                          let display_name = format!("[ssh] {}", name);
+                          let view_clone = view.clone();
+                          menu = menu.item(PopupMenuItem::new(display_name).on_click(
+                            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                              view_clone.update(cx, |this, cx| {
+                                this.insert_new_tab_with_profile(
+                                  Some(&profile_name),
+                                  None,
+                                  window,
+                                  cx,
+                                );
+                              });
+                            },
+                          ));
+                        }
+                      }
+
                       menu = menu.separator();
-                      menu = menu.item(PopupMenuItem::new("Open Config").on_click(
+                      menu = menu.item(PopupMenuItem::new("Open Config Path").on_click(
+                        move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                          let config_path = ::config::Config::get_config_path();
+                          cx.open_url(&format!("file://{}", config_path.display()));
+                        },
+                      ));
+                      menu = menu.item(PopupMenuItem::new("Open Config File").on_click(
                         |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                           if let Some(path) = ::config::Config::get_config_file_path() {
                             cx.open_url(&format!("file://{}", path.display()));
