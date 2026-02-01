@@ -5,6 +5,9 @@ use std::path::PathBuf;
 pub mod palette;
 pub use palette::Palette;
 
+mod ssh;
+pub use ssh::get_ssh_hosts;
+
 mod shell;
 pub use shell::{DetectedShell, detect_shells, get_default_shell};
 
@@ -20,6 +23,8 @@ pub use theme::{
 pub struct Profile {
   pub name: String,
   pub shell: String,
+  #[serde(default)]
+  pub args: Vec<String>,
   pub working_directory: Option<String>,
 }
 
@@ -40,6 +45,8 @@ pub struct Config {
   pub ui_font_size: f32,
   pub window_width: f32,
   pub window_height: f32,
+  #[serde(skip)]
+  pub container_profiles: Vec<Profile>,
 }
 
 impl Default for Config {
@@ -59,6 +66,7 @@ impl Default for Config {
       ui_font_size: 18.0,
       window_width: 800.0,
       window_height: 600.0,
+      container_profiles: detect_container_profiles(),
     }
   }
 }
@@ -71,6 +79,7 @@ fn default_profiles() -> Vec<Profile> {
     return vec![Profile {
       name: "Shell".to_string(),
       shell: shell::fallback_shell(),
+      args: vec![],
       working_directory: None,
     }];
   }
@@ -80,14 +89,38 @@ fn default_profiles() -> Vec<Profile> {
     .map(|s| Profile {
       name: s.name,
       shell: s.command,
+      args: vec![],
       working_directory: None,
+    })
+    .collect()
+}
+
+fn detect_container_profiles() -> Vec<Profile> {
+  shell::detect_container_shells()
+    .into_iter()
+    .map(|s| {
+      // Split command string into shell and args for containers
+      // We know format is "docker exec -it ... /bin/sh" or "podman ..."
+      let parts: Vec<String> = s.command.split_whitespace().map(|s| s.to_string()).collect();
+      let (shell, args) = if !parts.is_empty() {
+        (parts[0].clone(), parts[1..].to_vec())
+      } else {
+        (s.command, vec![])
+      };
+
+      Profile {
+        name: s.name,
+        shell,
+        args,
+        working_directory: None,
+      }
     })
     .collect()
 }
 
 impl Config {
   pub fn load() -> Self {
-    let config_path = Self::get_config_path();
+    let config_path = Self::get_config_file_path_impl();
 
     if !config_path.exists() {
       // #[cfg(not(debug_assertions))]
@@ -121,10 +154,29 @@ impl Config {
     Self::default()
   }
 
+  fn get_config_path_impl() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+      if let Some(app_data) = dirs::data_dir() {
+        return app_data.join("kazeterm");
+      }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+      if let Some(home_dir) = dirs::home_dir() {
+        return home_dir
+          .join(".config")
+          .join("kazeterm");
+      }
+    }
+
+    unreachable!("Could not determine config file path because home/data directory is not found");
+  }
   /// Get the config file path
   /// On Windows: ~/AppData/Roaming/kazeterm/kazeterm.toml
   /// On other platforms: ~/.config/kazeterm/kazeterm.toml
-  fn get_config_path() -> PathBuf {
+  fn get_config_file_path_impl() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
       if let Some(app_data) = dirs::data_dir() {
@@ -169,7 +221,8 @@ impl Config {
 
   fn load_from_path(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
-    let config: Config = toml::from_str(&content)?;
+    let mut config: Config = toml::from_str(&content)?;
+    config.container_profiles = detect_container_profiles();
     Ok(config)
   }
 
@@ -201,19 +254,57 @@ impl Config {
   }
 
   pub fn get_profile(&self, name: &str) -> Option<&Profile> {
-    self.profiles.iter().find(|p| p.name == name)
+    self
+      .profiles
+      .iter()
+      .find(|p| p.name == name)
+      .or_else(|| self.container_profiles.iter().find(|p| p.name == name))
   }
 
   pub fn get_shell_for_profile(&self, profile_name: &str) -> Option<String> {
     self.get_profile(profile_name).map(|p| p.shell.clone())
   }
 
-  pub fn get_profile_names(&self) -> Vec<&str> {
-    self.profiles.iter().map(|p| p.name.as_str()).collect()
+  pub fn get_local_profile_names(&self) -> Vec<String> {
+    self.profiles.iter().map(|p| p.name.clone()).collect()
+  }
+
+  pub fn get_container_profile_names(&self) -> Vec<String> {
+    self
+      .container_profiles
+      .iter()
+      .map(|p| p.name.clone())
+      .collect()
+  }
+
+  pub fn get_ssh_hosts() -> Vec<String> {
+    ssh::get_ssh_hosts()
+  }
+
+  pub fn get_all_profile_names(&self) -> Vec<String> {
+    let mut names: Vec<String> = self.profiles.iter().map(|p| p.name.clone()).collect();
+    // Add container profiles
+    for profile in &self.container_profiles {
+      if !names.contains(&profile.name) {
+        names.push(profile.name.clone());
+      }
+    }
+    // Add SSH hosts
+    let ssh_hosts = ssh::get_ssh_hosts();
+    for host in ssh_hosts {
+      if !names.contains(&host) {
+        names.push(host);
+      }
+    }
+    names
+  }
+
+  pub fn get_config_path() -> PathBuf {
+    Self::get_config_path_impl()
   }
 
   pub fn get_config_file_path() -> Option<PathBuf> {
-    let path = Self::get_config_path();
+    let path = Self::get_config_file_path_impl();
     if path.exists() { Some(path) } else { None }
   }
 }
@@ -256,11 +347,13 @@ mod tests {
       Profile {
         name: "one".to_string(),
         shell: "sh".to_string(),
+        args: vec![],
         working_directory: None,
       },
       Profile {
         name: "two".to_string(),
         shell: "bash".to_string(),
+        args: vec![],
         working_directory: Some("/tmp".to_string()),
       },
     ];
@@ -280,6 +373,7 @@ mod tests {
       ui_font_size: 12.0,
       window_width: 100.0,
       window_height: 50.0,
+      container_profiles: vec![],
     };
 
     // get_profile
@@ -297,7 +391,7 @@ mod tests {
     assert!(config.get_shell_for_profile("missing").is_none());
 
     // get_profile_names preserves order
-    let names = config.get_profile_names();
+    let names = config.get_local_profile_names();
     assert_eq!(names, vec!["one", "two"]);
   }
 }
