@@ -421,7 +421,7 @@ impl TerminalElement {
         terminal_view
           .update(cx, |terminal_view, cx| {
             if terminal_view.focus_handle.is_focused(window) {
-              terminal_view.scroll_wheel(e, cx);
+              terminal_view.scroll_wheel(e, window, cx);
             }
           })
           .ok();

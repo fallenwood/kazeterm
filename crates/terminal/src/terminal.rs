@@ -15,7 +15,7 @@ use alacritty_terminal::{
   term::TermMode,
 };
 use futures::channel::mpsc::UnboundedSender;
-use gpui::{Context, EventEmitter, Keystroke, Pixels, Window, px};
+use gpui::{Context, EventEmitter, Keystroke, Pixels, TouchPhase, Window, px};
 use themeing::ActiveTheme;
 
 #[derive(Clone)]
@@ -78,6 +78,10 @@ pub struct Terminal {
   pub next_link_id: usize,
   /// Timestamp of last process change, used to ignore shell title updates immediately after
   pub process_changed_at: Option<std::time::Instant>,
+  /// Scroll velocity for momentum scrolling (pixels per second)
+  pub scroll_velocity: f32,
+  /// Last scroll event time for velocity calculation
+  pub last_scroll_time: Option<std::time::Instant>,
 }
 
 impl Terminal {
@@ -103,6 +107,8 @@ impl Terminal {
       title_text: "".to_string(),
       next_link_id: 0,
       process_changed_at: None,
+      scroll_velocity: 0.0,
+      last_scroll_time: None,
     };
   }
   pub fn last_content(&self) -> &TerminalContent {
@@ -744,10 +750,42 @@ impl Terminal {
     self.events.push_back(InternalEvent::Scroll(scroll));
   }
 
-  ///Scroll the terminal
-  pub fn scroll_wheel(&mut self, e: &gpui::ScrollWheelEvent, scroll_multiplier: f32) {
+  ///Scroll the terminal, returns true if momentum scrolling should start
+  pub fn scroll_wheel(&mut self, e: &gpui::ScrollWheelEvent, scroll_multiplier: f32) -> bool {
     let mouse_mode = self.mouse_mode(e.shift);
     let scroll_multiplier = if mouse_mode { 1. } else { scroll_multiplier };
+
+    // Track velocity for momentum scrolling
+    let line_height = self.last_content.terminal_bounds.line_height;
+    if line_height > px(0.) {
+      let delta_y = e.delta.pixel_delta(line_height).y;
+      let now = std::time::Instant::now();
+
+      match e.touch_phase {
+        TouchPhase::Started => {
+          // Reset velocity on new touch
+          self.scroll_velocity = 0.0;
+          self.last_scroll_time = Some(now);
+        }
+        TouchPhase::Moved => {
+          // Calculate instantaneous velocity
+          if let Some(last_time) = self.last_scroll_time {
+            let dt = now.duration_since(last_time).as_secs_f32();
+            if dt > 0.0 && dt < 0.1 {
+              // Blend with previous velocity for smoothing (exponential moving average)
+              let instant_velocity = f32::from(delta_y) / dt;
+              self.scroll_velocity = self.scroll_velocity * 0.3 + instant_velocity * 0.7;
+            }
+          }
+          self.last_scroll_time = Some(now);
+        }
+        TouchPhase::Ended => {
+          // Signal that momentum should start
+          self.last_scroll_time = None;
+          // Return early after processing scroll - caller will handle momentum
+        }
+      }
+    }
 
     if let Some(scroll_lines) = self.determine_scroll_lines(e, scroll_multiplier) {
       if mouse_mode {
@@ -777,6 +815,52 @@ impl Terminal {
         self.events.push_back(InternalEvent::Scroll(scroll));
       }
     }
+
+    // Return true if momentum should start (touch ended with velocity)
+    matches!(e.touch_phase, TouchPhase::Ended) && self.scroll_velocity.abs() > 100.0
+  }
+
+  /// Apply momentum scroll step, returns true if momentum should continue
+  pub fn apply_momentum_scroll(&mut self) -> bool {
+    const FRICTION: f32 = 0.92; // Velocity decay per frame
+    const MIN_VELOCITY: f32 = 50.0; // Stop threshold (pixels/sec)
+
+    if self.scroll_velocity.abs() < MIN_VELOCITY {
+      self.scroll_velocity = 0.0;
+      return false;
+    }
+
+    let line_height = self.last_content.terminal_bounds.line_height;
+    if line_height <= px(0.) {
+      return false;
+    }
+
+    // Don't apply momentum in mouse mode or alt screen
+    if self.last_content.mode.contains(TermMode::ALT_SCREEN) {
+      self.scroll_velocity = 0.0;
+      return false;
+    }
+
+    // Calculate scroll delta for this frame (assuming ~60fps = 16ms)
+    let frame_delta_px = self.scroll_velocity * 0.016;
+    self.scroll_px += px(frame_delta_px);
+
+    // Convert accumulated pixels to lines
+    let scroll_lines = (self.scroll_px / line_height) as i32;
+    if scroll_lines != 0 {
+      self.scroll_px -= line_height * scroll_lines as f32;
+      self.events.push_back(InternalEvent::Scroll(Scroll::Delta(scroll_lines)));
+    }
+
+    // Apply friction
+    self.scroll_velocity *= FRICTION;
+
+    self.scroll_velocity.abs() >= MIN_VELOCITY
+  }
+
+  /// Stop momentum scrolling
+  pub fn stop_momentum(&mut self) {
+    self.scroll_velocity = 0.0;
   }
 
   pub fn mouse_drag(
