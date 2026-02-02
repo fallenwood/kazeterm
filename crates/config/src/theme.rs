@@ -444,6 +444,8 @@ impl ThemeColors {
         palette.title_bar_background = brighten(bg);
         palette.title_bar_inactive_background = dim(bg);
         palette.tab_inactive_background = brighten(bg);
+        palette.scrollbar_track_background = brighten(bg);
+        palette.scrollbar_thumb_background = brighten(brighten(brighten(bg)));
       } else {
         palette.surface_background = brighten(bg);
         palette.elevated_surface_background = dim(bg);
@@ -454,6 +456,8 @@ impl ThemeColors {
         palette.title_bar_background = dim(bg);
         palette.title_bar_inactive_background = brighten(bg);
         palette.tab_inactive_background = dim(bg);
+        palette.scrollbar_track_background = dim(bg);
+        palette.scrollbar_thumb_background = dim(dim(dim(bg)));
       }
     }
 

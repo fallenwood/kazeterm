@@ -47,6 +47,8 @@ pub struct Config {
   pub window_height: f32,
   #[serde(skip)]
   pub container_profiles: Vec<Profile>,
+  /// Enable the terminal minimap (shows a zoomed-out preview of scrollback)
+  pub minimap_enabled: bool,
 }
 
 impl Default for Config {
@@ -67,6 +69,7 @@ impl Default for Config {
       window_width: 800.0,
       window_height: 600.0,
       container_profiles: detect_container_profiles(),
+      minimap_enabled: false,
     }
   }
 }
@@ -374,6 +377,7 @@ mod tests {
       window_width: 100.0,
       window_height: 50.0,
       container_profiles: vec![],
+      minimap_enabled: false,
     };
 
     // get_profile
