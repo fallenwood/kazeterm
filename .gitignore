@@ -2,4 +2,6 @@ target
 .vs
 dists
 coverage
+*-debug.log
+target_codex*
 .claude

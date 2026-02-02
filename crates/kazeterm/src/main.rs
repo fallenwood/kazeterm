@@ -70,19 +70,35 @@ fn detect_system_dark_mode() -> bool {
   #[cfg(target_os = "windows")]
   {
     // Check Windows registry for dark mode setting
-    use std::process::Command;
-    if let Ok(output) = Command::new("reg")
-      .args([
-        "query",
-        "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-        "/v",
-        "AppsUseLightTheme",
-      ])
-      .output()
-    {
-      let stdout = String::from_utf8_lossy(&output.stdout);
-      // If AppsUseLightTheme is 0, dark mode is enabled
-      return stdout.contains("0x0");
+    use windows::Win32::System::Registry::{
+      HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegOpenKeyExW, RegQueryValueExW,
+    };
+    use windows::core::w;
+
+    unsafe {
+      let mut key = HKEY_CURRENT_USER;
+      let subkey = w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+      let value_name = w!("AppsUseLightTheme");
+
+      if RegOpenKeyExW(HKEY_CURRENT_USER, subkey, Some(0), KEY_READ, &mut key).is_ok() {
+        let mut data: u32 = 1;
+        let mut data_size = std::mem::size_of::<u32>() as u32;
+        let mut value_type = REG_DWORD;
+
+        if RegQueryValueExW(
+          key,
+          value_name,
+          None,
+          Some(&mut value_type),
+          Some(&mut data as *mut u32 as *mut u8),
+          Some(&mut data_size),
+        )
+        .is_ok()
+        {
+          // If AppsUseLightTheme is 0, dark mode is enabled
+          return data == 0;
+        }
+      }
     }
     true // Default to dark mode
   }
