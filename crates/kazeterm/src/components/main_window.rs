@@ -13,6 +13,7 @@ use gpui_component::{
 use terminal::TerminalView;
 use themeing::SettingsStore;
 
+use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
 use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::search_bar::{SearchBar, SearchBarCloseEvent};
 use crate::components::shell_icon::ShellIcon;
@@ -62,11 +63,31 @@ pub struct MainWindow {
   /// Tab rename dialog state
   rename_dialog: Option<Entity<TabRenameDialog>>,
   _rename_dialog_subscription: Option<gpui::Subscription>,
+  /// Close confirmation dialog state
+  close_confirm_dialog: Option<Entity<CloseConfirmDialog>>,
+  _close_confirm_subscription: Option<gpui::Subscription>,
 }
 
 impl MainWindow {
   pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
-    cx.new(|cx| Self::new(window, cx))
+    let entity = cx.new(|cx| Self::new(window, cx));
+
+    // Register window close interception for Alt+F4 and system close button
+    let main_window = entity.clone();
+    window.on_window_should_close(cx, move |window, cx| {
+      main_window.update(cx, |this, cx| {
+        if this.is_close_confirm_visible() {
+          // Dialog already showing, prevent close
+          false
+        } else {
+          // Show the confirmation dialog
+          this.show_close_confirm_dialog(window, cx);
+          false // Prevent immediate close
+        }
+      })
+    });
+
+    entity
   }
 
   fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -95,6 +116,8 @@ impl MainWindow {
       last_known_ctrl_state: false,
       rename_dialog: None,
       _rename_dialog_subscription: None,
+      close_confirm_dialog: None,
+      _close_confirm_subscription: None,
     };
     main_window.insert_new_tab(window, cx);
     main_window
@@ -606,6 +629,59 @@ impl MainWindow {
 
     cx.notify();
   }
+
+  /// Show close confirmation dialog
+  pub fn show_close_confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    // Don't show if already visible
+    if self.close_confirm_dialog.is_some() {
+      return;
+    }
+
+    let dialog = cx.new(|cx| CloseConfirmDialog::new(window, cx));
+    let subscription = cx.subscribe_in(&dialog, window, Self::on_close_confirm_event);
+
+    self.close_confirm_dialog = Some(dialog);
+    self._close_confirm_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  fn on_close_confirm_event(
+    &mut self,
+    _dialog: &Entity<CloseConfirmDialog>,
+    event: &CloseConfirmEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    match event {
+      CloseConfirmEvent::Confirm => {
+        // User confirmed, close the window
+        self.close_confirm_dialog = None;
+        self._close_confirm_subscription = None;
+        window.remove_window();
+      }
+      CloseConfirmEvent::Cancel => {
+        // User cancelled, just close the dialog
+        self.close_confirm_dialog = None;
+        self._close_confirm_subscription = None;
+
+        // Refocus the terminal
+        if let Some(active_ix) = self.active_tab_ix {
+          if let Some(item) = self.items.get(active_ix) {
+            if let Some(terminal) = item.split_container.get_active_terminal() {
+              window.focus(&terminal.focus_handle(cx));
+            }
+          }
+        }
+
+        cx.notify();
+      }
+    }
+  }
+
+  /// Check if close confirmation dialog is currently showing
+  pub fn is_close_confirm_visible(&self) -> bool {
+    self.close_confirm_dialog.is_some()
+  }
 }
 
 impl Focusable for MainWindow {
@@ -735,8 +811,13 @@ impl Render for MainWindow {
       )
       .child(
         TitleBar::new()
-          .on_close_window(|_: &ClickEvent, window: &mut Window, _cx: &mut App| {
-            window.remove_window();
+          .on_close_window({
+            let main_window = view.clone();
+            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+              main_window.update(cx, |this, cx| {
+                this.show_close_confirm_dialog(window, cx);
+              });
+            }
           })
           .child(
             div()
@@ -1177,6 +1258,13 @@ impl Render for MainWindow {
           .when(self.rename_dialog.is_some(), |this| {
             if let Some(rename_dialog) = &self.rename_dialog {
               this.child(rename_dialog.clone())
+            } else {
+              this
+            }
+          })
+          .when(self.close_confirm_dialog.is_some(), |this| {
+            if let Some(close_confirm_dialog) = &self.close_confirm_dialog {
+              this.child(close_confirm_dialog.clone())
             } else {
               this
             }
