@@ -1174,7 +1174,7 @@ impl Render for MainWindow {
                 Button::new("new")
                   .ghost()
                   .small()
-                  .label("+")
+                  .icon(IconName::Plus)
                   .on_mouse_down(MouseButton::Left, |_, _, cx| {
                     cx.stop_propagation();
                   })
@@ -1186,7 +1186,7 @@ impl Render for MainWindow {
                 Button::new("more")
                   .ghost()
                   .small()
-                  .label("∨")
+                  .icon(IconName::ChevronDown)
                   .dropdown_menu({
                     let view_about = view.clone();
                     move |menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
