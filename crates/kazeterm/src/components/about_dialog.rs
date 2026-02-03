@@ -39,6 +39,10 @@ impl AboutDialog {
   fn get_author() -> &'static str {
     "fallenwood"
   }
+
+  fn get_repo() -> &'static str {
+    "https://github.com/fallenwood/kazeterm"
+  }
 }
 
 impl Focusable for AboutDialog {
@@ -62,9 +66,17 @@ impl Render for AboutDialog {
     let version = Self::get_version();
     let license = Self::get_license();
     let author = Self::get_author();
+    let repo = Self::get_repo();
     let config_path = ::config::Config::get_config_path();
     let config_path_str = config_path.display().to_string();
-    let theme_name = active_theme.name.clone();
+
+    // Get theme display with mode
+    let mode_str = if settings.is_dark { "Dark" } else { "Light" };
+    let theme_display = if settings.is_system {
+      format!("{} {} (System)", active_theme.name.clone(), mode_str)
+    } else {
+      format!("{} {}", active_theme.name.clone(), mode_str)
+    };
 
     div()
       .absolute()
@@ -112,11 +124,12 @@ impl Render for AboutDialog {
                   .flex_col()
                   .gap_2()
                   .text_sm()
+                  .child(self.info_row("Theme", &theme_display, &theme))
                   .child(self.info_row("Version", version, &theme))
                   .child(self.info_row("Commit", short_hash, &theme))
                   .child(self.info_row("License", license, &theme))
                   .child(self.info_row("Author", author, &theme))
-                  .child(self.info_row("Theme", theme_name.as_ref(), &theme))
+                  .child(self.info_row_with_wrap("Repository", repo, &theme))
                   .child(self.info_row_with_wrap("Config Location", &config_path_str, &theme)),
               )
               // Close button

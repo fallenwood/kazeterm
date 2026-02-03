@@ -6,6 +6,7 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
   use std::sync::Arc;
 
   // Determine if we should use dark mode
+  let is_system = matches!(config.theme_mode, ThemeMode::System);
   let is_dark = match config.theme_mode {
     ThemeMode::Light => false,
     ThemeMode::Dark => true,
@@ -21,6 +22,8 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
       name: SharedString::from(theme_name),
       styles: themeing::ThemeStyles { colors: palette },
     }),
+    is_dark,
+    is_system,
   };
 
   settings
