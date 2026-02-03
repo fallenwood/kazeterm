@@ -1,22 +1,51 @@
 //! Application event system for Kazeterm
 //!
-//! This module provides a global event system that allows triggering actions
-//! from any thread, including background threads. Events are dispatched to
-//! the main window through GPUI's async runtime.
+//! This module provides an optional event system that allows triggering actions
+//! from external sources. The event system can be configured via command-line
+//! arguments to read events from:
 //!
-//! # Example
+//! - **stdio**: Read JSON events from stdin (useful for piping commands)
+//! - **socket**: Read JSON events from a Unix domain socket (Linux/macOS) or
+//!   named pipe (Windows)
+//!
+//! # Command-line Usage
+//!
+//! ```bash
+//! # Enable event system reading from stdin
+//! kazeterm --event-source stdio
+//!
+//! # Enable event system reading from a socket/pipe
+//! kazeterm --event-source socket --event-socket /tmp/kazeterm.sock
+//!
+//! # On Windows, use named pipe path
+//! kazeterm --event-source socket --event-socket \\.\pipe\kazeterm
+//! ```
+//!
+//! # Event Format (JSON)
+//!
+//! Events are sent as JSON objects, one per line:
+//!
+//! ```json
+//! {"event": "NewTerminalWithDefaultProfile"}
+//! {"event": "NewTerminalWithProfile", "profile_name": "bash", "working_directory": "/home"}
+//! {"event": "SendTextToTerminal", "text": "echo hello\n"}
+//! {"event": "SwitchToTab", "position": 0}
+//! ```
+//!
+//! # Programmatic Usage
 //!
 //! ```rust,ignore
 //! use kazeterm::event_system::{AppEvent, send_event};
 //!
 //! // From any thread (including background threads):
 //! send_event(AppEvent::NewTerminalWithDefaultProfile);
-//! send_event(AppEvent::NewTerminalWithProfile { profile_name: "bash".to_string() });
 //! ```
 
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use gpui::{AnyWindowHandle, App, AppContext, AsyncApp, WeakEntity, Window};
+use serde::Deserialize;
 use smol::channel::{Receiver, Sender, unbounded};
 
 use crate::components::MainWindow;
@@ -25,7 +54,25 @@ use crate::components::MainWindow;
 static EVENT_SENDER: OnceLock<Sender<AppEvent>> = OnceLock::new();
 
 /// Stored main window reference for event dispatch
+#[allow(dead_code)]
 static MAIN_WINDOW_HANDLE: OnceLock<AnyWindowHandle> = OnceLock::new();
+
+/// Configuration for the event source
+#[derive(Debug, Clone)]
+pub enum EventSourceConfig {
+  /// No external event source (events can still be sent programmatically)
+  None,
+  /// Read events from stdin (JSON, one per line)
+  Stdio,
+  /// Read events from a Unix domain socket or Windows named pipe
+  Socket { path: PathBuf },
+}
+
+impl Default for EventSourceConfig {
+  fn default() -> Self {
+    Self::None
+  }
+}
 
 /// Application events that can be triggered from any thread
 #[derive(Debug, Clone)]
@@ -80,6 +127,69 @@ pub enum AppEvent {
 
   /// Custom event with arbitrary data (for extensions)
   Custom { name: String, data: String },
+}
+
+/// JSON representation of an event for external input
+#[derive(Debug, Deserialize)]
+#[serde(tag = "event")]
+pub enum JsonEvent {
+  NewTerminalWithDefaultProfile,
+  NewTerminalWithProfile {
+    profile_name: String,
+    working_directory: Option<String>,
+  },
+  CloseActiveTab,
+  CloseTab {
+    tab_index: usize,
+  },
+  NextTab,
+  PreviousTab,
+  SwitchToTab {
+    position: usize,
+  },
+  SplitHorizontal,
+  SplitVertical,
+  CloseActivePane,
+  ToggleSearch,
+  ShowAboutDialog,
+  ReloadConfig,
+  FocusActiveTerminal,
+  SendTextToTerminal {
+    text: String,
+  },
+  Custom {
+    name: String,
+    data: String,
+  },
+}
+
+impl From<JsonEvent> for AppEvent {
+  fn from(json: JsonEvent) -> Self {
+    match json {
+      JsonEvent::NewTerminalWithDefaultProfile => AppEvent::NewTerminalWithDefaultProfile,
+      JsonEvent::NewTerminalWithProfile {
+        profile_name,
+        working_directory,
+      } => AppEvent::NewTerminalWithProfile {
+        profile_name,
+        working_directory,
+      },
+      JsonEvent::CloseActiveTab => AppEvent::CloseActiveTab,
+      JsonEvent::CloseTab { tab_index } => AppEvent::CloseTab { tab_index },
+      JsonEvent::NextTab => AppEvent::NextTab,
+      JsonEvent::PreviousTab => AppEvent::PreviousTab,
+      JsonEvent::SwitchToTab { position } => AppEvent::SwitchToTab { position },
+      JsonEvent::SplitHorizontal => AppEvent::SplitHorizontal,
+      JsonEvent::SplitVertical => AppEvent::SplitVertical,
+      JsonEvent::CloseActivePane => AppEvent::CloseActivePane,
+      JsonEvent::ToggleSearch => AppEvent::ToggleSearch,
+      JsonEvent::ShowAboutDialog => AppEvent::ShowAboutDialog,
+      JsonEvent::ReloadConfig => AppEvent::ReloadConfig,
+      JsonEvent::FocusActiveTerminal => AppEvent::FocusActiveTerminal,
+      JsonEvent::SendTextToTerminal { text } => AppEvent::SendTextToTerminal { text },
+      JsonEvent::Custom { name, data } => AppEvent::Custom { name, data },
+    }
+  }
 }
 
 /// Send an event to the application from any thread.
@@ -137,18 +247,19 @@ pub fn try_send_event(event: AppEvent) -> bool {
 /// # Arguments
 ///
 /// * `main_window` - A weak reference to the main window entity
-/// * `main_window` - A weak reference to the main window entity
 /// * `window_handle` - The window handle for the main window
+/// * `source_config` - Configuration for the event source
 /// * `cx` - The GPUI application context
 pub fn start_event_system(
   main_window: WeakEntity<MainWindow>,
   window_handle: AnyWindowHandle,
+  source_config: EventSourceConfig,
   cx: &mut App,
 ) {
   let (sender, receiver) = unbounded::<AppEvent>();
 
   // Store the sender globally so it can be accessed from any thread
-  if EVENT_SENDER.set(sender).is_err() {
+  if EVENT_SENDER.set(sender.clone()).is_err() {
     tracing::warn!("Event system already initialized");
     return;
   }
@@ -156,13 +267,202 @@ pub fn start_event_system(
   // Store the window handle
   let _ = MAIN_WINDOW_HANDLE.set(window_handle);
 
-  tracing::info!("Event system initialized");
+  tracing::info!("Event system initialized with source: {:?}", source_config);
 
-  // Spawn the event loop
+  // Start the external event reader if configured
+  match source_config {
+    EventSourceConfig::None => {
+      tracing::debug!("No external event source configured");
+    }
+    EventSourceConfig::Stdio => {
+      start_stdio_reader(sender);
+    }
+    EventSourceConfig::Socket { path } => {
+      start_socket_reader(sender, path);
+    }
+  }
+
+  // Spawn the event dispatch loop
   cx.spawn(async move |cx: &mut AsyncApp| {
     run_event_loop(main_window, window_handle, receiver, cx).await;
   })
   .detach();
+}
+
+/// Start reading events from stdin in a background thread
+fn start_stdio_reader(sender: Sender<AppEvent>) {
+  std::thread::spawn(move || {
+    use std::io::BufRead;
+
+    tracing::info!("Starting stdin event reader");
+
+    let stdin = std::io::stdin();
+    let reader = stdin.lock();
+
+    for line in reader.lines() {
+      match line {
+        Ok(line) => {
+          let line = line.trim();
+          if line.is_empty() {
+            continue;
+          }
+
+          match serde_json::from_str::<JsonEvent>(line) {
+            Ok(json_event) => {
+              let event: AppEvent = json_event.into();
+              tracing::debug!("Received event from stdin: {:?}", event);
+              if sender.send_blocking(event).is_err() {
+                tracing::error!("Event channel closed, stopping stdin reader");
+                break;
+              }
+            }
+            Err(e) => {
+              tracing::warn!("Failed to parse event from stdin: {} - line: {}", e, line);
+            }
+          }
+        }
+        Err(e) => {
+          tracing::error!("Error reading from stdin: {}", e);
+          break;
+        }
+      }
+    }
+
+    tracing::info!("Stdin event reader stopped");
+  });
+}
+
+/// Start reading events from a socket/pipe in a background thread
+fn start_socket_reader(sender: Sender<AppEvent>, path: PathBuf) {
+  std::thread::spawn(move || {
+    #[cfg(unix)]
+    {
+      start_unix_socket_reader(sender, path);
+    }
+
+    #[cfg(windows)]
+    {
+      start_named_pipe_reader(sender, path);
+    }
+  });
+}
+
+/// Unix domain socket reader (Linux/macOS)
+#[cfg(unix)]
+fn start_unix_socket_reader(sender: Sender<AppEvent>, path: PathBuf) {
+  use std::io::{BufRead, BufReader};
+  use std::os::unix::net::UnixListener;
+
+  tracing::info!("Starting Unix socket event reader at: {:?}", path);
+
+  // Remove existing socket file if it exists
+  let _ = std::fs::remove_file(&path);
+
+  let listener = match UnixListener::bind(&path) {
+    Ok(l) => l,
+    Err(e) => {
+      tracing::error!("Failed to bind Unix socket at {:?}: {}", path, e);
+      return;
+    }
+  };
+
+  tracing::info!("Listening for events on Unix socket: {:?}", path);
+
+  for stream in listener.incoming() {
+    match stream {
+      Ok(stream) => {
+        let sender = sender.clone();
+        std::thread::spawn(move || {
+          let reader = BufReader::new(stream);
+          for line in reader.lines() {
+            match line {
+              Ok(line) => {
+                let line = line.trim();
+                if line.is_empty() {
+                  continue;
+                }
+
+                match serde_json::from_str::<JsonEvent>(line) {
+                  Ok(json_event) => {
+                    let event: AppEvent = json_event.into();
+                    tracing::debug!("Received event from socket: {:?}", event);
+                    if sender.send_blocking(event).is_err() {
+                      tracing::error!("Event channel closed");
+                      break;
+                    }
+                  }
+                  Err(e) => {
+                    tracing::warn!("Failed to parse event from socket: {} - line: {}", e, line);
+                  }
+                }
+              }
+              Err(e) => {
+                tracing::debug!("Client disconnected: {}", e);
+                break;
+              }
+            }
+          }
+        });
+      }
+      Err(e) => {
+        tracing::error!("Failed to accept connection: {}", e);
+      }
+    }
+  }
+}
+
+/// Windows named pipe reader
+#[cfg(windows)]
+fn start_named_pipe_reader(sender: Sender<AppEvent>, path: PathBuf) {
+  use std::fs::OpenOptions;
+  use std::io::{BufRead, BufReader};
+
+  let pipe_path = path.to_string_lossy().to_string();
+  tracing::info!("Starting named pipe event reader at: {}", pipe_path);
+
+  loop {
+    // Try to open the named pipe (will block until a client connects)
+    match OpenOptions::new().read(true).open(&pipe_path) {
+      Ok(pipe) => {
+        let sender = sender.clone();
+        let reader = BufReader::new(pipe);
+
+        for line in reader.lines() {
+          match line {
+            Ok(line) => {
+              let line = line.trim();
+              if line.is_empty() {
+                continue;
+              }
+
+              match serde_json::from_str::<JsonEvent>(line) {
+                Ok(json_event) => {
+                  let event: AppEvent = json_event.into();
+                  tracing::debug!("Received event from pipe: {:?}", event);
+                  if sender.send_blocking(event).is_err() {
+                    tracing::error!("Event channel closed");
+                    return;
+                  }
+                }
+                Err(e) => {
+                  tracing::warn!("Failed to parse event from pipe: {} - line: {}", e, line);
+                }
+              }
+            }
+            Err(e) => {
+              tracing::debug!("Pipe read error or client disconnected: {}", e);
+              break;
+            }
+          }
+        }
+      }
+      Err(e) => {
+        // Named pipe doesn't exist yet, wait and retry
+        tracing::debug!("Waiting for named pipe: {} - {}", pipe_path, e);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+      }
+    }
+  }
 }
 
 /// Run the event loop, reading events and dispatching them to the main window.
@@ -172,12 +472,12 @@ async fn run_event_loop(
   receiver: Receiver<AppEvent>,
   cx: &mut AsyncApp,
 ) {
-  tracing::debug!("Event loop started");
+  tracing::debug!("Event dispatch loop started");
 
   loop {
     match receiver.recv().await {
       Ok(event) => {
-        tracing::debug!("Received event: {:?}", event);
+        tracing::debug!("Dispatching event: {:?}", event);
 
         if let Err(e) = dispatch_event(&main_window, window_handle, event, cx).await {
           tracing::error!("Failed to dispatch event: {}", e);
@@ -192,7 +492,7 @@ async fn run_event_loop(
     }
   }
 
-  tracing::debug!("Event loop exited");
+  tracing::debug!("Event dispatch loop exited");
 }
 
 /// Dispatch an event to the main window.
@@ -341,5 +641,44 @@ mod tests {
       working_directory: Some("/home".to_string()),
     };
     assert!(format!("{:?}", event).contains("bash"));
+  }
+
+  #[test]
+  fn test_json_event_parsing() {
+    let json = r#"{"event": "NewTerminalWithDefaultProfile"}"#;
+    let event: JsonEvent = serde_json::from_str(json).unwrap();
+    assert!(matches!(event, JsonEvent::NewTerminalWithDefaultProfile));
+
+    let json = r#"{"event": "NewTerminalWithProfile", "profile_name": "bash", "working_directory": "/home"}"#;
+    let event: JsonEvent = serde_json::from_str(json).unwrap();
+    assert!(matches!(
+      event,
+      JsonEvent::NewTerminalWithProfile {
+        profile_name,
+        working_directory: Some(_)
+      } if profile_name == "bash"
+    ));
+
+    let json = r#"{"event": "SwitchToTab", "position": 2}"#;
+    let event: JsonEvent = serde_json::from_str(json).unwrap();
+    assert!(matches!(event, JsonEvent::SwitchToTab { position: 2 }));
+
+    let json = r#"{"event": "SendTextToTerminal", "text": "echo hello\n"}"#;
+    let event: JsonEvent = serde_json::from_str(json).unwrap();
+    assert!(matches!(
+      event,
+      JsonEvent::SendTextToTerminal { text } if text == "echo hello\n"
+    ));
+  }
+
+  #[test]
+  fn test_json_event_to_app_event() {
+    let json_event = JsonEvent::NewTerminalWithDefaultProfile;
+    let app_event: AppEvent = json_event.into();
+    assert!(matches!(app_event, AppEvent::NewTerminalWithDefaultProfile));
+
+    let json_event = JsonEvent::SwitchToTab { position: 3 };
+    let app_event: AppEvent = json_event.into();
+    assert!(matches!(app_event, AppEvent::SwitchToTab { position: 3 }));
   }
 }

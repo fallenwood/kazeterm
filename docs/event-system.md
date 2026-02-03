@@ -1,11 +1,46 @@
 # Event System
 
-Kazeterm includes a flexible event system that allows triggering UI actions from any thread, including background threads. This is useful for:
+Kazeterm includes an optional event system that allows triggering UI actions from external sources. The event system can be configured via command-line arguments to read events from:
 
-- Automation and scripting
-- Inter-process communication (IPC)
-- Plugin systems
-- Remote control via sockets
+- **stdio**: Read JSON events from stdin (useful for piping commands)
+- **socket**: Read JSON events from a Unix domain socket (Linux/macOS) or named pipe (Windows)
+
+By default, the event system is disabled but events can still be sent programmatically from within the application.
+
+## Command-Line Usage
+
+```bash
+# Normal startup (event system disabled, no external event source)
+kazeterm
+
+# Enable event system reading from stdin
+kazeterm --event-source stdio
+
+# Enable event system reading from a Unix socket (Linux/macOS)
+kazeterm --event-source socket --event-socket /tmp/kazeterm.sock
+
+# Enable event system reading from a named pipe (Windows)
+kazeterm --event-source socket --event-socket \\.\pipe\kazeterm
+```
+
+## Event Format (JSON)
+
+Events are sent as JSON objects, one per line. The `event` field specifies the event type using a tagged enum format:
+
+```json
+{"event": "NewTerminalWithDefaultProfile"}
+{"event": "NewTerminalWithProfile", "profile_name": "bash", "working_directory": "/home"}
+{"event": "SendTextToTerminal", "text": "echo hello\n"}
+{"event": "SwitchToTab", "position": 0}
+{"event": "NextTab"}
+{"event": "PreviousTab"}
+{"event": "CloseActiveTab"}
+{"event": "SplitHorizontal"}
+{"event": "SplitVertical"}
+{"event": "ToggleSearch"}
+{"event": "ReloadConfig"}
+{"event": "Custom", "name": "my.event", "data": "some data"}
+```
 
 ## Available Events
 
@@ -92,11 +127,70 @@ send_event(AppEvent::Custom {
 
 Custom events are logged and can be handled by extending the `handle_event` function in `event_system.rs`.
 
+## External Event Sources
+
+### Sending Events via Stdin
+
+Start Kazeterm with stdin event source:
+
+```bash
+kazeterm --event-source stdio
+```
+
+Then pipe JSON events to it:
+
+```bash
+echo '{"event": "NewTerminalWithDefaultProfile"}' | kazeterm --event-source stdio
+```
+
+Or use a FIFO/named pipe for continuous event streaming:
+
+```bash
+# Create a FIFO (Linux/macOS)
+mkfifo /tmp/kazeterm-events
+
+# Start Kazeterm reading from the FIFO
+cat /tmp/kazeterm-events | kazeterm --event-source stdio &
+
+# Send events
+echo '{"event": "NewTerminalWithDefaultProfile"}' > /tmp/kazeterm-events
+echo '{"event": "SendTextToTerminal", "text": "ls -la\n"}' > /tmp/kazeterm-events
+```
+
+### Sending Events via Unix Socket (Linux/macOS)
+
+Start Kazeterm with socket event source:
+
+```bash
+kazeterm --event-source socket --event-socket /tmp/kazeterm.sock
+```
+
+Then connect and send events:
+
+```bash
+# Using netcat
+echo '{"event": "NewTerminalWithDefaultProfile"}' | nc -U /tmp/kazeterm.sock
+
+# Using socat
+echo '{"event": "NextTab"}' | socat - UNIX-CONNECT:/tmp/kazeterm.sock
+```
+
+### Sending Events via Named Pipe (Windows)
+
+Start Kazeterm with named pipe:
+
+```powershell
+kazeterm --event-source socket --event-socket \\.\pipe\kazeterm
+```
+
+Then connect using PowerShell or a named pipe client.
+
 ## Architecture
 
 The event system uses:
 - A global `OnceLock<Sender<AppEvent>>` for thread-safe event sending
 - An async event loop running on GPUI's executor
 - `smol::channel` for efficient async communication
+- Optional external readers for stdin or socket/pipe input
 
 Events are processed sequentially to maintain UI consistency.

@@ -3,5 +3,7 @@
     "cargo check": true,
     "cargo build": true,
     "cargo doc": true,
+    "cargo test": true,
+    "cargo run": true,
   }
 }
