@@ -30,7 +30,7 @@ Events are sent as JSON objects, one per line. The `event` field specifies the e
 ```json
 {"event": "NewTerminalWithDefaultProfile"}
 {"event": "NewTerminalWithProfile", "profile_name": "bash", "working_directory": "/home"}
-{"event": "SendTextToTerminal", "text": "echo hello\n"}
+{"event": "SendTextToTerminal", "text": "echo hello\r"}
 {"event": "SwitchToTab", "position": 0}
 {"event": "NextTab"}
 {"event": "PreviousTab"}
@@ -81,7 +81,7 @@ send_event(AppEvent::NewTerminalWithProfile {
 
 // Send text to the active terminal
 send_event(AppEvent::SendTextToTerminal {
-    text: "echo Hello, World!\n".to_string(),
+    text: "echo Hello, World!\r".to_string(),
 });
 ```
 
@@ -154,7 +154,7 @@ cat /tmp/kazeterm-events | kazeterm --event-source stdio &
 
 # Send events
 echo '{"event": "NewTerminalWithDefaultProfile"}' > /tmp/kazeterm-events
-echo '{"event": "SendTextToTerminal", "text": "ls -la\n"}' > /tmp/kazeterm-events
+echo '{"event": "SendTextToTerminal", "text": "ls -la\r"}' > /tmp/kazeterm-events
 ```
 
 ### Sending Events via Unix Socket (Linux/macOS)
