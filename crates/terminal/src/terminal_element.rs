@@ -573,7 +573,7 @@ impl Element for TerminalElement {
         let zoom_state = cx.global::<themeing::ZoomState>();
 
         let font_family = gpui::SharedString::from(config.font_family.clone());
-        let line_height = AbsoluteLength::from(Pixels::from(1.3));
+        let line_height_multiplier = 1.1667_f32;
         let effective_font_size = zoom_state.effective_font_size(config.font_size);
         let font_size = AbsoluteLength::from(Pixels::from(effective_font_size));
         let font_weight = FontWeight::NORMAL;
@@ -583,20 +583,6 @@ impl Element for TerminalElement {
 
         let theme = cx.theme().clone();
 
-        //             let link_style = HighlightStyle {
-        //                 color: Some(theme.colors().link_text_hover),
-        //                 font_weight: Some(font_weight),
-        //                 font_style: None,
-        //                 background_color: None,
-        //                 underline: Some(UnderlineStyle {
-        //                     thickness: px(1.0),
-        //                     color: Some(theme.colors().link_text_hover),
-        //                     wavy: false,
-        //                 }),
-        //                 strikethrough: None,
-        //                 fade_out: None,
-        //             };
-
         let text_style = TextStyle {
           font_family,
           font_features,
@@ -604,7 +590,7 @@ impl Element for TerminalElement {
           font_fallbacks: None,
           font_size: font_size.into(),
           font_style: FontStyle::Normal,
-          line_height: line_height.into(),
+          line_height: relative(line_height_multiplier).into(),
           background_color: Some(theme.colors().terminal_ansi_background),
           white_space: WhiteSpace::Normal,
           color: theme.colors().terminal_foreground,
@@ -617,8 +603,7 @@ impl Element for TerminalElement {
         let (dimensions, _line_height_px) = {
           let rem_size = window.rem_size();
           let font_pixels = text_style.font_size.to_pixels(rem_size);
-          // TODO: line_height should be an f32 not an AbsoluteLength.
-          let line_height = font_pixels * (line_height.to_pixels(rem_size).to_f64() as f32);
+          let line_height = font_pixels * line_height_multiplier;
           let font_id = cx.text_system().resolve_font(&text_style.font());
 
           let cell_width = text_system
