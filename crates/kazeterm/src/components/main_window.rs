@@ -13,6 +13,7 @@ use gpui_component::{
 use terminal::TerminalView;
 use themeing::SettingsStore;
 
+use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
 use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::search_bar::{SearchBar, SearchBarCloseEvent};
@@ -66,6 +67,9 @@ pub struct MainWindow {
   /// Close confirmation dialog state
   close_confirm_dialog: Option<Entity<CloseConfirmDialog>>,
   _close_confirm_subscription: Option<gpui::Subscription>,
+  /// About dialog state
+  about_dialog: Option<Entity<AboutDialog>>,
+  _about_dialog_subscription: Option<gpui::Subscription>,
 }
 
 impl MainWindow {
@@ -118,6 +122,8 @@ impl MainWindow {
       _rename_dialog_subscription: None,
       close_confirm_dialog: None,
       _close_confirm_subscription: None,
+      about_dialog: None,
+      _about_dialog_subscription: None,
     };
     main_window.insert_new_tab(window, cx);
     main_window
@@ -682,6 +688,44 @@ impl MainWindow {
   pub fn is_close_confirm_visible(&self) -> bool {
     self.close_confirm_dialog.is_some()
   }
+
+  /// Show about dialog
+  pub fn show_about_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    // Don't show if already visible
+    if self.about_dialog.is_some() {
+      return;
+    }
+
+    let dialog = cx.new(|cx| AboutDialog::new(window, cx));
+    let subscription = cx.subscribe_in(&dialog, window, Self::on_about_dialog_event);
+
+    self.about_dialog = Some(dialog);
+    self._about_dialog_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  fn on_about_dialog_event(
+    &mut self,
+    _dialog: &Entity<AboutDialog>,
+    _event: &AboutDialogCloseEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    // Close the dialog
+    self.about_dialog = None;
+    self._about_dialog_subscription = None;
+
+    // Refocus the terminal
+    if let Some(active_ix) = self.active_tab_ix {
+      if let Some(item) = self.items.get(active_ix) {
+        if let Some(terminal) = item.split_container.get_active_terminal() {
+          window.focus(&terminal.focus_handle(cx));
+        }
+      }
+    }
+
+    cx.notify();
+  }
 }
 
 impl Focusable for MainWindow {
@@ -696,8 +740,8 @@ impl Render for MainWindow {
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
     let setting_store = cx.global::<SettingsStore>();
-    let local_profiles = config.get_local_profile_names();
-    let container_profiles = config.get_container_profile_names();
+    let local_profiles = config.get_local_profiles_with_shells();
+    let container_profiles = config.get_container_profiles_with_shells();
     let ssh_hosts = ::config::Config::get_ssh_hosts();
 
     // Get current window bounds to detect resize
@@ -1014,44 +1058,47 @@ impl Render for MainWindow {
                                           let view_close_right = view.clone();
                                           let view_close_tab = view.clone();
                                           menu
-                                            .item(PopupMenuItem::new("Rename Tab").on_click(
-                                              move |_, window, cx| {
-                                                view_rename.update(cx, |this, cx| {
-                                                  this.show_rename_dialog(tab_index, window, cx);
-                                                });
-                                              },
-                                            ))
+                                            .item(
+                                              PopupMenuItem::new("Rename Tab")
+                                                .icon(Icon::empty().path("icons/pencil.svg"))
+                                                .on_click(move |_, window, cx| {
+                                                  view_rename.update(cx, |this, cx| {
+                                                    this.show_rename_dialog(tab_index, window, cx);
+                                                  });
+                                                }),
+                                            )
                                             .separator()
                                             .item(
-                                              PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)").on_click(
-                                                move |_, window, cx| {
+                                              PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)")
+                                                .icon(Icon::empty().path("icons/columns-2.svg"))
+                                                .on_click(move |_, window, cx| {
                                                   view_split_h.update(cx, |this, cx| {
                                                     this.split_pane_horizontal(window, cx);
                                                   });
-                                                },
-                                              ),
+                                                }),
                                             )
                                             .item(
-                                              PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)").on_click(
-                                                move |_, window, cx| {
+                                              PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)")
+                                                .icon(Icon::empty().path("icons/rows-2.svg"))
+                                                .on_click(move |_, window, cx| {
                                                   view_split_v.update(cx, |this, cx| {
                                                     this.split_pane_vertical(window, cx);
                                                   });
-                                                },
-                                              ),
+                                                }),
                                             )
                                             .item(
-                                              PopupMenuItem::new("Close Pane (Ctrl+Shift+W)").on_click(
-                                                move |_, window, cx| {
+                                              PopupMenuItem::new("Close Pane (Ctrl+Shift+W)")
+                                                .icon(IconName::Close)
+                                                .on_click(move |_, window, cx| {
                                                   view_close_pane.update(cx, |this, cx| {
                                                     this.close_active_pane(window, cx);
                                                   });
-                                                },
-                                              ),
+                                                }),
                                             )
                                             .separator()
                                             .item(
                                               PopupMenuItem::new("Move Left")
+                                                .icon(IconName::ArrowLeft)
                                                 .disabled(is_first)
                                                 .on_click(move |_, _window, cx| {
                                                   view_move_left.update(cx, |this, cx| {
@@ -1065,6 +1112,7 @@ impl Render for MainWindow {
                                             )
                                             .item(
                                               PopupMenuItem::new("Move Right")
+                                                .icon(IconName::ArrowRight)
                                                 .disabled(is_last)
                                                 .on_click(move |_, _window, cx| {
                                                   view_move_right.update(cx, |this, cx| {
@@ -1079,6 +1127,7 @@ impl Render for MainWindow {
                                             .separator()
                                             .item(
                                               PopupMenuItem::new("Close Other Tabs")
+                                                .icon(IconName::Close)
                                                 .disabled(total_tabs <= 1)
                                                 .on_click(move |_, _window, cx| {
                                                   view_close_others.update(cx, |this, cx| {
@@ -1093,6 +1142,7 @@ impl Render for MainWindow {
                                             )
                                             .item(
                                               PopupMenuItem::new("Close Tabs to Right")
+                                                .icon(IconName::Close)
                                                 .disabled(is_last)
                                                 .on_click(move |_, _window, cx| {
                                                   view_close_right.update(cx, |this, cx| {
@@ -1105,13 +1155,15 @@ impl Render for MainWindow {
                                                   });
                                                 }),
                                             )
-                                            .item(PopupMenuItem::new("Close Tab").on_click(
-                                              move |_, window, cx| {
-                                                view_close_tab.update(cx, |this, cx| {
-                                                  this.remove_tab_by(tab_index, window, cx);
-                                                });
-                                              },
-                                            ))
+                                            .item(
+                                              PopupMenuItem::new("Close Tab")
+                                                .icon(IconName::Close)
+                                                .on_click(move |_, window, cx| {
+                                                  view_close_tab.update(cx, |this, cx| {
+                                                    this.remove_tab_by(tab_index, window, cx);
+                                                  });
+                                                }),
+                                            )
                                         }
                                       }),
                                   ),
@@ -1130,7 +1182,7 @@ impl Render for MainWindow {
                 Button::new("new")
                   .ghost()
                   .small()
-                  .label("+")
+                  .icon(IconName::Plus)
                   .on_mouse_down(MouseButton::Left, |_, _, cx| {
                     cx.stop_propagation();
                   })
@@ -1142,17 +1194,37 @@ impl Render for MainWindow {
                 Button::new("more")
                   .ghost()
                   .small()
-                  .label("∨")
-                  .dropdown_menu(
+                  .icon(IconName::ChevronDown)
+                  .dropdown_menu({
+                    let view_about = view.clone();
                     move |menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
                       let mut menu = menu;
 
                       // Local profiles
-                      for name in local_profiles.iter() {
+                      for (name, shell_path) in local_profiles.iter() {
                         let profile_name = name.clone();
+                        let shell_path = shell_path.clone();
+                        let display_name = name.clone();
                         let view_clone = view.clone();
-                        menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
-                          move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                        menu = menu.item(
+                          PopupMenuItem::element(move |_window, _cx| {
+                            let shell_icon = ShellIcon::new(&shell_path);
+                            h_flex()
+                              .gap_2()
+                              .items_center()
+                              .child(
+                                div()
+                                  .w(px(16.0))
+                                  .h(px(16.0))
+                                  .flex()
+                                  .items_center()
+                                  .justify_center()
+                                  .child(shell_icon.into_element(px(16.0))),
+                              )
+                              .child(display_name.clone())
+                              .into_any_element()
+                          })
+                          .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             view_clone.update(cx, |this, cx| {
                               this.insert_new_tab_with_profile(
                                 Some(&profile_name),
@@ -1161,18 +1233,37 @@ impl Render for MainWindow {
                                 cx,
                               );
                             });
-                          },
-                        ));
+                          }),
+                        );
                       }
 
                       // Container profiles
                       if !container_profiles.is_empty() {
                         menu = menu.separator();
-                        for name in container_profiles.iter() {
+                        for (name, shell_path) in container_profiles.iter() {
                           let profile_name = name.clone();
+                          let shell_path = shell_path.clone();
+                          let display_name = name.clone();
                           let view_clone = view.clone();
-                          menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
-                            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                          menu = menu.item(
+                            PopupMenuItem::element(move |_window, _cx| {
+                              let shell_icon = ShellIcon::new(&shell_path);
+                              h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(
+                                  div()
+                                    .w(px(16.0))
+                                    .h(px(16.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(shell_icon.into_element(px(16.0))),
+                                )
+                                .child(display_name.clone())
+                                .into_any_element()
+                            })
+                            .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                               view_clone.update(cx, |this, cx| {
                                 this.insert_new_tab_with_profile(
                                   Some(&profile_name),
@@ -1181,8 +1272,8 @@ impl Render for MainWindow {
                                   cx,
                                 );
                               });
-                            },
-                          ));
+                            }),
+                          );
                         }
                       }
 
@@ -1193,8 +1284,24 @@ impl Render for MainWindow {
                           let profile_name = name.clone();
                           let display_name = format!("[ssh] {}", name);
                           let view_clone = view.clone();
-                          menu = menu.item(PopupMenuItem::new(display_name).on_click(
-                            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                          menu = menu.item(
+                            PopupMenuItem::element(move |_window, _cx| {
+                              h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(
+                                  div()
+                                    .w(px(16.0))
+                                    .h(px(16.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(Icon::new(IconName::Globe).size_4()),
+                                )
+                                .child(display_name.clone())
+                                .into_any_element()
+                            })
+                            .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                               view_clone.update(cx, |this, cx| {
                                 this.insert_new_tab_with_profile(
                                   Some(&profile_name),
@@ -1203,29 +1310,88 @@ impl Render for MainWindow {
                                   cx,
                                 );
                               });
-                            },
-                          ));
+                            }),
+                          );
                         }
                       }
 
                       menu = menu.separator();
-                      menu = menu.item(PopupMenuItem::new("Open Config Path").on_click(
-                        move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                      menu = menu.item(
+                        PopupMenuItem::element(|_window, _cx| {
+                          h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                              div()
+                                .w(px(16.0))
+                                .h(px(16.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(Icon::new(IconName::Folder).size_4()),
+                            )
+                            .child("Open Config Path")
+                            .into_any_element()
+                        })
+                        .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
                           let config_path = ::config::Config::get_config_path();
                           cx.open_url(&format!("file://{}", config_path.display()));
-                        },
-                      ));
-                      menu = menu.item(PopupMenuItem::new("Open Config File").on_click(
-                        |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                        }),
+                      );
+                      menu = menu.item(
+                        PopupMenuItem::element(|_window, _cx| {
+                          h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                              div()
+                                .w(px(16.0))
+                                .h(px(16.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(Icon::new(IconName::File).size_4()),
+                            )
+                            .child("Open Config File")
+                            .into_any_element()
+                        })
+                        .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
                           if let Some(path) = ::config::Config::get_config_file_path() {
                             cx.open_url(&format!("file://{}", path.display()));
                           }
-                        },
-                      ));
+                        }),
+                      );
+
+                      // About section
+                      menu = menu.separator();
+                      let view_about = view_about.clone();
+                      menu = menu.item(
+                        PopupMenuItem::element(|_window, _cx| {
+                          h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                              div()
+                                .w(px(16.0))
+                                .h(px(16.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(Icon::new(IconName::Info).size_4()),
+                            )
+                            .child("About")
+                            .into_any_element()
+                        })
+                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                          view_about.update(cx, |this, cx| {
+                            this.show_about_dialog(window, cx);
+                          });
+                        }),
+                      );
 
                       menu
-                    },
-                  ),
+                    }
+                  }),
               ),
           ),
       )
@@ -1265,6 +1431,13 @@ impl Render for MainWindow {
           .when(self.close_confirm_dialog.is_some(), |this| {
             if let Some(close_confirm_dialog) = &self.close_confirm_dialog {
               this.child(close_confirm_dialog.clone())
+            } else {
+              this
+            }
+          })
+          .when(self.about_dialog.is_some(), |this| {
+            if let Some(about_dialog) = &self.about_dialog {
+              this.child(about_dialog.clone())
             } else {
               this
             }

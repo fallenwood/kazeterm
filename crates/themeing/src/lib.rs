@@ -208,6 +208,10 @@ pub trait ActiveTheme {
 
 pub struct SettingsStore {
   pub active_theme: Arc<Theme>,
+  /// Whether the current theme is using dark mode
+  pub is_dark: bool,
+  /// Whether the theme mode is set to System
+  pub is_system: bool,
 }
 
 impl SettingsStore {

@@ -1,3 +1,4 @@
+mod about_dialog;
 mod close_confirm_dialog;
 mod dragged_tab;
 mod main_window;

@@ -83,3 +83,6 @@ This produces `coverage/lcov.info`.
 - Some code is derived from Zed; this code inherits Zed's GPL-v3 license.
 
 - The bundled Cascadia Code fonts follow the SIL Open Font License.
+
+- The bundled lucide icons follows original MIT license.
+
