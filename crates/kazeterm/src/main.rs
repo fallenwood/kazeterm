@@ -1,16 +1,63 @@
 // Disable command line from opening on release mode
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::path::PathBuf;
+
+use clap::{Parser, ValueEnum};
 use gpui::{App, AppContext, Application, Point, Size, WindowOptions, px};
 use themeing::SettingsStore;
 
 use crate::assets::Assets;
+use crate::event_system::EventSourceConfig;
 use ::config::Config;
 
 mod assets;
 mod components;
 mod config;
 mod config_watcher;
+pub mod event_system;
+
+/// Command-line arguments for Kazeterm
+#[derive(Parser, Debug)]
+#[command(name = "kazeterm")]
+#[command(about = "A modern GPU-accelerated terminal emulator")]
+#[command(version)]
+struct Args {
+  /// Enable the event system with the specified source
+  #[arg(long, value_enum)]
+  event_source: Option<EventSource>,
+
+  /// Path to the event socket/pipe (required when event-source is "socket")
+  #[arg(long)]
+  event_socket: Option<PathBuf>,
+}
+
+/// Event source type for command-line parsing
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum EventSource {
+  /// Read events from stdin (JSON, one per line)
+  Stdio,
+  /// Read events from a Unix domain socket (all platforms)
+  Socket,
+}
+
+impl Args {
+  /// Convert command-line arguments to EventSourceConfig
+  fn to_event_source_config(&self) -> EventSourceConfig {
+    match self.event_source {
+      None => EventSourceConfig::None,
+      Some(EventSource::Stdio) => EventSourceConfig::Stdio,
+      Some(EventSource::Socket) => {
+        if let Some(path) = &self.event_socket {
+          EventSourceConfig::Socket { path: path.clone() }
+        } else {
+          tracing::warn!("--event-socket is required when using socket event source, falling back to no events");
+          EventSourceConfig::None
+        }
+      }
+    }
+  }
+}
 
 /// Initialize theme system with embedded assets and custom path from config
 fn init_theme_system(config: &Config) {
@@ -109,6 +156,10 @@ fn detect_system_dark_mode() -> bool {
 }
 
 fn main() {
+  // Parse command-line arguments
+  let args = Args::parse();
+  let event_source_config = args.to_event_source_config();
+
   // Initialize tracing
   tracing_subscriber::fmt()
     .with_env_filter(
@@ -145,6 +196,7 @@ fn main() {
 
     let window_width = config.window_width;
     let window_height = config.window_height;
+    let event_config = event_source_config.clone();
 
     cx.spawn(async move |cx| {
       let mut options = WindowOptions::default();
@@ -169,6 +221,20 @@ fn main() {
 
       cx.open_window(options, |window, cx| {
         let view = crate::components::MainWindow::view(window, cx);
+        let window_handle = window.window_handle();
+
+        // Initialize the event system with a weak reference to the main window
+        let main_window_weak = view.downgrade();
+        let event_config_clone = event_config.clone();
+        cx.defer(move |cx| {
+          crate::event_system::start_event_system(
+            main_window_weak,
+            window_handle,
+            event_config_clone,
+            cx,
+          );
+        });
+
         cx.new(|cx| gpui_component::Root::new(view, window, cx))
       })?;
 

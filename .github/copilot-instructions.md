@@ -132,3 +132,7 @@ User config file: `kazeterm.toml` at:
 - Linux/macOS: `~/.config/kazeterm/kazeterm.toml`
 
 Hot-reload is supported for config and theme changes.
+
+## Developing
+
+DO NOT use release-fast profile when developing or debugging

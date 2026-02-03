@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use futures::FutureExt;
 use gpui::{App, AsyncApp};
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher, event::ModifyKind};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use smol::channel::unbounded;
 
 use crate::config::create_settings_store;
@@ -270,6 +270,14 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       tracing::info!("Theme reloaded successfully: {}", config.theme);
     }
   }
+}
+
+/// Reload config and theme from an external event.
+///
+/// This function can be called from the event system to trigger
+/// a full configuration reload.
+pub fn reload_config_and_theme_from_event(cx: &mut App) {
+  reload_config_and_theme(cx, FileChangeType::Config);
 }
 
 /// Add a new path to watch (e.g., when themes_path changes)
