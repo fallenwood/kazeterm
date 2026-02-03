@@ -3,7 +3,7 @@
 Kazeterm includes an optional event system that allows triggering UI actions from external sources. The event system can be configured via command-line arguments to read events from:
 
 - **stdio**: Read JSON events from stdin (useful for piping commands)
-- **socket**: Read JSON events from a Unix domain socket (Linux/macOS) or named pipe (Windows)
+- **socket**: Read JSON events from a Unix domain socket (all platforms)
 
 By default, the event system is disabled but events can still be sent programmatically from within the application.
 
@@ -16,11 +16,11 @@ kazeterm
 # Enable event system reading from stdin
 kazeterm --event-source stdio
 
-# Enable event system reading from a Unix socket (Linux/macOS)
+# Enable event system reading from a Unix domain socket (all platforms)
 kazeterm --event-source socket --event-socket /tmp/kazeterm.sock
 
-# Enable event system reading from a named pipe (Windows)
-kazeterm --event-source socket --event-socket \\.\pipe\kazeterm
+# On Windows, use a file path for Unix domain socket
+kazeterm --event-source socket --event-socket C:\Users\user\kazeterm.sock
 ```
 
 ## Event Format (JSON)
@@ -175,15 +175,17 @@ echo '{"event": "NewTerminalWithDefaultProfile"}' | nc -U /tmp/kazeterm.sock
 echo '{"event": "NextTab"}' | socat - UNIX-CONNECT:/tmp/kazeterm.sock
 ```
 
-### Sending Events via Named Pipe (Windows)
+### Sending Events via Unix Socket (Windows)
 
-Start Kazeterm with named pipe:
+Windows 10 version 1803 and later support Unix domain sockets natively.
+
+Start Kazeterm with socket event source:
 
 ```powershell
-kazeterm --event-source socket --event-socket \\.\pipe\kazeterm
+kazeterm --event-source socket --event-socket C:\Users\user\kazeterm.sock
 ```
 
-Then connect using PowerShell or a named pipe client.
+Then connect using a Unix socket client (e.g., via Python, Node.js, or other languages with Unix socket support on Windows).
 
 ## Architecture
 

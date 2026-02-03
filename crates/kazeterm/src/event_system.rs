@@ -5,8 +5,7 @@
 //! arguments to read events from:
 //!
 //! - **stdio**: Read JSON events from stdin (useful for piping commands)
-//! - **socket**: Read JSON events from a Unix domain socket (Linux/macOS) or
-//!   named pipe (Windows)
+//! - **socket**: Read JSON events from a Unix domain socket (all platforms)
 //!
 //! # Command-line Usage
 //!
@@ -14,11 +13,11 @@
 //! # Enable event system reading from stdin
 //! kazeterm --event-source stdio
 //!
-//! # Enable event system reading from a socket/pipe
+//! # Enable event system reading from a Unix domain socket
 //! kazeterm --event-source socket --event-socket /tmp/kazeterm.sock
 //!
-//! # On Windows, use named pipe path
-//! kazeterm --event-source socket --event-socket \\.\pipe\kazeterm
+//! # On Windows, use a file path for Unix domain socket
+//! kazeterm --event-source socket --event-socket C:\Users\user\kazeterm.sock
 //! ```
 //!
 //! # Event Format (JSON)
@@ -64,7 +63,7 @@ pub enum EventSourceConfig {
   None,
   /// Read events from stdin (JSON, one per line)
   Stdio,
-  /// Read events from a Unix domain socket or Windows named pipe
+  /// Read events from a Unix domain socket (all platforms)
   Socket { path: PathBuf },
 }
 
@@ -332,24 +331,24 @@ fn start_stdio_reader(sender: Sender<AppEvent>) {
   });
 }
 
-/// Start reading events from a socket/pipe in a background thread
+/// Start reading events from a Unix domain socket in a background thread
 fn start_socket_reader(sender: Sender<AppEvent>, path: PathBuf) {
   std::thread::spawn(move || {
     #[cfg(unix)]
     {
-      start_unix_socket_reader(sender, path);
+      start_unix_socket_reader_unix(sender, path);
     }
 
     #[cfg(windows)]
     {
-      start_named_pipe_reader(sender, path);
+      start_unix_socket_reader_windows(sender, path);
     }
   });
 }
 
-/// Unix domain socket reader (Linux/macOS)
+/// Unix domain socket reader (Unix platforms)
 #[cfg(unix)]
-fn start_unix_socket_reader(sender: Sender<AppEvent>, path: PathBuf) {
+fn start_unix_socket_reader_unix(sender: Sender<AppEvent>, path: PathBuf) {
   use std::io::{BufRead, BufReader};
   use std::os::unix::net::UnixListener;
 
@@ -411,55 +410,68 @@ fn start_unix_socket_reader(sender: Sender<AppEvent>, path: PathBuf) {
   }
 }
 
-/// Windows named pipe reader
+/// Unix domain socket reader (Windows)
+///
+/// Windows has supported Unix domain sockets since Windows 10 version 1803.
+/// We use the uds_windows crate to provide UnixListener/UnixStream on Windows.
 #[cfg(windows)]
-fn start_named_pipe_reader(sender: Sender<AppEvent>, path: PathBuf) {
-  use std::fs::OpenOptions;
+fn start_unix_socket_reader_windows(sender: Sender<AppEvent>, path: PathBuf) {
   use std::io::{BufRead, BufReader};
+  use uds_windows::UnixListener;
 
-  let pipe_path = path.to_string_lossy().to_string();
-  tracing::info!("Starting named pipe event reader at: {}", pipe_path);
+  tracing::info!("Starting Unix socket event reader at: {:?}", path);
 
-  loop {
-    // Try to open the named pipe (will block until a client connects)
-    match OpenOptions::new().read(true).open(&pipe_path) {
-      Ok(pipe) => {
+  // Remove existing socket file if it exists
+  let _ = std::fs::remove_file(&path);
+
+  let listener = match UnixListener::bind(&path) {
+    Ok(l) => l,
+    Err(e) => {
+      tracing::error!("Failed to bind Unix socket at {:?}: {}", path, e);
+      return;
+    }
+  };
+
+  tracing::info!("Listening for events on Unix socket: {:?}", path);
+
+  for stream in listener.incoming() {
+    match stream {
+      Ok(stream) => {
         let sender = sender.clone();
-        let reader = BufReader::new(pipe);
+        std::thread::spawn(move || {
+          let reader = BufReader::new(stream);
+          for line in reader.lines() {
+            match line {
+              Ok(line) => {
+                let line = line.trim();
+                if line.is_empty() {
+                  continue;
+                }
 
-        for line in reader.lines() {
-          match line {
-            Ok(line) => {
-              let line = line.trim();
-              if line.is_empty() {
-                continue;
-              }
-
-              match serde_json::from_str::<JsonEvent>(line) {
-                Ok(json_event) => {
-                  let event: AppEvent = json_event.into();
-                  tracing::debug!("Received event from pipe: {:?}", event);
-                  if sender.send_blocking(event).is_err() {
-                    tracing::error!("Event channel closed");
-                    return;
+                match serde_json::from_str::<JsonEvent>(line) {
+                  Ok(json_event) => {
+                    let event: AppEvent = json_event.into();
+                    tracing::debug!("Received event from socket: {:?}", event);
+                    if sender.send_blocking(event).is_err() {
+                      tracing::error!("Event channel closed");
+                      break;
+                    }
+                  }
+                  Err(e) => {
+                    tracing::warn!("Failed to parse event from socket: {} - line: {}", e, line);
                   }
                 }
-                Err(e) => {
-                  tracing::warn!("Failed to parse event from pipe: {} - line: {}", e, line);
-                }
+              }
+              Err(e) => {
+                tracing::debug!("Client disconnected: {}", e);
+                break;
               }
             }
-            Err(e) => {
-              tracing::debug!("Pipe read error or client disconnected: {}", e);
-              break;
-            }
           }
-        }
+        });
       }
       Err(e) => {
-        // Named pipe doesn't exist yet, wait and retry
-        tracing::debug!("Waiting for named pipe: {} - {}", pipe_path, e);
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        tracing::error!("Failed to accept connection: {}", e);
       }
     }
   }

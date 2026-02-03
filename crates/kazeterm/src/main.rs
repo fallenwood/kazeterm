@@ -37,7 +37,7 @@ struct Args {
 enum EventSource {
   /// Read events from stdin (JSON, one per line)
   Stdio,
-  /// Read events from a Unix domain socket or Windows named pipe
+  /// Read events from a Unix domain socket (all platforms)
   Socket,
 }
 
