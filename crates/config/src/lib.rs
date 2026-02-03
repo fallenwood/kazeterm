@@ -272,11 +272,29 @@ impl Config {
     self.profiles.iter().map(|p| p.name.clone()).collect()
   }
 
+  /// Get local profiles with their shell paths (name, shell_path)
+  pub fn get_local_profiles_with_shells(&self) -> Vec<(String, String)> {
+    self
+      .profiles
+      .iter()
+      .map(|p| (p.name.clone(), p.shell.clone()))
+      .collect()
+  }
+
   pub fn get_container_profile_names(&self) -> Vec<String> {
     self
       .container_profiles
       .iter()
       .map(|p| p.name.clone())
+      .collect()
+  }
+
+  /// Get container profiles with their shell paths (name, shell_path)
+  pub fn get_container_profiles_with_shells(&self) -> Vec<(String, String)> {
+    self
+      .container_profiles
+      .iter()
+      .map(|p| (p.name.clone(), p.shell.clone()))
       .collect()
   }
 
