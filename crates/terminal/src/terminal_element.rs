@@ -573,7 +573,7 @@ impl Element for TerminalElement {
         let zoom_state = cx.global::<themeing::ZoomState>();
 
         let font_family = gpui::SharedString::from(config.font_family.clone());
-        let line_height_multiplier = 1.1667_f32;
+        let line_height_multiplier = 1.18_f32;
         let effective_font_size = zoom_state.effective_font_size(config.font_size);
         let font_size = AbsoluteLength::from(Pixels::from(effective_font_size));
         let font_weight = FontWeight::NORMAL;
