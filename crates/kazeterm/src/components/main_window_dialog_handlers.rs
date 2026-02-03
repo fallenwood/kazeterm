@@ -132,7 +132,7 @@ impl MainWindow {
   }
 
   /// Helper to refocus the active terminal after closing dialogs
-  pub(crate) fn refocus_active_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+  pub fn refocus_active_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if let Some(active_ix) = self.active_tab_ix {
       if let Some(item) = self.items.get(active_ix) {
         if let Some(terminal) = item.split_container.get_active_terminal() {

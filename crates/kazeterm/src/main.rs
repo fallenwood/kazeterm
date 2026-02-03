@@ -11,6 +11,7 @@ mod assets;
 mod components;
 mod config;
 mod config_watcher;
+pub mod event_system;
 
 /// Initialize theme system with embedded assets and custom path from config
 fn init_theme_system(config: &Config) {
@@ -169,6 +170,14 @@ fn main() {
 
       cx.open_window(options, |window, cx| {
         let view = crate::components::MainWindow::view(window, cx);
+        let window_handle = window.window_handle();
+
+        // Initialize the event system with a weak reference to the main window
+        let main_window_weak = view.downgrade();
+        cx.defer(move |cx| {
+          crate::event_system::start_event_system(main_window_weak, window_handle, cx);
+        });
+
         cx.new(|cx| gpui_component::Root::new(view, window, cx))
       })?;
 
