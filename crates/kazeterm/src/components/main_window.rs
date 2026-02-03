@@ -1058,44 +1058,47 @@ impl Render for MainWindow {
                                           let view_close_right = view.clone();
                                           let view_close_tab = view.clone();
                                           menu
-                                            .item(PopupMenuItem::new("Rename Tab").on_click(
-                                              move |_, window, cx| {
-                                                view_rename.update(cx, |this, cx| {
-                                                  this.show_rename_dialog(tab_index, window, cx);
-                                                });
-                                              },
-                                            ))
+                                            .item(
+                                              PopupMenuItem::new("Rename Tab")
+                                                .icon(Icon::empty().path("icons/pencil.svg"))
+                                                .on_click(move |_, window, cx| {
+                                                  view_rename.update(cx, |this, cx| {
+                                                    this.show_rename_dialog(tab_index, window, cx);
+                                                  });
+                                                }),
+                                            )
                                             .separator()
                                             .item(
-                                              PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)").on_click(
-                                                move |_, window, cx| {
+                                              PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)")
+                                                .icon(Icon::empty().path("icons/columns-2.svg"))
+                                                .on_click(move |_, window, cx| {
                                                   view_split_h.update(cx, |this, cx| {
                                                     this.split_pane_horizontal(window, cx);
                                                   });
-                                                },
-                                              ),
+                                                }),
                                             )
                                             .item(
-                                              PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)").on_click(
-                                                move |_, window, cx| {
+                                              PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)")
+                                                .icon(Icon::empty().path("icons/rows-2.svg"))
+                                                .on_click(move |_, window, cx| {
                                                   view_split_v.update(cx, |this, cx| {
                                                     this.split_pane_vertical(window, cx);
                                                   });
-                                                },
-                                              ),
+                                                }),
                                             )
                                             .item(
-                                              PopupMenuItem::new("Close Pane (Ctrl+Shift+W)").on_click(
-                                                move |_, window, cx| {
+                                              PopupMenuItem::new("Close Pane (Ctrl+Shift+W)")
+                                                .icon(IconName::Close)
+                                                .on_click(move |_, window, cx| {
                                                   view_close_pane.update(cx, |this, cx| {
                                                     this.close_active_pane(window, cx);
                                                   });
-                                                },
-                                              ),
+                                                }),
                                             )
                                             .separator()
                                             .item(
                                               PopupMenuItem::new("Move Left")
+                                                .icon(IconName::ArrowLeft)
                                                 .disabled(is_first)
                                                 .on_click(move |_, _window, cx| {
                                                   view_move_left.update(cx, |this, cx| {
@@ -1109,6 +1112,7 @@ impl Render for MainWindow {
                                             )
                                             .item(
                                               PopupMenuItem::new("Move Right")
+                                                .icon(IconName::ArrowRight)
                                                 .disabled(is_last)
                                                 .on_click(move |_, _window, cx| {
                                                   view_move_right.update(cx, |this, cx| {
@@ -1123,6 +1127,7 @@ impl Render for MainWindow {
                                             .separator()
                                             .item(
                                               PopupMenuItem::new("Close Other Tabs")
+                                                .icon(IconName::Close)
                                                 .disabled(total_tabs <= 1)
                                                 .on_click(move |_, _window, cx| {
                                                   view_close_others.update(cx, |this, cx| {
@@ -1137,6 +1142,7 @@ impl Render for MainWindow {
                                             )
                                             .item(
                                               PopupMenuItem::new("Close Tabs to Right")
+                                                .icon(IconName::Close)
                                                 .disabled(is_last)
                                                 .on_click(move |_, _window, cx| {
                                                   view_close_right.update(cx, |this, cx| {
@@ -1149,13 +1155,15 @@ impl Render for MainWindow {
                                                   });
                                                 }),
                                             )
-                                            .item(PopupMenuItem::new("Close Tab").on_click(
-                                              move |_, window, cx| {
-                                                view_close_tab.update(cx, |this, cx| {
-                                                  this.remove_tab_by(tab_index, window, cx);
-                                                });
-                                              },
-                                            ))
+                                            .item(
+                                              PopupMenuItem::new("Close Tab")
+                                                .icon(IconName::Close)
+                                                .on_click(move |_, window, cx| {
+                                                  view_close_tab.update(cx, |this, cx| {
+                                                    this.remove_tab_by(tab_index, window, cx);
+                                                  });
+                                                }),
+                                            )
                                         }
                                       }),
                                   ),

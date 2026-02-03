@@ -5,6 +5,7 @@ use gpui::{
   ParentElement, RenderOnce, StatefulInteractiveElement, Styled, Window, div,
   prelude::FluentBuilder,
 };
+use gpui_component::{Icon, IconName, Sizable};
 use themeing::SettingsStore;
 
 #[derive(IntoElement)]
@@ -79,7 +80,7 @@ impl RenderOnce for TabButton {
         this
           .hover(move |style| style.bg(hover_bg))
           .active(move |style| style.bg(active_bg))
-          .child(div().text_color(text_color).text_sm().child("×"))
+          .child(Icon::new(IconName::Close).small().text_color(text_color))
       })
       .on_mouse_down(
         MouseButton::Left,
