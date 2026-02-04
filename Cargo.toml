@@ -4,7 +4,8 @@ members = [
   "crates/config",
   "crates/kazeterm",
   "crates/themeing",
-  "crates/terminal"
+  "crates/terminal",
+  "crates/mcpserver"
 ]
 
 [workspace.package]
@@ -40,6 +41,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 notify = "7.0"
 notify-debouncer-mini = "0.5"
+rmcp = { version = "0.8.0", features = ["server"] }
 
 [workspace.dependencies.windows]
 version = "0.61"
