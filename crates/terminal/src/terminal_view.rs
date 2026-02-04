@@ -59,6 +59,8 @@ pub struct TerminalView {
   pub scroll_top: Pixels,
   // scroll_handle: TerminalScrollHandle,
   pub ime_state: Option<ImeState>,
+  /// Scrollbar drag state: stores the initial offset when drag started
+  pub scrollbar_drag_offset: Option<f32>,
   _subscriptions: Vec<gpui::Subscription>,
   _terminal_subscriptions: Vec<gpui::Subscription>,
 }
@@ -144,6 +146,7 @@ impl TerminalView {
       hover_tooltip_update: Task::ready(()),
       scroll_top: Pixels::ZERO,
       ime_state: None,
+      scrollbar_drag_offset: None,
       index: index,
       _subscriptions: vec![focus_in, focus_out],
       _terminal_subscriptions: terminal_subscriptions,

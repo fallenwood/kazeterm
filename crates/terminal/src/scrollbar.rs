@@ -75,6 +75,21 @@ impl ScrollbarState {
     let inverted = 1.0 - position_ratio;
     (inverted * self.history_size as f32).round() as usize
   }
+
+  /// Check if a position ratio (0.0 to 1.0) is within the thumb area
+  /// Returns true if the click is on the thumb, false if on the track
+  pub fn is_on_thumb(&self, position_ratio: f32, track_height: Pixels) -> bool {
+    let (thumb_top_ratio, thumb_size_ratio) = self.thumb_metrics();
+
+    // Calculate actual thumb bounds considering minimum height
+    let thumb_height = (track_height * thumb_size_ratio).max(px(MIN_THUMB_HEIGHT));
+    let thumb_top = track_height * thumb_top_ratio;
+    // Adjust thumb position if it would overflow
+    let thumb_top = thumb_top.min(track_height - thumb_height);
+
+    let click_y = track_height * position_ratio;
+    click_y >= thumb_top && click_y <= thumb_top + thumb_height
+  }
 }
 
 /// Paint a scrollbar into the given bounds
@@ -166,5 +181,30 @@ mod tests {
 
     // Click in middle
     assert_eq!(state.position_to_offset(0.5), 40);
+  }
+
+  #[test]
+  fn test_is_on_thumb() {
+    // Scrollbar at bottom (display_offset = 0), thumb is at the bottom
+    let state = ScrollbarState::new(100, 20, 0, 80);
+    let track_height = px(500.0);
+
+    // Thumb is at 80% down (top = 0.8, size = 0.2)
+    // Click at 85% should be on thumb
+    assert!(state.is_on_thumb(0.85, track_height));
+    // Click at 95% should be on thumb
+    assert!(state.is_on_thumb(0.95, track_height));
+    // Click at 50% should NOT be on thumb (above it)
+    assert!(!state.is_on_thumb(0.5, track_height));
+    // Click at 10% should NOT be on thumb
+    assert!(!state.is_on_thumb(0.1, track_height));
+
+    // Scrollbar at top (display_offset = history_size), thumb is at the top
+    let state = ScrollbarState::new(100, 20, 80, 80);
+    // Thumb is at top (top = 0, size = 0.2)
+    // Click at 10% should be on thumb
+    assert!(state.is_on_thumb(0.1, track_height));
+    // Click at 50% should NOT be on thumb
+    assert!(!state.is_on_thumb(0.5, track_height));
   }
 }
