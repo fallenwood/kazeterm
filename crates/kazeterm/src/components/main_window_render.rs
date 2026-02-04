@@ -332,6 +332,7 @@ impl Render for MainWindow {
                                         let view = view.clone();
                                         move |menu, _window, _cx| {
                                           let view_rename = view.clone();
+                                          let view_duplicate = view.clone();
                                           let view_split_h = view.clone();
                                           let view_split_v = view.clone();
                                           let view_close_pane = view.clone();
@@ -347,6 +348,15 @@ impl Render for MainWindow {
                                                 .on_click(move |_, window, cx| {
                                                   view_rename.update(cx, |this, cx| {
                                                     this.show_rename_dialog(tab_index, window, cx);
+                                                  });
+                                                }),
+                                            )
+                                            .item(
+                                              PopupMenuItem::new("Duplicate Tab")
+                                                .icon(Icon::empty().path("icons/copy.svg"))
+                                                .on_click(move |_, window, cx| {
+                                                  view_duplicate.update(cx, |this, cx| {
+                                                    this.duplicate_tab(tab_index, window, cx);
                                                   });
                                                 }),
                                             )

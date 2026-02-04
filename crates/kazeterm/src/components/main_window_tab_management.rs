@@ -12,6 +12,33 @@ impl MainWindow {
     self.insert_new_tab_with_profile(None, None, window, cx);
   }
 
+  /// Duplicates a tab by creating a new tab with the same shell and working directory
+  pub fn duplicate_tab(&mut self, tab_index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    // Find the tab by index
+    let tab = self.items.iter().find(|item| item.index == tab_index);
+    if let Some(tab) = tab {
+      let shell_path = tab.shell_path.clone();
+
+      // Get the current working directory from the active terminal
+      let working_directory = tab
+        .split_container
+        .get_active_terminal()
+        .and_then(|terminal| {
+          terminal
+            .read(cx)
+            .terminal()
+            .read(cx)
+            .pty_info
+            .current
+            .as_ref()
+            .map(|info| info.cwd.to_string_lossy().to_string())
+        });
+
+      // Create a new tab with the same shell and working directory
+      self.insert_new_tab_with_profile(Some(&shell_path), working_directory, window, cx);
+    }
+  }
+
   pub fn insert_new_tab_with_profile(
     &mut self,
     profile_name: Option<&str>,
