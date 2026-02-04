@@ -267,6 +267,9 @@ impl SettingsStore {
       theme.muted = colors.text_muted;
       theme.muted_foreground = colors.text_muted;
 
+      // Caret color (same as text for consistency)
+      theme.caret = colors.text;
+
       // Popup/dropdown menu styling
       theme.popover = colors.elevated_surface_background;
       theme.popover_foreground = colors.text;

@@ -142,7 +142,7 @@ impl Render for TabRenameDialog {
               .child(
                 div()
                   .w_full()
-                  .child(Input::new(&self.input_state).w_full().appearance(false)),
+                  .child(Input::new(&self.input_state).w_full().cursor_text()),
               )
               .child(
                 div()
