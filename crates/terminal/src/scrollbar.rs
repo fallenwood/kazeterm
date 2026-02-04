@@ -4,7 +4,7 @@ use gpui::{BorderStyle, Bounds, Hsla, Pixels, Point, Window, fill, px};
 pub const SCROLLBAR_WIDTH: f32 = 12.0;
 
 /// Minimum thumb height in pixels
-const MIN_THUMB_HEIGHT: f32 = 20.0;
+pub const MIN_THUMB_HEIGHT: f32 = 20.0;
 
 /// Scrollbar state for rendering
 #[derive(Clone, Debug)]
@@ -74,6 +74,64 @@ impl ScrollbarState {
     // Invert the position (top = history_size, bottom = 0)
     let inverted = 1.0 - position_ratio;
     (inverted * self.history_size as f32).round() as usize
+  }
+
+  /// Convert a thumb top position (0.0 to 1.0) to a scroll offset
+  /// This accounts for the thumb size when mapping position to offset
+  pub fn thumb_top_to_offset(&self, thumb_top_ratio: f32) -> usize {
+    if self.history_size == 0 {
+      return 0;
+    }
+
+    let (_, thumb_size) = self.thumb_metrics();
+    let max_thumb_top = 1.0 - thumb_size;
+
+    if max_thumb_top <= 0.0 {
+      return 0;
+    }
+
+    // Normalize thumb position to 0-1 range within the scrollable area
+    let normalized = (thumb_top_ratio / max_thumb_top).clamp(0.0, 1.0);
+    // Invert: thumb at top (0) = max offset, thumb at bottom (1) = 0 offset
+    let offset = (1.0 - normalized) * self.history_size as f32;
+    offset.round() as usize
+  }
+
+  /// Get the actual thumb position and height in pixels, accounting for MIN_THUMB_HEIGHT
+  /// Returns (thumb_top_px, thumb_height_px, effective_track_height)
+  pub fn thumb_pixel_bounds(&self, track_height: Pixels) -> (Pixels, Pixels) {
+    let (thumb_top_ratio, thumb_size_ratio) = self.thumb_metrics();
+
+    // Calculate actual thumb height with minimum
+    let thumb_height = (track_height * thumb_size_ratio).max(px(MIN_THUMB_HEIGHT));
+    let thumb_top = track_height * thumb_top_ratio;
+    // Adjust thumb position if it would overflow
+    let thumb_top = thumb_top.min(track_height - thumb_height);
+
+    (thumb_top, thumb_height)
+  }
+
+  /// Convert a pixel Y position within the track to a scroll offset
+  /// This uses the actual visual thumb position accounting for MIN_THUMB_HEIGHT
+  pub fn pixel_to_offset(&self, y_px: Pixels, track_height: Pixels) -> usize {
+    if self.history_size == 0 {
+      return 0;
+    }
+
+    let (_, thumb_height) = self.thumb_pixel_bounds(track_height);
+    let scrollable_height = track_height - thumb_height;
+
+    if scrollable_height <= px(0.0) {
+      return 0;
+    }
+
+    // Clamp y to valid range
+    let thumb_top = y_px.clamp(px(0.0), scrollable_height);
+    let normalized: f32 = (thumb_top / scrollable_height).into();
+
+    // Invert: top = max offset, bottom = 0
+    let offset = (1.0 - normalized) * self.history_size as f32;
+    offset as usize
   }
 
   /// Check if a position ratio (0.0 to 1.0) is within the thumb area
