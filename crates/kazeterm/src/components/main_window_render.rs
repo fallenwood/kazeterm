@@ -1,13 +1,12 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-  Icon, IconName, Selectable, Sizable,
+  Icon, IconName, Selectable, Sizable, StyledExt, TitleBar,
   button::{Button, ButtonVariants},
   h_flex,
   label::Label,
   menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem},
   tab::{Tab, TabBar},
-  TitleBar,
 };
 use themeing::SettingsStore;
 
@@ -108,11 +107,20 @@ impl Render for MainWindow {
           this.toggle_search(window, cx);
         } else if e.keystroke.key == "Escape" && this.search_visible {
           this.toggle_search(window, cx);
-        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "d" {
+        } else if e.keystroke.modifiers.shift
+          && e.keystroke.modifiers.control
+          && e.keystroke.key == "d"
+        {
           this.split_pane_horizontal(window, cx);
-        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "e" {
+        } else if e.keystroke.modifiers.shift
+          && e.keystroke.modifiers.control
+          && e.keystroke.key == "e"
+        {
           this.split_pane_vertical(window, cx);
-        } else if e.keystroke.modifiers.shift && e.keystroke.modifiers.control && e.keystroke.key == "w" {
+        } else if e.keystroke.modifiers.shift
+          && e.keystroke.modifiers.control
+          && e.keystroke.key == "w"
+        {
           this.close_active_pane(window, cx);
         }
       }))
@@ -148,6 +156,7 @@ impl Render for MainWindow {
           })
           .child(
             div()
+              .h_flex()
               .flex_1()
               .flex_basis(px(0.0))
               .min_w_0()
@@ -175,7 +184,11 @@ impl Render for MainWindow {
                         let is_first = tab_ix == 0;
                         let is_last = tab_ix == total_tabs - 1;
                         let is_selected = self.active_tab_ix == Some(tab_ix);
-                        let has_bell = item.split_container.all_terminals().iter().any(|(_, t)| t.read(cx).has_bell());
+                        let has_bell = item
+                          .split_container
+                          .all_terminals()
+                          .iter()
+                          .any(|(_, t)| t.read(cx).has_bell());
                         let view = cx.entity();
                         let all_terminals = item.split_container.all_terminals();
                         // Define colors for selected tab highlight
@@ -465,226 +478,240 @@ impl Render for MainWindow {
                       })
                       .collect::<Vec<_>>(),
                   ),
-              ),
-          )
-          .child(
-            h_flex()
-              .flex_shrink_0()
-              .gap_0()
-              .child(
-                Button::new("new")
-                  .ghost()
-                  .small()
-                  .icon(IconName::Plus)
-                  .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                    cx.stop_propagation();
-                  })
-                  .on_click(cx.listener(|this, _e, window, cx| {
-                    this.insert_new_tab(window, cx);
-                  })),
               )
               .child(
-                Button::new("more")
-                  .ghost()
-                  .small()
-                  .icon(IconName::ChevronDown)
-                  .dropdown_menu({
-                    let view_about = view.clone();
-                    move |menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
-                      let mut menu = menu;
+                h_flex()
+                  .flex_shrink_0()
+                  .gap_0()
+                  .child(
+                    Button::new("new")
+                      .ghost()
+                      .small()
+                      .icon(IconName::Plus)
+                      .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                        cx.stop_propagation();
+                      })
+                      .on_click(cx.listener(|this, _e, window, cx| {
+                        this.insert_new_tab(window, cx);
+                      })),
+                  )
+                  .child(
+                    Button::new("more")
+                      .ghost()
+                      .small()
+                      .icon(IconName::ChevronDown)
+                      .dropdown_menu({
+                        let view_about = view.clone();
+                        move |menu: PopupMenu,
+                              _window: &mut Window,
+                              _cx: &mut Context<PopupMenu>| {
+                          let mut menu = menu;
 
-                      // Local profiles
-                      for (name, shell_path) in local_profiles.iter() {
-                        let profile_name = name.clone();
-                        let shell_path = shell_path.clone();
-                        let display_name = name.clone();
-                        let view_clone = view.clone();
-                        menu = menu.item(
-                          PopupMenuItem::element(move |_window, _cx| {
-                            let shell_icon = ShellIcon::new(&shell_path);
-                            h_flex()
-                              .gap_2()
-                              .items_center()
-                              .child(
-                                div()
-                                  .w(px(16.0))
-                                  .h(px(16.0))
-                                  .flex()
+                          // Local profiles
+                          for (name, shell_path) in local_profiles.iter() {
+                            let profile_name = name.clone();
+                            let shell_path = shell_path.clone();
+                            let display_name = name.clone();
+                            let view_clone = view.clone();
+                            menu = menu.item(
+                              PopupMenuItem::element(move |_window, _cx| {
+                                let shell_icon = ShellIcon::new(&shell_path);
+                                h_flex()
+                                  .gap_2()
                                   .items_center()
-                                  .justify_center()
-                                  .child(shell_icon.into_element(px(16.0))),
-                              )
-                              .child(display_name.clone())
-                              .into_any_element()
-                          })
-                          .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                            view_clone.update(cx, |this, cx| {
-                              this.insert_new_tab_with_profile(
-                                Some(&profile_name),
-                                None,
-                                window,
-                                cx,
-                              );
-                            });
-                          }),
-                        );
-                      }
-
-                      // Container profiles
-                      if !container_profiles.is_empty() {
-                        menu = menu.separator();
-                        for (name, shell_path) in container_profiles.iter() {
-                          let profile_name = name.clone();
-                          let shell_path = shell_path.clone();
-                          let display_name = name.clone();
-                          let view_clone = view.clone();
-                          menu = menu.item(
-                            PopupMenuItem::element(move |_window, _cx| {
-                              let shell_icon = ShellIcon::new(&shell_path);
-                              h_flex()
-                                .gap_2()
-                                .items_center()
-                                .child(
-                                  div()
-                                    .w(px(16.0))
-                                    .h(px(16.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(shell_icon.into_element(px(16.0))),
-                                )
-                                .child(display_name.clone())
-                                .into_any_element()
-                            })
-                            .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                              view_clone.update(cx, |this, cx| {
-                                this.insert_new_tab_with_profile(
-                                  Some(&profile_name),
-                                  None,
-                                  window,
-                                  cx,
-                                );
-                              });
-                            }),
-                          );
-                        }
-                      }
-
-                      // SSH Hosts
-                      if !ssh_hosts.is_empty() {
-                        menu = menu.separator();
-                        for name in ssh_hosts.iter() {
-                          let profile_name = name.clone();
-                          let display_name = format!("[ssh] {}", name);
-                          let view_clone = view.clone();
-                          menu = menu.item(
-                            PopupMenuItem::element(move |_window, _cx| {
-                              h_flex()
-                                .gap_2()
-                                .items_center()
-                                .child(
-                                  div()
-                                    .w(px(16.0))
-                                    .h(px(16.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(Icon::new(IconName::Globe).size_4()),
-                                )
-                                .child(display_name.clone())
-                                .into_any_element()
-                            })
-                            .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                              view_clone.update(cx, |this, cx| {
-                                this.insert_new_tab_with_profile(
-                                  Some(&profile_name),
-                                  None,
-                                  window,
-                                  cx,
-                                );
-                              });
-                            }),
-                          );
-                        }
-                      }
-
-                      menu = menu.separator();
-                      menu = menu.item(
-                        PopupMenuItem::element(|_window, _cx| {
-                          h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(
-                              div()
-                                .w(px(16.0))
-                                .h(px(16.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(Icon::new(IconName::Folder).size_4()),
-                            )
-                            .child("Open Config Path")
-                            .into_any_element()
-                        })
-                        .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                          let config_path = ::config::Config::get_config_path();
-                          cx.open_url(&format!("file://{}", config_path.display()));
-                        }),
-                      );
-                      menu = menu.item(
-                        PopupMenuItem::element(|_window, _cx| {
-                          h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(
-                              div()
-                                .w(px(16.0))
-                                .h(px(16.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(Icon::new(IconName::File).size_4()),
-                            )
-                            .child("Open Config File")
-                            .into_any_element()
-                        })
-                        .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                          if let Some(path) = ::config::Config::get_config_file_path() {
-                            cx.open_url(&format!("file://{}", path.display()));
+                                  .child(
+                                    div()
+                                      .w(px(16.0))
+                                      .h(px(16.0))
+                                      .flex()
+                                      .items_center()
+                                      .justify_center()
+                                      .child(shell_icon.into_element(px(16.0))),
+                                  )
+                                  .child(display_name.clone())
+                                  .into_any_element()
+                              })
+                              .on_click(
+                                move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                  view_clone.update(cx, |this, cx| {
+                                    this.insert_new_tab_with_profile(
+                                      Some(&profile_name),
+                                      None,
+                                      window,
+                                      cx,
+                                    );
+                                  });
+                                },
+                              ),
+                            );
                           }
-                        }),
-                      );
 
-                      // About section
-                      menu = menu.separator();
-                      let view_about = view_about.clone();
-                      menu = menu.item(
-                        PopupMenuItem::element(|_window, _cx| {
-                          h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(
-                              div()
-                                .w(px(16.0))
-                                .h(px(16.0))
-                                .flex()
+                          // Container profiles
+                          if !container_profiles.is_empty() {
+                            menu = menu.separator();
+                            for (name, shell_path) in container_profiles.iter() {
+                              let profile_name = name.clone();
+                              let shell_path = shell_path.clone();
+                              let display_name = name.clone();
+                              let view_clone = view.clone();
+                              menu = menu.item(
+                                PopupMenuItem::element(move |_window, _cx| {
+                                  let shell_icon = ShellIcon::new(&shell_path);
+                                  h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                      div()
+                                        .w(px(16.0))
+                                        .h(px(16.0))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(shell_icon.into_element(px(16.0))),
+                                    )
+                                    .child(display_name.clone())
+                                    .into_any_element()
+                                })
+                                .on_click(
+                                  move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                    view_clone.update(cx, |this, cx| {
+                                      this.insert_new_tab_with_profile(
+                                        Some(&profile_name),
+                                        None,
+                                        window,
+                                        cx,
+                                      );
+                                    });
+                                  },
+                                ),
+                              );
+                            }
+                          }
+
+                          // SSH Hosts
+                          if !ssh_hosts.is_empty() {
+                            menu = menu.separator();
+                            for name in ssh_hosts.iter() {
+                              let profile_name = name.clone();
+                              let display_name = format!("[ssh] {}", name);
+                              let view_clone = view.clone();
+                              menu = menu.item(
+                                PopupMenuItem::element(move |_window, _cx| {
+                                  h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                      div()
+                                        .w(px(16.0))
+                                        .h(px(16.0))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(Icon::new(IconName::Globe).size_4()),
+                                    )
+                                    .child(display_name.clone())
+                                    .into_any_element()
+                                })
+                                .on_click(
+                                  move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                    view_clone.update(cx, |this, cx| {
+                                      this.insert_new_tab_with_profile(
+                                        Some(&profile_name),
+                                        None,
+                                        window,
+                                        cx,
+                                      );
+                                    });
+                                  },
+                                ),
+                              );
+                            }
+                          }
+
+                          menu = menu.separator();
+                          menu = menu.item(
+                            PopupMenuItem::element(|_window, _cx| {
+                              h_flex()
+                                .gap_2()
                                 .items_center()
-                                .justify_center()
-                                .child(Icon::new(IconName::Info).size_4()),
-                            )
-                            .child("About")
-                            .into_any_element()
-                        })
-                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                          view_about.update(cx, |this, cx| {
-                            this.show_about_dialog(window, cx);
-                          });
-                        }),
-                      );
+                                .child(
+                                  div()
+                                    .w(px(16.0))
+                                    .h(px(16.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(Icon::new(IconName::Folder).size_4()),
+                                )
+                                .child("Open Config Path")
+                                .into_any_element()
+                            })
+                            .on_click(
+                              move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                let config_path = ::config::Config::get_config_path();
+                                cx.open_url(&format!("file://{}", config_path.display()));
+                              },
+                            ),
+                          );
+                          menu = menu.item(
+                            PopupMenuItem::element(|_window, _cx| {
+                              h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(
+                                  div()
+                                    .w(px(16.0))
+                                    .h(px(16.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(Icon::new(IconName::File).size_4()),
+                                )
+                                .child("Open Config File")
+                                .into_any_element()
+                            })
+                            .on_click(
+                              |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                if let Some(path) = ::config::Config::get_config_file_path() {
+                                  cx.open_url(&format!("file://{}", path.display()));
+                                }
+                              },
+                            ),
+                          );
 
-                      menu
-                    }
-                  }),
+                          // About section
+                          menu = menu.separator();
+                          let view_about = view_about.clone();
+                          menu = menu.item(
+                            PopupMenuItem::element(|_window, _cx| {
+                              h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(
+                                  div()
+                                    .w(px(16.0))
+                                    .h(px(16.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(Icon::new(IconName::Info).size_4()),
+                                )
+                                .child("About")
+                                .into_any_element()
+                            })
+                            .on_click(
+                              move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                view_about.update(cx, |this, cx| {
+                                  this.show_about_dialog(window, cx);
+                                });
+                              },
+                            ),
+                          );
+
+                          menu
+                        }
+                      }),
+                  ),
               ),
           ),
       )
