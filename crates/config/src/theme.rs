@@ -443,7 +443,7 @@ impl ThemeColors {
         palette.element_selected = brighten(brighten(bg));
         palette.title_bar_background = brighten(bg);
         palette.title_bar_inactive_background = dim(bg);
-        palette.tab_inactive_background = brighten(bg);
+        palette.tab_inactive_background = slightly_brighten(bg);
         palette.scrollbar_track_background = brighten(bg);
         palette.scrollbar_thumb_background = brighten(brighten(brighten(bg)));
       } else {
@@ -455,7 +455,7 @@ impl ThemeColors {
         palette.element_selected = dim(dim(bg));
         palette.title_bar_background = dim(bg);
         palette.title_bar_inactive_background = brighten(bg);
-        palette.tab_inactive_background = dim(bg);
+        palette.tab_inactive_background = slightly_dim(bg);
         palette.scrollbar_track_background = dim(bg);
         palette.scrollbar_thumb_background = dim(dim(dim(bg)));
       }
@@ -481,6 +481,26 @@ fn dim(color: Hsla) -> Hsla {
     h: color.h,
     s: color.s,
     l: (color.l - 0.1).max(0.0),
+    a: color.a,
+  }
+}
+
+/// Slightly brighten a color by increasing lightness (half of brighten)
+fn slightly_brighten(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l + 0.05).min(1.0),
+    a: color.a,
+  }
+}
+
+/// Slightly dim a color by decreasing lightness (half of dim)
+fn slightly_dim(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l - 0.05).max(0.0),
     a: color.a,
   }
 }
