@@ -15,6 +15,7 @@ mod split_pane;
 mod tab_button;
 mod tab_rename_dialog;
 mod tab_switcher;
+mod terminal_tab_bar;
 pub(crate) mod terminal_window;
 
 pub use main_window::MainWindow;

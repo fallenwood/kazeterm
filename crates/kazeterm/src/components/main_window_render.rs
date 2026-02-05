@@ -1,17 +1,17 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-  Icon, IconName, Selectable, Sizable, StyledExt, TitleBar,
+  Icon, IconName, Sizable, StyledExt, TitleBar,
   button::{Button, ButtonVariants},
   h_flex,
   label::Label,
   menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem},
-  tab::{Tab, TabBar},
 };
 use themeing::SettingsStore;
 
 use super::main_window::MainWindow;
 use super::main_window::TAB_LABEL_MAX_WIDTH;
+use super::terminal_tab_bar::{TerminalTab, TerminalTabBar};
 use crate::components::{dragged_tab::{DraggedTab, DraggedTabView}, main_window::TAB_LABEL_MIN_WIDTH};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
@@ -162,15 +162,8 @@ impl Render for MainWindow {
               .min_w_0()
               .overflow_x_hidden()
               .child(
-                TabBar::new("tabs")
-                  .min_w_0()
-                  .underline()
+                TerminalTabBar::new("tabs")
                   .track_scroll(&self.tab_scroll_handle)
-                  .with_size(self.size)
-                  .selected_index(self.active_tab_ix.unwrap_or_default())
-                  .on_click(cx.listener(|this, index: &usize, window, cx| {
-                    this.set_active_tab(*index, window, cx);
-                  }))
                   .children(
                     self
                       .items
@@ -190,6 +183,7 @@ impl Render for MainWindow {
                           .iter()
                           .any(|(_, t)| t.read(cx).has_bell());
                         let view = cx.entity();
+                        let view_for_click = view.clone();
                         let all_terminals = item.split_container.all_terminals();
                         // Define colors for selected tab highlight
                         let selected_bg: gpui::Hsla = colors.tab_active_background;
@@ -200,9 +194,13 @@ impl Render for MainWindow {
                         let accent_color = colors.text_accent;
                         let warning_color = colors.terminal_ansi_yellow;
 
-                        Tab::new()
+                        TerminalTab::new()
                           .selected(is_selected)
-                          .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                          .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                            // Select this tab
+                            view_for_click.update(cx, |this, cx| {
+                              this.set_active_tab(tab_ix, window, cx);
+                            });
                             // Clear bell when clicking on tab
                             for (_, terminal) in &all_terminals {
                               terminal.update(cx, |terminal_view, cx| {
