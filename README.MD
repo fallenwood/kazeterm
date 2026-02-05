@@ -1,4 +1,4 @@
-# Kaze Term
+# KazeTerm
 
 ## Under development
 
@@ -6,7 +6,7 @@ A lightweight cross-platform terminal app based on Alacritty, inspired by Window
 
 ## Screenshot
 
-![screenshot2](./assets/screenshots/screenshot2.webp "Screenshot")
+![screenshot2](./assets/screenshots/screenshot3.webp "Screenshot")
 
 ## How to Build
 
