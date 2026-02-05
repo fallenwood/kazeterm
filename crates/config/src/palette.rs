@@ -168,7 +168,7 @@ impl Default for Palette {
     let text_accent = accent;
     let title_bar_background = rgb_u8(47, 52, 62);
     let title_bar_inactive_background = rgb_u8(22, 25, 37);
-    let tab_inactive_background = title_bar_background;
+    let tab_inactive_background = rgb_u8(43, 48, 57); // Between title_bar_background and background
     let tab_active_background = background;
     let search_match_background = hsla(30.0 / 360.0, 1.0, 0.5, 0.8);
     let search_highlight_background = hsla(60.0 / 360.0, 1.0, 0.5, 0.6);
