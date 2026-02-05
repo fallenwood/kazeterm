@@ -44,7 +44,6 @@ impl RenderOnce for TerminalTabBar {
     div()
       .id(self.id)
       .relative()
-      .flex_1()
       .h_full()
       .min_w_0()
       .overflow_x_hidden()

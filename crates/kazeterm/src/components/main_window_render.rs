@@ -481,6 +481,7 @@ impl Render for MainWindow {
                 h_flex()
                   .flex_shrink_0()
                   .gap_0()
+                  .pl_1()
                   .child(
                     Button::new("new")
                       .ghost()
