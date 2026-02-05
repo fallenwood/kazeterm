@@ -402,7 +402,7 @@ impl TerminalView {
     self.pause_cursor_blinking(window, cx);
 
     let handled = self.terminal.update(cx, |term, _cx| {
-      let handled = term.try_keystroke(&event.keystroke, false);
+      let handled = term.try_keystroke(&event.keystroke, true);
       tracing::trace!("key {:?} handled: {}", event.keystroke, handled);
       handled
     });
