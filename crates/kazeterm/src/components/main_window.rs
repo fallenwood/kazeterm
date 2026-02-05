@@ -11,8 +11,8 @@ use crate::components::tab_switcher::TabSwitcher;
 
 pub(crate) use super::main_window_tab_item::TabItem;
 
-/// Maximum width for tab labels before truncation
-pub(crate) const TAB_LABEL_MAX_WIDTH: f32 = 150.0;
+pub(crate) const TAB_LABEL_MIN_WIDTH: f32 = 60.0;
+pub(crate) const TAB_LABEL_MAX_WIDTH: f32 = 200.0;
 
 pub struct MainWindow {
   pub(crate) focus_handle: FocusHandle,

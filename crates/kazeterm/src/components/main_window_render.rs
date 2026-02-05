@@ -12,7 +12,7 @@ use themeing::SettingsStore;
 
 use super::main_window::MainWindow;
 use super::main_window::TAB_LABEL_MAX_WIDTH;
-use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
+use crate::components::{dragged_tab::{DraggedTab, DraggedTabView}, main_window::TAB_LABEL_MIN_WIDTH};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
 
@@ -279,8 +279,8 @@ impl Render for MainWindow {
                                       .pr_1()
                                       .py_1()
                                       .items_center()
-                                      .min_w(px(60.0))
-                                      .max_w(px(TAB_LABEL_MAX_WIDTH + 50.0))
+                                      .min_w(px(TAB_LABEL_MIN_WIDTH))
+                                      .max_w(px(TAB_LABEL_MAX_WIDTH))
                                       // Background styling
                                       .when(is_selected, |this| {
                                         this.bg(selected_bg).border_b_2().border_color(accent_color)
