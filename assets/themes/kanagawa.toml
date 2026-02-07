@@ -1,0 +1,43 @@
+# Kanagawa Theme for Kazeterm
+name = "Kanagawa"
+
+[dark]
+# Core colors
+background = "#1F1F28"
+foreground = "#DCD7BA"
+accent = "#7E9CD8"
+border = "#54546D"
+
+# ANSI colors
+black = "#16161D"
+red = "#C34043"
+green = "#76946A"
+yellow = "#C0A36E"
+blue = "#7E9CD8"
+magenta = "#957FB8"
+cyan = "#6A9589"
+white = "#C8C093"
+
+# Optional: explicit bright variants
+bright_black = "#727169"
+bright_white = "#DCD7BA"
+
+[light]
+# Core colors - Kanagawa Lotus (light variant)
+background = "#F2ECBC"
+foreground = "#545464"
+accent = "#4D699B"
+border = "#C7C7A0"
+
+# ANSI colors
+black = "#545464"
+red = "#C84053"
+green = "#6F894E"
+yellow = "#77713F"
+blue = "#4D699B"
+magenta = "#B35B79"
+cyan = "#597B75"
+white = "#F2ECBC"
+
+bright_black = "#8A8980"
+bright_white = "#F5EDCA"
