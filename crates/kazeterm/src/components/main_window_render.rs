@@ -272,10 +272,11 @@ impl Render for MainWindow {
                                         "tab-inner".into(),
                                         tab_ix as u64,
                                       ))
+                                      .mt_1()
+                                      .h_full()
                                       .gap_1p5()
                                       .pl_2p5()
                                       .pr_1()
-                                      .py_1()
                                       .items_center()
                                       .min_w(px(TAB_LABEL_MIN_WIDTH))
                                       .max_w(px(TAB_LABEL_MAX_WIDTH))
