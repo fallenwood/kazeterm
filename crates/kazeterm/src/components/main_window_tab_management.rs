@@ -227,9 +227,14 @@ impl MainWindow {
     if let Some(pos) = removed_pos {
       self.items.remove(pos);
 
-      // If no tabs left, insert a new one
+      // If no tabs left, either close the window or insert a new tab
       if self.items.is_empty() {
-        self.insert_new_tab(window, cx);
+        let config = cx.global::<::config::Config>();
+        if config.close_on_last_tab {
+          window.remove_window();
+        } else {
+          self.insert_new_tab(window, cx);
+        }
         return;
       }
 

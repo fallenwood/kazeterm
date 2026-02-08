@@ -49,6 +49,9 @@ pub struct Config {
   pub container_profiles: Vec<Profile>,
   /// Enable the terminal minimap (shows a zoomed-out preview of scrollback)
   pub minimap_enabled: bool,
+  /// Close the application when the last tab is closed
+  /// When false (default), a new tab is created instead
+  pub close_on_last_tab: bool,
 }
 
 impl Default for Config {
@@ -70,6 +73,7 @@ impl Default for Config {
       window_height: 600.0,
       container_profiles: detect_container_profiles(),
       minimap_enabled: false,
+      close_on_last_tab: true,
     }
   }
 }
@@ -396,6 +400,7 @@ mod tests {
       window_height: 50.0,
       container_profiles: vec![],
       minimap_enabled: false,
+      close_on_last_tab: true,
     };
 
     // get_profile
