@@ -2,6 +2,10 @@
 name = "kazeterm"
 version = "0.1.0"
 edition = "2024"
+description = "A modern GPU-accelerated terminal emulator"
+authors = ["fallenwood"]
+license = "GPL-3.0"
+repository = "https://github.com/fallenwood/kazeterm"
 
 [dependencies]
 anyhow.workspace = true

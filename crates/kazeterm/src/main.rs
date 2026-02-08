@@ -213,7 +213,7 @@ fn main() {
 
       // Hide system titlebar for custom window control
       options.titlebar = Some(gpui::TitlebarOptions {
-        title: None,
+        title: Some("Kazeterm".into()),
         appears_transparent: true,
         traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
       });
