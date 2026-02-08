@@ -19,6 +19,9 @@ pub use theme::{
   register_embedded_theme_loader, set_custom_themes_path,
 };
 
+pub mod migration;
+pub use migration::CURRENT_CONFIG_VERSION;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
   pub name: String,
@@ -31,6 +34,8 @@ pub struct Profile {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
+  /// Config file version in YYYYMMDD.Rev format (e.g., "20260208.1")
+  pub version: String,
   pub theme: String,
   pub theme_mode: ThemeMode,
   /// Custom themes directory path
@@ -57,6 +62,7 @@ pub struct Config {
 impl Default for Config {
   fn default() -> Self {
     Self {
+      version: CURRENT_CONFIG_VERSION.to_string(),
       theme: "one".to_string(),
       theme_mode: ThemeMode::default(),
       themes_path: None,
@@ -228,9 +234,30 @@ impl Config {
 
   fn load_from_path(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
-    let mut config: Config = toml::from_str(&content)?;
+    let mut raw: toml::Value = toml::from_str(&content)?;
+
+    let migrated = migration::apply_migrations(&mut raw);
+    let mut config: Config = raw.try_into()?;
     config.container_profiles = detect_container_profiles();
+
+    if migrated {
+      tracing::info!("Config migrated to version {}", config.version);
+      if let Err(e) = Self::save_to_path(path, &config) {
+        tracing::error!("Failed to save migrated config: {}", e);
+      }
+    }
+
     Ok(config)
+  }
+
+  fn save_to_path(path: &PathBuf, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let config_str = toml::to_string_pretty(config)?;
+    let content = format!(
+      "# Kazeterm Configuration\n# Generated automatically\n\n{}",
+      config_str
+    );
+    std::fs::write(path, content)?;
+    Ok(())
   }
 
   pub fn get_shell(&self) -> String {
@@ -384,6 +411,7 @@ mod tests {
     ];
 
     let config = Config {
+      version: CURRENT_CONFIG_VERSION.to_string(),
       theme: "one".into(),
       theme_mode: ThemeMode::Dark,
       themes_path: None,
