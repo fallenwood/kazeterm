@@ -1,11 +1,12 @@
-//! Application event system for Kazeterm
+//! Centralized event bus for Kazeterm
 //!
-//! This module provides an optional event system that allows triggering actions
-//! from external sources. The event system can be configured via command-line
-//! arguments to read events from:
+//! This module provides a subscriber-based event bus that allows any component
+//! to subscribe to specific event types and handle them when dispatched.
+//! Events can be sent from any thread via [`send_event`] / [`try_send_event`],
+//! and are dispatched to registered handlers on the main thread within the
+//! GPUI update cycle.
 //!
-//! - **stdio**: Read JSON events from stdin (useful for piping commands)
-//! - **socket**: Read JSON events from a Unix domain socket (all platforms)
+//! External event sources (stdin, Unix domain sockets) feed into the same bus.
 //!
 //! # Command-line Usage
 //!
@@ -40,6 +41,7 @@
 //! send_event(AppEvent::NewTerminalWithDefaultProfile);
 //! ```
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -126,6 +128,214 @@ pub enum AppEvent {
 
   /// Custom event with arbitrary data (for extensions)
   Custom { name: String, data: String },
+}
+
+impl AppEvent {
+  /// Returns a string discriminant used as the key for subscriber lookup.
+  pub fn discriminant(&self) -> &'static str {
+    match self {
+      AppEvent::NewTerminalWithDefaultProfile => "NewTerminalWithDefaultProfile",
+      AppEvent::NewTerminalWithProfile { .. } => "NewTerminalWithProfile",
+      AppEvent::CloseActiveTab => "CloseActiveTab",
+      AppEvent::CloseTab { .. } => "CloseTab",
+      AppEvent::NextTab => "NextTab",
+      AppEvent::PreviousTab => "PreviousTab",
+      AppEvent::SwitchToTab { .. } => "SwitchToTab",
+      AppEvent::SplitHorizontal => "SplitHorizontal",
+      AppEvent::SplitVertical => "SplitVertical",
+      AppEvent::CloseActivePane => "CloseActivePane",
+      AppEvent::ToggleSearch => "ToggleSearch",
+      AppEvent::ShowAboutDialog => "ShowAboutDialog",
+      AppEvent::ReloadConfig => "ReloadConfig",
+      AppEvent::FocusActiveTerminal => "FocusActiveTerminal",
+      AppEvent::SendTextToTerminal { .. } => "SendTextToTerminal",
+      AppEvent::Custom { .. } => "Custom",
+    }
+  }
+}
+
+/// A handler closure that processes an [`AppEvent`] within the GPUI context.
+type EventHandler = Box<
+  dyn Fn(&mut MainWindow, AppEvent, &mut Window, &mut gpui::Context<MainWindow>) + Send + 'static,
+>;
+
+/// Centralized event bus that dispatches [`AppEvent`]s to registered subscribers.
+///
+/// Subscribers register handlers keyed by event discriminant. When an event is
+/// dispatched, all handlers registered for that discriminant are invoked in
+/// registration order.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let mut bus = EventBus::new();
+/// bus.subscribe("NextTab", |main_window, _event, window, cx| {
+///   // handle next-tab logic
+/// });
+/// ```
+pub struct EventBus {
+  handlers: HashMap<&'static str, Vec<EventHandler>>,
+}
+
+impl EventBus {
+  pub fn new() -> Self {
+    Self {
+      handlers: HashMap::new(),
+    }
+  }
+
+  /// Register a handler for a specific event discriminant.
+  ///
+  /// Multiple handlers can be registered for the same discriminant; they will
+  /// all be called in registration order when a matching event is dispatched.
+  pub fn subscribe<F>(&mut self, discriminant: &'static str, handler: F)
+  where
+    F: Fn(&mut MainWindow, AppEvent, &mut Window, &mut gpui::Context<MainWindow>)
+      + Send
+      + 'static,
+  {
+    self
+      .handlers
+      .entry(discriminant)
+      .or_default()
+      .push(Box::new(handler));
+  }
+
+  /// Dispatch an event to all registered handlers for that event's discriminant.
+  ///
+  /// Returns the number of handlers that were invoked.
+  pub fn dispatch(
+    &self,
+    main_window: &mut MainWindow,
+    event: AppEvent,
+    window: &mut Window,
+    cx: &mut gpui::Context<MainWindow>,
+  ) -> usize {
+    let discriminant = event.discriminant();
+    if let Some(handlers) = self.handlers.get(discriminant) {
+      for handler in handlers {
+        handler(main_window, event.clone(), window, cx);
+      }
+      handlers.len()
+    } else {
+      tracing::debug!("No handlers registered for event: {}", discriminant);
+      0
+    }
+  }
+}
+
+/// Build the default [`EventBus`] with all built-in handlers registered.
+pub fn build_default_event_bus() -> EventBus {
+  let mut bus = EventBus::new();
+
+  bus.subscribe("NewTerminalWithDefaultProfile", |mw, _event, window, cx| {
+    mw.insert_new_tab(window, cx);
+  });
+
+  bus.subscribe(
+    "NewTerminalWithProfile",
+    |mw, event, window, cx| {
+      if let AppEvent::NewTerminalWithProfile {
+        profile_name,
+        working_directory,
+      } = event
+      {
+        mw.insert_new_tab_with_profile(Some(&profile_name), working_directory, window, cx);
+      }
+    },
+  );
+
+  bus.subscribe("CloseActiveTab", |mw, _event, window, cx| {
+    if let Some(active_ix) = mw.active_tab_ix
+      && let Some(item) = mw.items.get(active_ix)
+    {
+      mw.remove_tab_by(item.index, window, cx);
+    }
+  });
+
+  bus.subscribe("CloseTab", |mw, event, window, cx| {
+    if let AppEvent::CloseTab { tab_index } = event {
+      mw.remove_tab_by(tab_index, window, cx);
+    }
+  });
+
+  bus.subscribe("NextTab", |mw, _event, window, cx| {
+    if !mw.items.is_empty() {
+      let current_ix = mw.active_tab_ix.unwrap_or(0);
+      let next_ix = (current_ix + 1) % mw.items.len();
+      mw.set_active_tab(next_ix, window, cx);
+    }
+  });
+
+  bus.subscribe("PreviousTab", |mw, _event, window, cx| {
+    if !mw.items.is_empty() {
+      let current_ix = mw.active_tab_ix.unwrap_or(0);
+      let prev_ix = if current_ix == 0 {
+        mw.items.len() - 1
+      } else {
+        current_ix - 1
+      };
+      mw.set_active_tab(prev_ix, window, cx);
+    }
+  });
+
+  bus.subscribe("SwitchToTab", |mw, event, window, cx| {
+    if let AppEvent::SwitchToTab { position } = event
+      && position < mw.items.len()
+    {
+      mw.set_active_tab(position, window, cx);
+    }
+  });
+
+  bus.subscribe("SplitHorizontal", |mw, _event, window, cx| {
+    mw.split_pane_horizontal(window, cx);
+  });
+
+  bus.subscribe("SplitVertical", |mw, _event, window, cx| {
+    mw.split_pane_vertical(window, cx);
+  });
+
+  bus.subscribe("CloseActivePane", |mw, _event, window, cx| {
+    mw.close_active_pane(window, cx);
+  });
+
+  bus.subscribe("ToggleSearch", |mw, _event, window, cx| {
+    mw.toggle_search(window, cx);
+  });
+
+  bus.subscribe("ShowAboutDialog", |mw, _event, window, cx| {
+    mw.show_about_dialog(window, cx);
+  });
+
+  bus.subscribe("ReloadConfig", |_mw, _event, _window, cx| {
+    crate::config_watcher::reload_config_and_theme_from_event(cx);
+  });
+
+  bus.subscribe("FocusActiveTerminal", |mw, _event, window, cx| {
+    mw.refocus_active_terminal(window, cx);
+  });
+
+  bus.subscribe("SendTextToTerminal", |mw, event, _window, cx| {
+    if let AppEvent::SendTextToTerminal { text } = event
+      && let Some(active_ix) = mw.active_tab_ix
+      && let Some(item) = mw.items.get(active_ix)
+      && let Some(terminal) = item.split_container.get_active_terminal()
+    {
+      terminal.update(cx, |view, cx| {
+        view.terminal().update(cx, |term, _cx| {
+          term.input(text.into_bytes());
+        });
+      });
+    }
+  });
+
+  bus.subscribe("Custom", |_mw, event, _window, _cx| {
+    if let AppEvent::Custom { name, data } = event {
+      tracing::info!("Custom event received: {} = {}", name, data);
+    }
+  });
+
+  bus
 }
 
 /// JSON representation of an event for external input
@@ -241,7 +451,7 @@ pub fn try_send_event(event: AppEvent) -> bool {
 ///
 /// This should be called once during application startup, after the
 /// main window is created. The event loop runs in the background and
-/// dispatches events to the main window.
+/// dispatches events to the main window via the centralized [`EventBus`].
 ///
 /// # Arguments
 ///
@@ -266,6 +476,9 @@ pub fn start_event_system(
   // Store the window handle
   let _ = MAIN_WINDOW_HANDLE.set(window_handle);
 
+  // Build the event bus with default handlers
+  let event_bus = build_default_event_bus();
+
   tracing::info!("Event system initialized with source: {:?}", source_config);
 
   // Start the external event reader if configured
@@ -283,7 +496,7 @@ pub fn start_event_system(
 
   // Spawn the event dispatch loop
   cx.spawn(async move |cx: &mut AsyncApp| {
-    run_event_loop(main_window, window_handle, receiver, cx).await;
+    run_event_loop(main_window, window_handle, receiver, event_bus, cx).await;
   })
   .detach();
 }
@@ -477,11 +690,12 @@ fn start_unix_socket_reader_windows(sender: Sender<AppEvent>, path: PathBuf) {
   }
 }
 
-/// Run the event loop, reading events and dispatching them to the main window.
+/// Run the event loop, reading events and dispatching them via the [`EventBus`].
 async fn run_event_loop(
   main_window: WeakEntity<MainWindow>,
   window_handle: AnyWindowHandle,
   receiver: Receiver<AppEvent>,
+  event_bus: EventBus,
   cx: &mut AsyncApp,
 ) {
   tracing::debug!("Event dispatch loop started");
@@ -491,7 +705,7 @@ async fn run_event_loop(
       Ok(event) => {
         tracing::debug!("Dispatching event: {:?}", event);
 
-        if let Err(e) = dispatch_event(&main_window, window_handle, event, cx).await {
+        if let Err(e) = dispatch_event(&main_window, window_handle, event, &event_bus, cx).await {
           tracing::error!("Failed to dispatch event: {}", e);
           // If the main window is gone, exit the event loop
           break;
@@ -507,11 +721,12 @@ async fn run_event_loop(
   tracing::debug!("Event dispatch loop exited");
 }
 
-/// Dispatch an event to the main window.
+/// Dispatch an event to subscribers via the [`EventBus`].
 async fn dispatch_event(
   main_window: &WeakEntity<MainWindow>,
   window_handle: AnyWindowHandle,
   event: AppEvent,
+  event_bus: &EventBus,
   cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
   // Try to upgrade the weak reference
@@ -521,122 +736,11 @@ async fn dispatch_event(
 
   cx.update_window(window_handle, |_root_view, window, cx| {
     main_window.update(cx, |this, cx| {
-      handle_event(this, event, window, cx);
+      event_bus.dispatch(this, event, window, cx);
     });
   })?;
 
   Ok(())
-}
-
-/// Handle an event on the main window.
-fn handle_event(
-  main_window: &mut MainWindow,
-  event: AppEvent,
-  window: &mut Window,
-  cx: &mut gpui::Context<MainWindow>,
-) {
-  match event {
-    AppEvent::NewTerminalWithDefaultProfile => {
-      main_window.insert_new_tab(window, cx);
-    }
-
-    AppEvent::NewTerminalWithProfile {
-      profile_name,
-      working_directory,
-    } => {
-      main_window.insert_new_tab_with_profile(Some(&profile_name), working_directory, window, cx);
-    }
-
-    AppEvent::CloseActiveTab => {
-      if let Some(active_ix) = main_window.active_tab_ix {
-        if let Some(item) = main_window.items.get(active_ix) {
-          let tab_index = item.index;
-          main_window.remove_tab_by(tab_index, window, cx);
-        }
-      }
-    }
-
-    AppEvent::CloseTab { tab_index } => {
-      main_window.remove_tab_by(tab_index, window, cx);
-    }
-
-    AppEvent::NextTab => {
-      if !main_window.items.is_empty() {
-        let current_ix = main_window.active_tab_ix.unwrap_or(0);
-        let next_ix = (current_ix + 1) % main_window.items.len();
-        main_window.set_active_tab(next_ix, window, cx);
-      }
-    }
-
-    AppEvent::PreviousTab => {
-      if !main_window.items.is_empty() {
-        let current_ix = main_window.active_tab_ix.unwrap_or(0);
-        let prev_ix = if current_ix == 0 {
-          main_window.items.len() - 1
-        } else {
-          current_ix - 1
-        };
-        main_window.set_active_tab(prev_ix, window, cx);
-      }
-    }
-
-    AppEvent::SwitchToTab { position } => {
-      if position < main_window.items.len() {
-        main_window.set_active_tab(position, window, cx);
-      }
-    }
-
-    AppEvent::SplitHorizontal => {
-      main_window.split_pane_horizontal(window, cx);
-    }
-
-    AppEvent::SplitVertical => {
-      main_window.split_pane_vertical(window, cx);
-    }
-
-    AppEvent::CloseActivePane => {
-      main_window.close_active_pane(window, cx);
-    }
-
-    AppEvent::ToggleSearch => {
-      main_window.toggle_search(window, cx);
-    }
-
-    AppEvent::ShowAboutDialog => {
-      main_window.show_about_dialog(window, cx);
-    }
-
-    AppEvent::ReloadConfig => {
-      // Trigger config reload
-      crate::config_watcher::reload_config_and_theme_from_event(cx);
-    }
-
-    AppEvent::FocusActiveTerminal => {
-      main_window.refocus_active_terminal(window, cx);
-    }
-
-    AppEvent::SendTextToTerminal { text } => {
-      // Send text to the active terminal
-      if let Some(active_ix) = main_window.active_tab_ix {
-        if let Some(item) = main_window.items.get(active_ix) {
-          if let Some(terminal) = item.split_container.get_active_terminal() {
-            terminal.update(cx, |view, cx| {
-              view.terminal().update(cx, |term, _cx| {
-                // Convert String to bytes for terminal input
-                term.input(text.into_bytes());
-              });
-            });
-          }
-        }
-      }
-    }
-
-    AppEvent::Custom { name, data } => {
-      tracing::info!("Custom event received: {} = {}", name, data);
-      // Custom events can be handled by extensions or plugins
-      // For now, just log them
-    }
-  }
 }
 
 #[cfg(test)]
@@ -692,5 +796,77 @@ mod tests {
     let json_event = JsonEvent::SwitchToTab { position: 3 };
     let app_event: AppEvent = json_event.into();
     assert!(matches!(app_event, AppEvent::SwitchToTab { position: 3 }));
+  }
+
+  #[test]
+  fn test_event_discriminant() {
+    assert_eq!(
+      AppEvent::NewTerminalWithDefaultProfile.discriminant(),
+      "NewTerminalWithDefaultProfile"
+    );
+    assert_eq!(
+      AppEvent::NewTerminalWithProfile {
+        profile_name: "bash".into(),
+        working_directory: None,
+      }
+      .discriminant(),
+      "NewTerminalWithProfile"
+    );
+    assert_eq!(
+      AppEvent::SwitchToTab { position: 0 }.discriminant(),
+      "SwitchToTab"
+    );
+    assert_eq!(
+      AppEvent::Custom {
+        name: "x".into(),
+        data: "y".into()
+      }
+      .discriminant(),
+      "Custom"
+    );
+  }
+
+  #[test]
+  fn test_event_bus_subscribe_count() {
+    let mut bus = EventBus::new();
+    assert!(bus.handlers.is_empty());
+
+    bus.subscribe("NextTab", |_mw, _event, _window, _cx| {});
+    assert_eq!(bus.handlers.get("NextTab").unwrap().len(), 1);
+
+    bus.subscribe("NextTab", |_mw, _event, _window, _cx| {});
+    assert_eq!(bus.handlers.get("NextTab").unwrap().len(), 2);
+  }
+
+  #[test]
+  fn test_default_event_bus_has_all_handlers() {
+    let bus = build_default_event_bus();
+
+    let expected_events = [
+      "NewTerminalWithDefaultProfile",
+      "NewTerminalWithProfile",
+      "CloseActiveTab",
+      "CloseTab",
+      "NextTab",
+      "PreviousTab",
+      "SwitchToTab",
+      "SplitHorizontal",
+      "SplitVertical",
+      "CloseActivePane",
+      "ToggleSearch",
+      "ShowAboutDialog",
+      "ReloadConfig",
+      "FocusActiveTerminal",
+      "SendTextToTerminal",
+      "Custom",
+    ];
+
+    for event_name in &expected_events {
+      assert!(
+        bus.handlers.contains_key(event_name),
+        "Missing handler for event: {}",
+        event_name
+      );
+    }
   }
 }
