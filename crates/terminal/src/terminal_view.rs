@@ -65,6 +65,8 @@ pub struct TerminalView {
   _terminal_subscriptions: Vec<gpui::Subscription>,
   /// Task for momentum scroll animation
   momentum_scroll_task: Task<()>,
+  /// Task for touch long-press detection
+  long_press_task: Task<()>,
 }
 
 impl EventEmitter<TerminalEvent> for TerminalView {}
@@ -153,6 +155,7 @@ impl TerminalView {
       _subscriptions: vec![focus_in, focus_out],
       _terminal_subscriptions: terminal_subscriptions,
       momentum_scroll_task: Task::ready(()),
+      long_press_task: Task::ready(()),
     }
   }
 
@@ -291,6 +294,24 @@ impl TerminalView {
           break;
         }
       }
+    });
+  }
+
+  /// Start a timer that promotes a pending touch to selection after a long press
+  pub fn start_long_press_timer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    const LONG_PRESS_DURATION: Duration = Duration::from_millis(500);
+
+    self.long_press_task = cx.spawn_in(window, async move |this, cx| {
+      Timer::after(LONG_PRESS_DURATION).await;
+
+      this
+        .update_in(cx, |this, _window, cx| {
+          this.terminal.update(cx, |term, _| {
+            term.promote_touch_to_selection();
+          });
+          cx.notify();
+        })
+        .ok();
     });
   }
 

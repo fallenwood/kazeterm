@@ -372,10 +372,13 @@ impl TerminalElement {
 
         // Touch screen swipes on Windows arrive as mouse events.
         // Convert them to scroll instead of text selection.
+        // Long press (>500ms) will promote to selection mode via timer.
         if is_mouse_from_touch() {
-          terminal.update(cx, |terminal, cx| {
-            terminal.begin_touch_drag(e.position);
-            cx.notify();
+          terminal.update(cx, |terminal, _| {
+            terminal.begin_touch(e.position);
+          });
+          terminal_view.update(cx, |view, cx| {
+            view.start_long_press_timer(window, cx);
           });
           return;
         }
@@ -403,11 +406,10 @@ impl TerminalElement {
         // }
 
         if e.pressed_button.is_some() && !cx.has_active_drag() && focus.is_focused(window) {
-          // Handle touch drag as scroll instead of text selection
-          let is_touch = terminal.read(cx).touch_drag_position.is_some();
-          if is_touch {
+          // Handle touch interaction (scroll or selection depending on state)
+          if terminal.read(cx).is_touch_active() {
             terminal.update(cx, |terminal, cx| {
-              terminal.touch_drag_scroll(e.position);
+              terminal.touch_move(e.position);
               cx.notify();
             });
             return;
@@ -443,8 +445,8 @@ impl TerminalElement {
         focus.clone(),
         false,
         move |terminal, e, cx| {
-          if terminal.touch_drag_position.is_some() {
-            terminal.end_touch_drag();
+          if terminal.is_touch_active() {
+            terminal.end_touch();
             return;
           }
           terminal.mouse_up(e, cx);
@@ -514,7 +516,16 @@ impl TerminalElement {
       // Non-mouse-mode: right-click for copy/paste
       self.interactivity.on_mouse_down(MouseButton::Right, {
         let terminal = terminal.clone();
-        move |_e, _window, cx| {
+        move |e, _window, cx| {
+          // Windows generates a right-click from touch long-press.
+          // Start selection at the touch position.
+          if is_mouse_from_touch() {
+            terminal.update(cx, |term, cx| {
+              term.start_touch_selection(e.position);
+              cx.notify();
+            });
+            return;
+          }
           let has_selection = terminal.read(cx).last_content.selection.is_some();
           if has_selection {
             // Has selection - copy and clear selection
@@ -528,6 +539,22 @@ impl TerminalElement {
                 term.input(text.into_bytes());
               });
             }
+          }
+        }
+      });
+
+      // Handle right mouse-up from touch to end touch selection
+      self.interactivity.on_mouse_up(MouseButton::Right, {
+        let terminal = terminal.clone();
+        let focus = focus.clone();
+        move |_e, window, cx| {
+          if !focus.is_focused(window) {
+            return;
+          }
+          if terminal.read(cx).is_touch_active() {
+            terminal.update(cx, |term, _| {
+              term.end_touch();
+            });
           }
         }
       });
