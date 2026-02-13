@@ -15,7 +15,7 @@ use alacritty_terminal::{
   term::TermMode,
 };
 use futures::channel::mpsc::UnboundedSender;
-use gpui::{Context, EventEmitter, Keystroke, Pixels, Window, px};
+use gpui::{Context, EventEmitter, Keystroke, Pixels, TouchPhase, Window, px};
 use themeing::ActiveTheme;
 
 #[derive(Clone)]
@@ -78,6 +78,12 @@ pub struct Terminal {
   pub next_link_id: usize,
   /// Timestamp of last process change, used to ignore shell title updates immediately after
   pub process_changed_at: Option<std::time::Instant>,
+  /// Scroll velocity for momentum scrolling (pixels per second)
+  pub scroll_velocity: f32,
+  /// Last scroll event time for velocity calculation
+  pub last_scroll_time: Option<std::time::Instant>,
+  /// Touch screen state for scroll/selection (Windows touch-to-mouse conversion)
+  pub touch_state: Option<TouchState>,
 }
 
 impl Terminal {
@@ -103,6 +109,9 @@ impl Terminal {
       title_text: "".to_string(),
       next_link_id: 0,
       process_changed_at: None,
+      scroll_velocity: 0.0,
+      last_scroll_time: None,
+      touch_state: None,
     };
   }
   pub fn last_content(&self) -> &TerminalContent {
@@ -745,10 +754,42 @@ impl Terminal {
     self.events.push_back(InternalEvent::Scroll(scroll));
   }
 
-  ///Scroll the terminal
-  pub fn scroll_wheel(&mut self, e: &gpui::ScrollWheelEvent, scroll_multiplier: f32) {
+  ///Scroll the terminal, returns true if momentum scrolling should start
+  pub fn scroll_wheel(&mut self, e: &gpui::ScrollWheelEvent, scroll_multiplier: f32) -> bool {
     let mouse_mode = self.mouse_mode(e.shift);
     let scroll_multiplier = if mouse_mode { 1. } else { scroll_multiplier };
+
+    // Track velocity for momentum scrolling
+    let line_height = self.last_content.terminal_bounds.line_height;
+    if line_height > px(0.) {
+      let delta_y = e.delta.pixel_delta(line_height).y;
+      let now = std::time::Instant::now();
+
+      match e.touch_phase {
+        TouchPhase::Started => {
+          // Reset velocity on new touch
+          self.scroll_velocity = 0.0;
+          self.last_scroll_time = Some(now);
+        }
+        TouchPhase::Moved => {
+          // Calculate instantaneous velocity
+          if let Some(last_time) = self.last_scroll_time {
+            let dt = now.duration_since(last_time).as_secs_f32();
+            if dt > 0.0 && dt < 0.1 {
+              // Blend with previous velocity for smoothing (exponential moving average)
+              let instant_velocity = f32::from(delta_y) / dt;
+              self.scroll_velocity = self.scroll_velocity * 0.3 + instant_velocity * 0.7;
+            }
+          }
+          self.last_scroll_time = Some(now);
+        }
+        TouchPhase::Ended => {
+          // Signal that momentum should start
+          self.last_scroll_time = None;
+          // Return early after processing scroll - caller will handle momentum
+        }
+      }
+    }
 
     if let Some(scroll_lines) = self.determine_scroll_lines(e, scroll_multiplier) {
       if mouse_mode {
@@ -778,6 +819,140 @@ impl Terminal {
         self.events.push_back(InternalEvent::Scroll(scroll));
       }
     }
+
+    // Return true if momentum should start (touch ended with velocity)
+    matches!(e.touch_phase, TouchPhase::Ended) && self.scroll_velocity.abs() > 100.0
+  }
+
+  /// Apply momentum scroll step, returns true if momentum should continue
+  pub fn apply_momentum_scroll(&mut self) -> bool {
+    const FRICTION: f32 = 0.92; // Velocity decay per frame
+    const MIN_VELOCITY: f32 = 50.0; // Stop threshold (pixels/sec)
+
+    if self.scroll_velocity.abs() < MIN_VELOCITY {
+      self.scroll_velocity = 0.0;
+      return false;
+    }
+
+    let line_height = self.last_content.terminal_bounds.line_height;
+    if line_height <= px(0.) {
+      return false;
+    }
+
+    // Don't apply momentum in mouse mode or alt screen
+    if self.last_content.mode.contains(TermMode::ALT_SCREEN) {
+      self.scroll_velocity = 0.0;
+      return false;
+    }
+
+    // Calculate scroll delta for this frame (assuming ~60fps = 16ms)
+    let frame_delta_px = self.scroll_velocity * 0.016;
+    self.scroll_px += px(frame_delta_px);
+
+    // Convert accumulated pixels to lines
+    let scroll_lines = (self.scroll_px / line_height) as i32;
+    if scroll_lines != 0 {
+      self.scroll_px -= line_height * scroll_lines as f32;
+      self.events.push_back(InternalEvent::Scroll(Scroll::Delta(scroll_lines)));
+    }
+
+    // Apply friction
+    self.scroll_velocity *= FRICTION;
+
+    self.scroll_velocity.abs() >= MIN_VELOCITY
+  }
+
+  /// Stop momentum scrolling
+  pub fn stop_momentum(&mut self) {
+    self.scroll_velocity = 0.0;
+  }
+
+  /// Begin a touch interaction (for Windows touch-to-mouse events)
+  pub fn begin_touch(&mut self, position: gpui::Point<Pixels>) {
+    self.touch_state = Some(TouchState::Pending {
+      position,
+      start_time: std::time::Instant::now(),
+    });
+    self.scroll_px = px(0.);
+  }
+
+  /// Handle touch move: returns the current touch mode
+  pub fn touch_move(&mut self, position: gpui::Point<Pixels>) -> Option<TouchMode> {
+    let state = self.touch_state.take()?;
+    match state {
+      TouchState::Pending { position: start_pos, .. } => {
+        let distance = (position.x - start_pos.x).abs() + (position.y - start_pos.y).abs();
+        if distance > px(10.0) {
+          // Finger moved enough — switch to scrolling
+          self.touch_state = Some(TouchState::Scrolling { last_position: position });
+          let delta_y = position.y - start_pos.y;
+          self.apply_touch_scroll_delta(delta_y);
+          Some(TouchMode::Scrolling)
+        } else {
+          // Not moved enough yet, stay pending
+          self.touch_state = Some(TouchState::Pending { position: start_pos, start_time: std::time::Instant::now() });
+          Some(TouchMode::Pending)
+        }
+      }
+      TouchState::Scrolling { last_position } => {
+        let delta_y = position.y - last_position.y;
+        self.touch_state = Some(TouchState::Scrolling { last_position: position });
+        self.apply_touch_scroll_delta(delta_y);
+        Some(TouchMode::Scrolling)
+      }
+      TouchState::Selecting => {
+        let position = position - self.last_content.terminal_bounds.bounds.origin;
+        self.selection_phase = SelectionPhase::Selecting;
+        self.events.push_back(InternalEvent::UpdateSelection(position));
+        self.touch_state = Some(TouchState::Selecting);
+        Some(TouchMode::Selecting)
+      }
+    }
+  }
+
+  fn apply_touch_scroll_delta(&mut self, delta_y: Pixels) {
+    let line_height = self.last_content.terminal_bounds.line_height;
+    if line_height > px(0.) {
+      self.scroll_px += delta_y;
+      let scroll_lines = (self.scroll_px / line_height) as i32;
+      if scroll_lines != 0 {
+        self.scroll_px -= line_height * scroll_lines as f32;
+        self.events.push_back(InternalEvent::Scroll(Scroll::Delta(scroll_lines)));
+      }
+    }
+  }
+
+  /// Promote a pending touch to selection mode (called by long-press timer)
+  pub fn promote_touch_to_selection(&mut self) {
+    if let Some(TouchState::Pending { position, .. }) = self.touch_state {
+      self.start_touch_selection(position);
+    }
+  }
+
+  /// Start touch selection at the given screen position
+  pub fn start_touch_selection(&mut self, position: gpui::Point<Pixels>) {
+    let position = position - self.last_content.terminal_bounds.bounds.origin;
+    let (point, side) = grid_point_and_side(
+      position,
+      self.last_content.terminal_bounds,
+      self.last_content.display_offset,
+    );
+    let selection = Selection::new(SelectionType::Simple, point, side);
+    self.events.push_back(InternalEvent::SetSelection(Some((selection, point))));
+    self.touch_state = Some(TouchState::Selecting);
+  }
+
+  /// End touch interaction
+  pub fn end_touch(&mut self) {
+    if matches!(self.touch_state, Some(TouchState::Selecting)) {
+      self.selection_phase = SelectionPhase::Ended;
+    }
+    self.touch_state = None;
+  }
+
+  /// Check if touch is currently active
+  pub fn is_touch_active(&self) -> bool {
+    self.touch_state.is_some()
   }
 
   pub fn mouse_drag(
@@ -904,6 +1079,29 @@ impl EventEmitter<Event> for Terminal {}
 pub enum SelectionPhase {
   Selecting,
   Ended,
+}
+
+/// State of an active touch interaction (Windows touch-to-mouse)
+pub enum TouchState {
+  /// Just touched, waiting to determine scroll vs long-press selection
+  Pending {
+    position: gpui::Point<Pixels>,
+    start_time: std::time::Instant,
+  },
+  /// Finger moved — scrolling
+  Scrolling {
+    last_position: gpui::Point<Pixels>,
+  },
+  /// Long press detected — selecting text
+  Selecting,
+}
+
+/// The resolved mode of a touch move event
+#[derive(PartialEq, Eq)]
+pub enum TouchMode {
+  Pending,
+  Scrolling,
+  Selecting,
 }
 
 fn content_index_for_mouse(pos: gpui::Point<Pixels>, terminal_bounds: &TerminalBounds) -> usize {

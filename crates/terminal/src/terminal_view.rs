@@ -63,6 +63,10 @@ pub struct TerminalView {
   pub scrollbar_drag_state: Option<(f32, f32)>,
   _subscriptions: Vec<gpui::Subscription>,
   _terminal_subscriptions: Vec<gpui::Subscription>,
+  /// Task for momentum scroll animation
+  momentum_scroll_task: Task<()>,
+  /// Task for touch long-press detection
+  long_press_task: Task<()>,
 }
 
 impl EventEmitter<TerminalEvent> for TerminalView {}
@@ -150,6 +154,8 @@ impl TerminalView {
       index: index,
       _subscriptions: vec![focus_in, focus_out],
       _terminal_subscriptions: terminal_subscriptions,
+      momentum_scroll_task: Task::ready(()),
+      long_press_task: Task::ready(()),
     }
   }
 
@@ -230,7 +236,12 @@ impl TerminalView {
     cx.notify();
   }
 
-  pub fn scroll_wheel(&mut self, event: &gpui::ScrollWheelEvent, cx: &mut Context<Self>) {
+  pub fn scroll_wheel(
+    &mut self,
+    event: &gpui::ScrollWheelEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     // Ctrl+Scroll for zooming
     if event.modifiers.control {
       let delta = event.delta.pixel_delta(gpui::px(1.0)).y;
@@ -247,10 +258,61 @@ impl TerminalView {
       return;
     }
 
-    self
+    // Stop any existing momentum when new touch starts
+    if matches!(event.touch_phase, gpui::TouchPhase::Started) {
+      self.terminal.update(cx, |term, _| term.stop_momentum());
+    }
+
+    let start_momentum = self
       .terminal
       .update(cx, |term, _| term.scroll_wheel(event, 1.0));
+
+    // Start momentum scrolling if touch ended with velocity
+    if start_momentum {
+      self.start_momentum_scroll(window, cx);
+    }
+
     cx.notify();
+  }
+
+  fn start_momentum_scroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    const FRAME_DURATION: Duration = Duration::from_millis(16); // ~60fps
+
+    self.momentum_scroll_task = cx.spawn_in(window, async move |this, cx| {
+      loop {
+        Timer::after(FRAME_DURATION).await;
+
+        let should_continue = this
+          .update_in(cx, |this, _window, cx| {
+            let should_continue = this.terminal.update(cx, |term, _| term.apply_momentum_scroll());
+            cx.notify();
+            should_continue
+          })
+          .unwrap_or(false);
+
+        if !should_continue {
+          break;
+        }
+      }
+    });
+  }
+
+  /// Start a timer that promotes a pending touch to selection after a long press
+  pub fn start_long_press_timer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    const LONG_PRESS_DURATION: Duration = Duration::from_millis(500);
+
+    self.long_press_task = cx.spawn_in(window, async move |this, cx| {
+      Timer::after(LONG_PRESS_DURATION).await;
+
+      this
+        .update_in(cx, |this, _window, cx| {
+          this.terminal.update(cx, |term, _| {
+            term.promote_touch_to_selection();
+          });
+          cx.notify();
+        })
+        .ok();
+    });
   }
 
   pub fn should_show_cursor(&self, focused: bool, cx: &mut Context<Self>) -> bool {
