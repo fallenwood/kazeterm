@@ -1,0 +1,43 @@
+# Tokyo Night Theme for Kazeterm
+name = "Tokyo Night"
+
+[dark]
+# Core colors
+background = "#1A1B26"
+foreground = "#C0CAF5"
+accent = "#7AA2F7"
+border = "#3B4261"
+
+# ANSI colors
+black = "#15161E"
+red = "#F7768E"
+green = "#9ECE6A"
+yellow = "#E0AF68"
+blue = "#7AA2F7"
+magenta = "#BB9AF7"
+cyan = "#7DCFFF"
+white = "#A9B1D6"
+
+# Optional: explicit bright variants
+bright_black = "#414868"
+bright_white = "#C0CAF5"
+
+[light]
+# Core colors - Tokyo Night Day variant
+background = "#E1E2E7"
+foreground = "#3760BF"
+accent = "#2E7DE9"
+border = "#C4C8DA"
+
+# ANSI colors
+black = "#E9E9ED"
+red = "#F52A65"
+green = "#587539"
+yellow = "#8C6C3E"
+blue = "#2E7DE9"
+magenta = "#9854F1"
+cyan = "#007197"
+white = "#6172B0"
+
+bright_black = "#A1A6C5"
+bright_white = "#3760BF"

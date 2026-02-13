@@ -12,6 +12,8 @@ pub fn default_settings() -> crate::SettingsStore {
         colors: Palette::default(),
       },
     }),
+    is_dark: true,
+    is_system: false,
   };
   settings
 }

@@ -208,6 +208,10 @@ pub trait ActiveTheme {
 
 pub struct SettingsStore {
   pub active_theme: Arc<Theme>,
+  /// Whether the current theme is using dark mode
+  pub is_dark: bool,
+  /// Whether the theme mode is set to System
+  pub is_system: bool,
 }
 
 impl SettingsStore {
@@ -262,6 +266,9 @@ impl SettingsStore {
       theme.foreground = colors.text;
       theme.muted = colors.text_muted;
       theme.muted_foreground = colors.text_muted;
+
+      // Caret color (same as text for consistency)
+      theme.caret = colors.text;
 
       // Popup/dropdown menu styling
       theme.popover = colors.elevated_surface_background;

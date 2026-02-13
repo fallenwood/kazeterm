@@ -4,6 +4,7 @@ use crate::{
   background_region::BackgroundRegion,
   cursor_layout::CursorLayout,
   highlighted_range_line::{HighlightedRange, HighlightedRangeLine},
+  scrollbar::{MIN_THUMB_HEIGHT, SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
   terminal_input_handler::TerminalInputHandler,
 };
 use alacritty_terminal::{
@@ -331,6 +332,7 @@ impl TerminalElement {
     &mut self,
     mode: TermMode,
     hitbox: &gpui::Hitbox,
+    scrollbar_bounds: Option<Bounds<Pixels>>,
     window: &mut Window,
   ) {
     let focus = self.focus.clone();
@@ -343,6 +345,13 @@ impl TerminalElement {
       let terminal_view = terminal_view.clone();
 
       move |e, window, cx| {
+        // Don't process terminal mouse down if clicking on scrollbar
+        if let Some(sb_bounds) = scrollbar_bounds {
+          if sb_bounds.contains(&e.position) {
+            return;
+          }
+        }
+
         window.focus(&focus);
 
         let scroll_top = terminal_view.read(cx).scroll_top;
@@ -509,6 +518,8 @@ pub struct LayoutState {
   gutter: Pixels,
   // block_below_cursor_element: Option<AnyElement>,
   base_text_style: TextStyle,
+  scrollbar_state: Option<ScrollbarState>,
+  scrollbar_bounds: Option<gpui::Bounds<Pixels>>,
 }
 
 impl Element for TerminalElement {
@@ -570,7 +581,7 @@ impl Element for TerminalElement {
         let zoom_state = cx.global::<themeing::ZoomState>();
 
         let font_family = gpui::SharedString::from(config.font_family.clone());
-        let line_height = AbsoluteLength::from(Pixels::from(1.3));
+        let line_height_multiplier = 1.18_f32;
         let effective_font_size = zoom_state.effective_font_size(config.font_size);
         let font_size = AbsoluteLength::from(Pixels::from(effective_font_size));
         let font_weight = FontWeight::NORMAL;
@@ -580,20 +591,6 @@ impl Element for TerminalElement {
 
         let theme = cx.theme().clone();
 
-        //             let link_style = HighlightStyle {
-        //                 color: Some(theme.colors().link_text_hover),
-        //                 font_weight: Some(font_weight),
-        //                 font_style: None,
-        //                 background_color: None,
-        //                 underline: Some(UnderlineStyle {
-        //                     thickness: px(1.0),
-        //                     color: Some(theme.colors().link_text_hover),
-        //                     wavy: false,
-        //                 }),
-        //                 strikethrough: None,
-        //                 fade_out: None,
-        //             };
-
         let text_style = TextStyle {
           font_family,
           font_features,
@@ -601,7 +598,7 @@ impl Element for TerminalElement {
           font_fallbacks: None,
           font_size: font_size.into(),
           font_style: FontStyle::Normal,
-          line_height: line_height.into(),
+          line_height: relative(line_height_multiplier).into(),
           background_color: Some(theme.colors().terminal_ansi_background),
           white_space: WhiteSpace::Normal,
           color: theme.colors().terminal_foreground,
@@ -610,11 +607,11 @@ impl Element for TerminalElement {
 
         let text_system = cx.text_system();
         let gutter;
+        let scrollbar_width = px(SCROLLBAR_WIDTH);
         let (dimensions, _line_height_px) = {
           let rem_size = window.rem_size();
           let font_pixels = text_style.font_size.to_pixels(rem_size);
-          // TODO: line_height should be an f32 not an AbsoluteLength.
-          let line_height = font_pixels * (line_height.to_pixels(rem_size).to_f64() as f32);
+          let line_height = font_pixels * line_height_multiplier;
           let font_id = cx.text_system().resolve_font(&text_style.font());
 
           let cell_width = text_system
@@ -624,7 +621,8 @@ impl Element for TerminalElement {
           gutter = cell_width;
 
           let mut size = bounds.size;
-          size.width -= gutter;
+          // Reserve space for gutter and scrollbar
+          size.width -= gutter + scrollbar_width;
 
           // https://github.com/zed-industries/zed/issues/2750
           // if the terminal is one column wide, rendering 🦀
@@ -691,11 +689,13 @@ impl Element for TerminalElement {
           search_matches,
           current_search_match_index,
           last_hovered_word,
+          history_size,
           ..
         } = &self.terminal.read(cx).last_content;
 
         let mode = *mode;
         let display_offset = *display_offset;
+        let history_size = *history_size;
         let current_match_idx = *current_search_match_index;
 
         // Create link style for hovered links
@@ -789,6 +789,28 @@ impl Element for TerminalElement {
           )
         };
 
+        // Calculate scrollbar state
+        let visible_lines = dimensions.screen_lines();
+        let total_lines = visible_lines + history_size;
+        let scrollbar_state =
+          ScrollbarState::new(total_lines, visible_lines, display_offset, history_size);
+
+        // Calculate scrollbar bounds (on the right edge of the terminal)
+        let scrollbar_bounds = if scrollbar_state.should_show() {
+          Some(Bounds {
+            origin: Point {
+              x: bounds.origin.x + bounds.size.width - scrollbar_width,
+              y: bounds.origin.y,
+            },
+            size: gpui::Size {
+              width: scrollbar_width,
+              height: bounds.size.height,
+            },
+          })
+        } else {
+          None
+        };
+
         LayoutState {
           hitbox,
           batched_text_runs,
@@ -803,6 +825,12 @@ impl Element for TerminalElement {
           gutter,
           // block_below_cursor_element,
           base_text_style: text_style,
+          scrollbar_state: if scrollbar_state.should_show() {
+            Some(scrollbar_state)
+          } else {
+            None
+          },
+          scrollbar_bounds,
         }
       },
     )
@@ -839,7 +867,7 @@ impl Element for TerminalElement {
           .map(|cursor| cursor.bounding_rect(origin)),
       };
 
-      self.register_mouse_listeners(layout.mode, &layout.hitbox, window);
+      self.register_mouse_listeners(layout.mode, &layout.hitbox, layout.scrollbar_bounds, window);
       if window.modifiers().secondary()
         && bounds.contains(&window.mouse_position())
         && self.terminal_view.read(cx).hover.is_some()
@@ -933,6 +961,140 @@ impl Element for TerminalElement {
           //                 }
         },
       );
+
+      // Paint scrollbar outside the main terminal content area
+      if let (Some(scrollbar_state), Some(scrollbar_bounds)) =
+        (&layout.scrollbar_state, &layout.scrollbar_bounds)
+      {
+        let theme = cx.theme();
+        let track_color = theme.colors().scrollbar_track_background;
+        let thumb_color = theme.colors().scrollbar_thumb_background;
+        let hovered = scrollbar_bounds.contains(&window.mouse_position());
+        paint_scrollbar(
+          *scrollbar_bounds,
+          scrollbar_state,
+          track_color,
+          thumb_color,
+          hovered,
+          window,
+        );
+
+        // Add scrollbar click handler (mouse down)
+        let scrollbar_bounds = *scrollbar_bounds;
+        let scrollbar_state_for_down = scrollbar_state.clone();
+        let terminal_for_down = self.terminal.clone();
+        let terminal_view_for_down = self.terminal_view.clone();
+        window.on_mouse_event(move |e: &gpui::MouseDownEvent, _phase, _window, cx| {
+          if e.button == MouseButton::Left && scrollbar_bounds.contains(&e.position) {
+            // Calculate the position ratio within the scrollbar
+            let relative_y = e.position.y - scrollbar_bounds.origin.y;
+            let position_ratio = (relative_y / scrollbar_bounds.size.height) as f32;
+
+            if scrollbar_state_for_down.is_on_thumb(position_ratio, scrollbar_bounds.size.height) {
+              // Clicked on thumb: start dragging
+              // Store the offset from actual thumb top (in pixels) to click position
+              let (thumb_top_px, _) =
+                scrollbar_state_for_down.thumb_pixel_bounds(scrollbar_bounds.size.height);
+              let click_offset_from_thumb_px: f32 = (relative_y - thumb_top_px).into();
+              let mouse_y: f32 = relative_y.into();
+              terminal_view_for_down.update(cx, |view, cx| {
+                view.scrollbar_drag_state = Some((click_offset_from_thumb_px, mouse_y));
+                cx.notify();
+              });
+            } else {
+              // Clicked on track: jump to position
+              let new_offset = scrollbar_state_for_down.position_to_offset(position_ratio);
+              terminal_for_down.update(cx, |terminal, cx| {
+                terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+                  new_offset as i32 - terminal.last_content.display_offset as i32,
+                ));
+                cx.notify();
+              });
+            }
+          }
+        });
+
+        // Add scrollbar drag handler (mouse move)
+        // Minimum mouse movement in pixels before processing a drag update
+        const MIN_DRAG_DELTA_PX: f32 = 3.0;
+
+        let scrollbar_bounds_for_move = scrollbar_bounds;
+        let terminal_for_move = self.terminal.clone();
+        let terminal_view_for_move = self.terminal_view.clone();
+        window.on_mouse_event(move |e: &gpui::MouseMoveEvent, _phase, _window, cx| {
+          let drag_state = terminal_view_for_move.read(cx).scrollbar_drag_state;
+
+          if let Some((click_offset_from_thumb_px, last_mouse_y)) = drag_state {
+            if e.pressed_button == Some(MouseButton::Left) {
+              let relative_y = e.position.y - scrollbar_bounds_for_move.origin.y;
+              let current_mouse_y: f32 = relative_y.into();
+
+              // Only process if mouse moved by minimum threshold
+              if (current_mouse_y - last_mouse_y).abs() < MIN_DRAG_DELTA_PX {
+                return;
+              }
+
+              // Calculate where the thumb top should be in pixels
+              // thumb_top = mouse_y - click_offset_from_thumb
+              let thumb_top_px = px(current_mouse_y - click_offset_from_thumb_px);
+              let track_height = scrollbar_bounds_for_move.size.height;
+
+              let history_size = terminal_for_move.read(cx).last_content.history_size;
+
+              if history_size > 0 {
+                let terminal_content = &terminal_for_move.read(cx).last_content;
+                let visible_lines = terminal_content.terminal_bounds.num_lines();
+                let total_lines = visible_lines + history_size;
+
+                // Calculate thumb height with minimum, same as paint_scrollbar
+                let thumb_size_ratio = visible_lines as f32 / total_lines as f32;
+                let thumb_height = (track_height * thumb_size_ratio).max(px(MIN_THUMB_HEIGHT));
+                let scrollable_height = track_height - thumb_height;
+
+                if scrollable_height > px(0.0) {
+                  // Clamp thumb_top to valid range
+                  let thumb_top_clamped = thumb_top_px.clamp(px(0.0), scrollable_height);
+                  let normalized: f32 = (thumb_top_clamped / scrollable_height).into();
+
+                  // Invert: top = max offset, bottom = 0
+                  let new_offset = ((1.0 - normalized) * history_size as f32) as usize;
+
+                  let current_offset = terminal_content.display_offset;
+                  if new_offset != current_offset {
+                    terminal_for_move.update(cx, |terminal, cx| {
+                      terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+                        new_offset as i32 - terminal.last_content.display_offset as i32,
+                      ));
+                      cx.notify();
+                    });
+                  }
+                }
+
+                // Update the last mouse Y position
+                terminal_view_for_move.update(cx, |view, _| {
+                  if let Some((offset, _)) = view.scrollbar_drag_state {
+                    view.scrollbar_drag_state = Some((offset, current_mouse_y));
+                  }
+                });
+              }
+            }
+          }
+        });
+
+        // Add scrollbar drag end handler (mouse up)
+        let terminal_view_for_up = self.terminal_view.clone();
+        window.on_mouse_event(move |e: &gpui::MouseUpEvent, _phase, _window, cx| {
+          if e.button == MouseButton::Left {
+            let is_dragging = terminal_view_for_up.read(cx).scrollbar_drag_state.is_some();
+            if is_dragging {
+              terminal_view_for_up.update(cx, |view, cx| {
+                view.scrollbar_drag_state = None;
+                cx.notify();
+              });
+            }
+          }
+        });
+      }
     });
   }
 }

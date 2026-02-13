@@ -132,6 +132,14 @@ pub struct Palette {
   /// Terminal cursor color.
   pub terminal_cursor: Hsla,
 
+  // ===
+  // Scrollbar
+  // ===
+  /// Scrollbar track background color.
+  pub scrollbar_track_background: Hsla,
+  /// Scrollbar thumb background color.
+  pub scrollbar_thumb_background: Hsla,
+
   /// Represents a link text hover color.
   pub link_text_hover: Hsla,
 }
@@ -160,7 +168,7 @@ impl Default for Palette {
     let text_accent = accent;
     let title_bar_background = rgb_u8(47, 52, 62);
     let title_bar_inactive_background = rgb_u8(22, 25, 37);
-    let tab_inactive_background = title_bar_background;
+    let tab_inactive_background = rgb_u8(43, 48, 57); // Between title_bar_background and background
     let tab_active_background = background;
     let search_match_background = hsla(30.0 / 360.0, 1.0, 0.5, 0.8);
     let search_highlight_background = hsla(60.0 / 360.0, 1.0, 0.5, 0.6);
@@ -194,6 +202,8 @@ impl Default for Palette {
     let terminal_ansi_bright_white = rgb_u8(250, 250, 250);
     let terminal_ansi_dim_white = text_muted;
     let terminal_cursor = accent;
+    let scrollbar_track_background = rgb_u8(47, 52, 62);
+    let scrollbar_thumb_background = rgb_u8(100, 110, 130);
     let link_text_hover = accent_bright;
 
     Palette {
@@ -253,6 +263,8 @@ impl Default for Palette {
       terminal_ansi_bright_white,
       terminal_ansi_dim_white,
       terminal_cursor,
+      scrollbar_track_background,
+      scrollbar_thumb_background,
       link_text_hover,
     }
   }

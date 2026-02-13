@@ -59,6 +59,8 @@ pub struct TerminalView {
   pub scroll_top: Pixels,
   // scroll_handle: TerminalScrollHandle,
   pub ime_state: Option<ImeState>,
+  /// Scrollbar drag state: stores (offset from thumb top to click, last mouse Y in pixels)
+  pub scrollbar_drag_state: Option<(f32, f32)>,
   _subscriptions: Vec<gpui::Subscription>,
   _terminal_subscriptions: Vec<gpui::Subscription>,
   /// Task for momentum scroll animation
@@ -146,6 +148,7 @@ impl TerminalView {
       hover_tooltip_update: Task::ready(()),
       scroll_top: Pixels::ZERO,
       ime_state: None,
+      scrollbar_drag_state: None,
       index: index,
       _subscriptions: vec![focus_in, focus_out],
       _terminal_subscriptions: terminal_subscriptions,
@@ -440,7 +443,7 @@ impl TerminalView {
     self.pause_cursor_blinking(window, cx);
 
     let handled = self.terminal.update(cx, |term, _cx| {
-      let handled = term.try_keystroke(&event.keystroke, false);
+      let handled = term.try_keystroke(&event.keystroke, true);
       tracing::trace!("key {:?} handled: {}", event.keystroke, handled);
       handled
     });

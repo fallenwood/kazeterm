@@ -14,7 +14,7 @@ edition = "2024"
 [workspace.dependencies]
 gpui = { version = "0.2.2", default-features = false }
 gpui-macros = "0.2.2"
-gpui-component = "0.5.0"
+gpui-component = "0.5.1"
 alacritty_terminal = "0.25.1"
 anyhow = "1.0.100"
 smol = "2.0.2"
@@ -44,55 +44,55 @@ notify-debouncer-mini = "0.5"
 [workspace.dependencies.windows]
 version = "0.61"
 features = [
-    "Foundation_Numerics",
-    "Storage_Search",
-    "Storage_Streams",
-    "System_Threading",
-    "UI_ViewManagement",
-    "Wdk_System_SystemServices",
-    "Win32_Globalization",
-    "Win32_Graphics_Direct3D",
-    "Win32_Graphics_Direct3D11",
-    "Win32_Graphics_Direct3D_Fxc",
-    "Win32_Graphics_DirectComposition",
-    "Win32_Graphics_DirectWrite",
-    "Win32_Graphics_Dwm",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Graphics_Gdi",
-    "Win32_Graphics_Imaging",
-    "Win32_Graphics_Hlsl",
-    "Win32_Networking_WinSock",
-    "Win32_Security",
-    "Win32_Security_Credentials",
-    "Win32_Security_Cryptography",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
-    "Win32_System_Console",
-    "Win32_System_DataExchange",
-    "Win32_System_Environment",
-    "Win32_System_IO",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Memory",
-    "Win32_System_Ole",
-    "Win32_System_Performance",
-    "Win32_System_Pipes",
-    "Win32_System_SystemInformation",
-    "Win32_System_SystemServices",
-    "Win32_System_Threading",
-    "Win32_System_Variant",
-    "Win32_System_WinRT",
-    "Win32_UI_Controls",
-    "Win32_UI_HiDpi",
-    "Win32_UI_Input_Ime",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_Shell",
-    "Win32_UI_Shell_Common",
-    "Win32_UI_Shell_PropertiesSystem",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_Media_Audio",
-    "Win32_System_Registry",
+  "Foundation_Numerics",
+  "Storage_Search",
+  "Storage_Streams",
+  "System_Threading",
+  "UI_ViewManagement",
+  "Wdk_System_SystemServices",
+  "Win32_Globalization",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Direct3D_Fxc",
+  "Win32_Graphics_DirectComposition",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Gdi",
+  "Win32_Graphics_Imaging",
+  "Win32_Graphics_Hlsl",
+  "Win32_Networking_WinSock",
+  "Win32_Security",
+  "Win32_Security_Credentials",
+  "Win32_Security_Cryptography",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Console",
+  "Win32_System_DataExchange",
+  "Win32_System_Environment",
+  "Win32_System_IO",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_System_Performance",
+  "Win32_System_Pipes",
+  "Win32_System_SystemInformation",
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+  "Win32_System_Variant",
+  "Win32_System_WinRT",
+  "Win32_UI_Controls",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_Ime",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Media_Audio",
+  "Win32_System_Registry",
 ]
 
 [profile.release]
@@ -113,51 +113,23 @@ unexpected_cfgs = { level = "allow" }
 [workspace.lints.clippy]
 dbg_macro = "deny"
 todo = "deny"
-
-# This is not a style lint, see https://github.com/rust-lang/rust-clippy/pull/15454
-# Remove when the lint gets promoted to `suspicious`.
 declare_interior_mutable_const = "deny"
-
 redundant_clone = "deny"
-
-# We currently do not restrict any style rules
-# as it slows down shipping code to Zed.
-#
-# Running ./script/clippy can take several minutes, and so it's
-# common to skip that step and let CI do it. Any unexpected failures
-# (which also take minutes to discover) thus require switching back
-# to an old branch, manual fixing, and re-pushing.
-#
-# In the future we could improve this by either making sure
-# Zed can surface clippy errors in diagnostics (in addition to the
-# rust-analyzer errors), or by having CI fix style nits automatically.
 style = { level = "allow", priority = -1 }
-
-# Individual rules that have violations in the codebase:
 type_complexity = "allow"
 let_underscore_future = "allow"
-
-# Motivation: We use `vec![a..b]` a lot when dealing with ranges in text, so
-# warning on this rule produces a lot of noise.
 single_range_in_vec_init = "allow"
-
-# in Rust it can be very tedious to reduce argument count without
-# running afoul of the borrow checker.
 too_many_arguments = "allow"
-
-# We often have large enum variants yet we rarely actually bother with splitting them up.
 large_enum_variant = "allow"
-
-# Boolean expressions can be hard to read, requiring only the minimal form gets in the way
 nonminimal_bool = "allow"
 
 [workspace.metadata.cargo-machete]
 ignored = [
-    "bindgen",
-    "cbindgen",
-    "prost_build",
-    "serde",
-    "component",
-    "documented",
-    "workspace-hack",
+  "bindgen",
+  "cbindgen",
+  "prost_build",
+  "serde",
+  "component",
+  "documented",
+  "workspace-hack",
 ]

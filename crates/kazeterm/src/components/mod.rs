@@ -1,11 +1,21 @@
+mod about_dialog;
+mod close_confirm_dialog;
 mod dragged_tab;
 mod main_window;
+mod main_window_dialog_handlers;
+mod main_window_render;
+mod main_window_search;
+mod main_window_split_pane_actions;
+mod main_window_tab_item;
+mod main_window_tab_management;
+mod main_window_tab_switcher_logic;
 mod search_bar;
 mod shell_icon;
 mod split_pane;
 mod tab_button;
 mod tab_rename_dialog;
 mod tab_switcher;
-mod terminal_window;
+mod terminal_tab_bar;
+pub(crate) mod terminal_window;
 
 pub use main_window::MainWindow;

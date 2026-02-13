@@ -9,7 +9,8 @@ use terminal::{PtyProcessInfo, TerminalBounds, TerminalEventListener, TerminalVi
 use crate::components::MainWindow;
 
 fn new_terminal(
-  shell: String,
+  program: String,
+  args: Vec<String>,
   working_directory: Option<PathBuf>,
 ) -> (
   terminal::Terminal,
@@ -37,7 +38,7 @@ fn new_terminal(
   let term = Arc::new(FairMutex::new(term));
 
   let pty_options = {
-    let alac_shell = alacritty_terminal::tty::Shell::new(shell, vec![]);
+    let alac_shell = alacritty_terminal::tty::Shell::new(program, args);
 
     alacritty_terminal::tty::Options {
       shell: Some(alac_shell),
@@ -73,11 +74,12 @@ fn new_terminal(
 pub fn new_terminal_window_with_shell(
   window: &mut gpui::Window,
   index: usize,
-  shell: &str,
+  program: &str,
+  args: Vec<String>,
   working_directory: Option<PathBuf>,
   cx: &mut Context<MainWindow>,
 ) -> Entity<TerminalView> {
-  let (terminal, events_rx) = new_terminal(shell.to_string(), working_directory);
+  let (terminal, events_rx) = new_terminal(program.to_string(), args, working_directory);
   let mut events_rx = events_rx;
   let terminal = cx.new(|_| terminal);
   let weak_terminal = terminal.downgrade();
