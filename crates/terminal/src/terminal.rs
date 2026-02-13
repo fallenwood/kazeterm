@@ -82,6 +82,8 @@ pub struct Terminal {
   pub scroll_velocity: f32,
   /// Last scroll event time for velocity calculation
   pub last_scroll_time: Option<std::time::Instant>,
+  /// Track touch-originated drag position for touch-to-scroll conversion (Windows)
+  pub touch_drag_position: Option<gpui::Point<Pixels>>,
 }
 
 impl Terminal {
@@ -109,6 +111,7 @@ impl Terminal {
       process_changed_at: None,
       scroll_velocity: 0.0,
       last_scroll_time: None,
+      touch_drag_position: None,
     };
   }
   pub fn last_content(&self) -> &TerminalContent {
@@ -862,6 +865,34 @@ impl Terminal {
   /// Stop momentum scrolling
   pub fn stop_momentum(&mut self) {
     self.scroll_velocity = 0.0;
+  }
+
+  /// Begin touch-originated drag (for converting touch to scroll on Windows)
+  pub fn begin_touch_drag(&mut self, position: gpui::Point<Pixels>) {
+    self.touch_drag_position = Some(position);
+    self.scroll_px = px(0.);
+  }
+
+  /// Process touch drag movement as scroll
+  pub fn touch_drag_scroll(&mut self, position: gpui::Point<Pixels>) {
+    if let Some(last_pos) = self.touch_drag_position {
+      let delta_y = position.y - last_pos.y;
+      let line_height = self.last_content.terminal_bounds.line_height;
+      if line_height > px(0.) {
+        self.scroll_px += delta_y;
+        let scroll_lines = (self.scroll_px / line_height) as i32;
+        if scroll_lines != 0 {
+          self.scroll_px -= line_height * scroll_lines as f32;
+          self.events.push_back(InternalEvent::Scroll(Scroll::Delta(scroll_lines)));
+        }
+      }
+    }
+    self.touch_drag_position = Some(position);
+  }
+
+  /// End touch-originated drag
+  pub fn end_touch_drag(&mut self) {
+    self.touch_drag_position = None;
   }
 
   pub fn mouse_drag(

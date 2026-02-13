@@ -28,6 +28,22 @@ use super::terminal_bounds::TerminalBounds;
 use super::terminal_content::TerminalContent;
 use super::terminal_view::TerminalView;
 use super::{indexed_cell::IndexedCell, terminal::Terminal};
+
+/// Check if the current mouse event originated from a touch screen on Windows.
+/// Uses GetMessageExtraInfo signature to distinguish touch from real mouse input.
+#[cfg(target_os = "windows")]
+fn is_mouse_from_touch() -> bool {
+  use windows::Win32::UI::WindowsAndMessaging::GetMessageExtraInfo;
+  const MI_WP_SIGNATURE: isize = 0xFF515700;
+  const SIGNATURE_MASK: isize = 0xFFFFFF00u32 as isize;
+  let extra = unsafe { GetMessageExtraInfo() };
+  (extra.0 & SIGNATURE_MASK) == MI_WP_SIGNATURE
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_mouse_from_touch() -> bool {
+  false
+}
 pub struct TerminalElement {
   terminal: Entity<Terminal>,
   terminal_view: Entity<TerminalView>,
@@ -354,6 +370,16 @@ impl TerminalElement {
 
         window.focus(&focus);
 
+        // Touch screen swipes on Windows arrive as mouse events.
+        // Convert them to scroll instead of text selection.
+        if is_mouse_from_touch() {
+          terminal.update(cx, |terminal, cx| {
+            terminal.begin_touch_drag(e.position);
+            cx.notify();
+          });
+          return;
+        }
+
         let scroll_top = terminal_view.read(cx).scroll_top;
         terminal.update(cx, |terminal, cx| {
           let mut adjusted_event = e.clone();
@@ -377,6 +403,16 @@ impl TerminalElement {
         // }
 
         if e.pressed_button.is_some() && !cx.has_active_drag() && focus.is_focused(window) {
+          // Handle touch drag as scroll instead of text selection
+          let is_touch = terminal.read(cx).touch_drag_position.is_some();
+          if is_touch {
+            terminal.update(cx, |terminal, cx| {
+              terminal.touch_drag_scroll(e.position);
+              cx.notify();
+            });
+            return;
+          }
+
           let hovered = hitbox.is_hovered(window);
 
           let scroll_top = terminal_view.read(cx).scroll_top;
@@ -407,6 +443,10 @@ impl TerminalElement {
         focus.clone(),
         false,
         move |terminal, e, cx| {
+          if terminal.touch_drag_position.is_some() {
+            terminal.end_touch_drag();
+            return;
+          }
           terminal.mouse_up(e, cx);
         },
       ),
