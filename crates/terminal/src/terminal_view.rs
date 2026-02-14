@@ -242,16 +242,14 @@ impl TerminalView {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) {
-    // Ctrl+Scroll for zooming
+    // Ctrl+Scroll / pinch-to-zoom
     if event.modifiers.control {
-      let delta = event.delta.pixel_delta(gpui::px(1.0)).y;
-      if delta > gpui::px(0.0) {
+      const ZOOM_SENSITIVITY: f32 = 0.03;
+      let delta = f32::from(event.delta.pixel_delta(gpui::px(1.0)).y);
+      let zoom_delta = delta * ZOOM_SENSITIVITY;
+      if zoom_delta != 0.0 {
         themeing::ZoomState::update_global(cx, |zoom: &mut themeing::ZoomState, _| {
-          zoom.zoom_in();
-        });
-      } else if delta < gpui::px(0.0) {
-        themeing::ZoomState::update_global(cx, |zoom: &mut themeing::ZoomState, _| {
-          zoom.zoom_out();
+          zoom.zoom_by(zoom_delta);
         });
       }
       cx.notify();
