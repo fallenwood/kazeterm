@@ -30,6 +30,11 @@ impl ZoomState {
     self.zoom_level = (self.zoom_level - Self::ZOOM_STEP).max(Self::MIN_ZOOM);
   }
 
+  /// Adjust zoom by a continuous delta (for smooth pinch-to-zoom gestures)
+  pub fn zoom_by(&mut self, delta: f32) {
+    self.zoom_level = (self.zoom_level + delta).clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
+  }
+
   pub fn reset(&mut self) {
     self.zoom_level = 1.0;
   }
