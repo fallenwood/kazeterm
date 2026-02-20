@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260208.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260220.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -19,11 +19,18 @@ struct Migration {
 /// 4. Update `CURRENT_CONFIG_VERSION` to the new version
 /// 5. Implement the migration function that modifies the raw TOML `Value`
 fn migrations() -> &'static [Migration] {
-  &[Migration {
-    from_version: "0",
-    to_version: "20260208.1",
-    migrate: migrate_v0_to_20260208_1,
-  }]
+  &[
+    Migration {
+      from_version: "0",
+      to_version: "20260208.1",
+      migrate: migrate_v0_to_20260208_1,
+    },
+    Migration {
+      from_version: "20260208.1",
+      to_version: "20260220.1",
+      migrate: migrate_v20260208_1_to_20260220_1,
+    },
+  ]
 }
 
 /// Migrate config with no version field to the first versioned format.
@@ -32,6 +39,19 @@ fn migrate_v0_to_20260208_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260208.1".to_string()),
+    );
+  }
+}
+
+/// Add vertical tab configuration support.
+fn migrate_v20260208_1_to_20260220_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("vertical_tabs") {
+      table.insert("vertical_tabs".to_string(), Value::Boolean(false));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260220.1".to_string()),
     );
   }
 }
@@ -106,6 +126,17 @@ font_size = 18.0
     .unwrap()
   }
 
+  fn make_20260208_config() -> Value {
+    toml::from_str(
+      r#"
+version = "20260208.1"
+theme = "one"
+font_size = 18.0
+"#,
+    )
+    .unwrap()
+  }
+
   #[test]
   fn no_migration_needed_for_current_version() {
     let mut config = make_current_config();
@@ -133,6 +164,21 @@ font_size = 18.0
     assert_eq!(
       config.get("font_size").unwrap().as_float().unwrap(),
       18.0
+    );
+  }
+
+  #[test]
+  fn migrate_20260208_adds_vertical_tabs() {
+    let mut config = make_20260208_config();
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config.get("vertical_tabs").unwrap().as_bool().unwrap(),
+      false
     );
   }
 

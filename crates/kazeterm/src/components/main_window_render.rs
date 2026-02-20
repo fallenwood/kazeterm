@@ -21,6 +21,7 @@ impl Render for MainWindow {
     let search_visible = self.search_visible;
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
+    let vertical_tabs = config.vertical_tabs;
     let setting_store = cx.global::<SettingsStore>();
     let local_profiles = config.get_local_profiles_with_shells();
     let container_profiles = config.get_container_profiles_with_shells();
@@ -39,12 +40,18 @@ impl Render for MainWindow {
     if self.scroll_tabs_to_end {
       self.scroll_tabs_to_end = false;
       let scroll_handle = self.tab_scroll_handle.clone();
+      let vertical_tabs = vertical_tabs;
       cx.spawn(async move |_this, cx| {
         // Small delay to allow layout to complete
         // smol::Timer::after(std::time::Duration::from_millis(50)).await;
         cx.update(|_cx| {
           let max_offset = scroll_handle.max_offset();
-          scroll_handle.set_offset(gpui::point(-max_offset.width, px(0.0)));
+          let offset = if vertical_tabs {
+            gpui::point(px(0.0), -max_offset.height)
+          } else {
+            gpui::point(-max_offset.width, px(0.0))
+          };
+          scroll_handle.set_offset(offset);
         })
         .ok();
       })
@@ -56,6 +63,7 @@ impl Render for MainWindow {
       let scroll_handle = self.tab_scroll_handle.clone();
       let active_tab_ix = self.active_tab_ix.unwrap_or_default();
       let total_tabs = self.items.len();
+      let vertical_tabs = vertical_tabs;
       cx.spawn(async move |_this, cx| {
         cx.update(|_cx| {
           if total_tabs > 0 && active_tab_ix < total_tabs {
@@ -63,8 +71,12 @@ impl Render for MainWindow {
             // This is a simple approach - scroll proportionally based on tab index
             let max_offset = scroll_handle.max_offset();
             let scroll_ratio = active_tab_ix as f32 / total_tabs.max(1) as f32;
-            let target_offset = -max_offset.width * scroll_ratio;
-            scroll_handle.set_offset(gpui::point(target_offset, px(0.0)));
+            let offset = if vertical_tabs {
+              gpui::point(px(0.0), -max_offset.height * scroll_ratio)
+            } else {
+              gpui::point(-max_offset.width * scroll_ratio, px(0.0))
+            };
+            scroll_handle.set_offset(offset);
           }
         })
         .ok();
@@ -73,9 +85,9 @@ impl Render for MainWindow {
     }
 
     let view = cx.entity();
+    let menu_view = view.clone();
 
-    let theme = setting_store.theme();
-    let colors = theme.colors();
+    let colors = setting_store.theme().colors().clone();
 
     div()
       .flex()
@@ -161,11 +173,12 @@ impl Render for MainWindow {
               .flex_basis(px(0.0))
               .min_w_0()
               .overflow_x_hidden()
-              .child(
-                TerminalTabBar::new("tabs")
-                  .track_scroll(&self.tab_scroll_handle)
-                  .children(
-                    self
+              .when(!vertical_tabs, |this| {
+                this.child(
+                  TerminalTabBar::new("tabs")
+                    .track_scroll(&self.tab_scroll_handle)
+                    .children(
+                      self
                       .items
                       .iter()
                       .enumerate()
@@ -475,9 +488,10 @@ impl Render for MainWindow {
                               ),
                           )
                       })
-                      .collect::<Vec<_>>(),
-                  ),
-              )
+                        .collect::<Vec<_>>(),
+                    ),
+                )
+              })
               .child(
                 h_flex()
                   .flex_shrink_0()
@@ -501,7 +515,7 @@ impl Render for MainWindow {
                       .small()
                       .icon(IconName::ChevronDown)
                       .dropdown_menu({
-                        let view_about = view.clone();
+                        let view_about = menu_view.clone();
                         move |menu: PopupMenu,
                               _window: &mut Window,
                               _cx: &mut Context<PopupMenu>| {
@@ -512,7 +526,7 @@ impl Render for MainWindow {
                             let profile_name = name.clone();
                             let shell_path = shell_path.clone();
                             let display_name = name.clone();
-                            let view_clone = view.clone();
+                            let view_clone = menu_view.clone();
                             menu = menu.item(
                               PopupMenuItem::element(move |_window, _cx| {
                                 let shell_icon = ShellIcon::new(&shell_path);
@@ -553,7 +567,7 @@ impl Render for MainWindow {
                               let profile_name = name.clone();
                               let shell_path = shell_path.clone();
                               let display_name = name.clone();
-                              let view_clone = view.clone();
+                              let view_clone = menu_view.clone();
                               menu = menu.item(
                                 PopupMenuItem::element(move |_window, _cx| {
                                   let shell_icon = ShellIcon::new(&shell_path);
@@ -594,7 +608,7 @@ impl Render for MainWindow {
                             for name in ssh_hosts.iter() {
                               let profile_name = name.clone();
                               let display_name = format!("[ssh] {}", name);
-                              let view_clone = view.clone();
+                              let view_clone = menu_view.clone();
                               menu = menu.item(
                                 PopupMenuItem::element(move |_window, _cx| {
                                   h_flex()
@@ -717,7 +731,7 @@ impl Render for MainWindow {
       )
       .child({
         let active_ix = self.active_tab_ix.unwrap_or_default();
-        div()
+        let content = div()
           .flex_1()
           .size_full()
           .child(
@@ -761,7 +775,119 @@ impl Render for MainWindow {
             } else {
               this
             }
-          })
+          });
+
+        if vertical_tabs {
+          h_flex()
+            .flex_1()
+            .size_full()
+            .child(
+              div()
+                .h_full()
+                .flex_shrink_0()
+                .w(px(TAB_LABEL_MAX_WIDTH + 24.0))
+                .p_1()
+                .child(
+                  TerminalTabBar::new("tabs-vertical")
+                    .vertical(true)
+                    .track_scroll(&self.tab_scroll_handle)
+                    .children(
+                      self
+                        .items
+                        .iter()
+                        .enumerate()
+                        .map(|(tab_ix, item)| {
+                          let shell_icon = ShellIcon::new(&item.shell_path);
+                          let tab_index = item.index;
+                          let tab_title = item.display_title().to_string();
+                          let is_selected = self.active_tab_ix == Some(tab_ix);
+                          let has_bell = item
+                            .split_container
+                            .all_terminals()
+                            .iter()
+                            .any(|(_, t)| t.read(cx).has_bell());
+                          let view_for_click = view.clone();
+                          let all_terminals = item.split_container.all_terminals();
+                          let selected_bg: gpui::Hsla = colors.tab_active_background;
+                          let normal_bg = colors.tab_inactive_background;
+                          let hover_bg = colors.element_hover;
+                          let text_color = colors.text;
+                          let text_muted = colors.text_muted;
+                          let accent_color = colors.text_accent;
+                          let warning_color = colors.terminal_ansi_yellow;
+
+                          TerminalTab::new()
+                            .selected(is_selected)
+                            .fill_height(false)
+                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                              view_for_click.update(cx, |this, cx| {
+                                this.set_active_tab(tab_ix, window, cx);
+                              });
+                              for (_, terminal) in &all_terminals {
+                                terminal.update(cx, |terminal_view, cx| {
+                                  terminal_view.clear_bell(cx);
+                                });
+                              }
+                              cx.stop_propagation();
+                            })
+                            .child(
+                              h_flex()
+                                .w_full()
+                                .gap_1p5()
+                                .pl_2p5()
+                                .pr_1()
+                                .py_1()
+                                .items_center()
+                                .min_w(px(TAB_LABEL_MIN_WIDTH))
+                                .max_w(px(TAB_LABEL_MAX_WIDTH))
+                                .when(is_selected, |this| {
+                                  this.bg(selected_bg).border_l_2().border_color(accent_color)
+                                })
+                                .when(!is_selected, |this| {
+                                  this.bg(normal_bg).hover(|style| style.bg(hover_bg))
+                                })
+                                .rounded_md()
+                                .child(
+                                  div()
+                                    .flex_shrink_0()
+                                    .child(shell_icon.into_element(px(14.0))),
+                                )
+                                .when(has_bell, |this| {
+                                  this.child(
+                                    div().flex_shrink_0().child(
+                                      Icon::new(IconName::Bell)
+                                        .size_3()
+                                        .text_color(warning_color),
+                                    ),
+                                  )
+                                })
+                                .child(
+                                  div().flex_1().min_w_0().overflow_x_hidden().child(
+                                    Label::new(tab_title.clone())
+                                      .text_color(if is_selected { text_color } else { text_muted })
+                                      .whitespace_nowrap(),
+                                  ),
+                                )
+                                .child(
+                                  TabButton::new("close-vertical", tab_index)
+                                    .visible(true)
+                                    .on_click(cx.listener(
+                                      |this, e: &TabButtonClickEvent, window, cx| {
+                                        this.remove_tab_by(e.index, window, cx);
+                                      },
+                                    )),
+                                ),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    ),
+                ),
+            )
+            .child(content)
+            .into_any_element()
+        } else {
+          content.into_any_element()
+        }
       })
   }
 }

@@ -34,7 +34,7 @@ pub struct Profile {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
-  /// Config file version in YYYYMMDD.Rev format (e.g., "20260208.1")
+  /// Config file version in YYYYMMDD.Rev format (e.g., "20260220.1")
   pub version: String,
   pub theme: String,
   pub theme_mode: ThemeMode,
@@ -54,6 +54,8 @@ pub struct Config {
   pub container_profiles: Vec<Profile>,
   /// Enable the terminal minimap (shows a zoomed-out preview of scrollback)
   pub minimap_enabled: bool,
+  /// Render tabs vertically in a left sidebar instead of horizontally at the top
+  pub vertical_tabs: bool,
   /// Close the application when the last tab is closed
   /// When false (default), a new tab is created instead
   pub close_on_last_tab: bool,
@@ -79,6 +81,7 @@ impl Default for Config {
       window_height: 600.0,
       container_profiles: detect_container_profiles(),
       minimap_enabled: false,
+      vertical_tabs: false,
       close_on_last_tab: true,
     }
   }
@@ -428,6 +431,7 @@ mod tests {
       window_height: 50.0,
       container_profiles: vec![],
       minimap_enabled: false,
+      vertical_tabs: false,
       close_on_last_tab: true,
     };
 
