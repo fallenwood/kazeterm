@@ -786,6 +786,7 @@ impl Render for MainWindow {
                 .h_full()
                 .flex_shrink_0()
                 .w(px(TAB_LABEL_MAX_WIDTH + 24.0))
+                .bg(colors.title_bar_background)
                 .p_1()
                 .child(
                   TerminalTabBar::new("tabs-vertical")
