@@ -3,13 +3,14 @@
 
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::h_flex;
+use gpui_component::{h_flex, v_flex};
 
 /// Terminal tab bar component - a scrollable container for tab items
 #[derive(IntoElement)]
 pub struct TerminalTabBar {
   id: ElementId,
   scroll_handle: Option<ScrollHandle>,
+  vertical: bool,
   children: Vec<AnyElement>,
 }
 
@@ -19,6 +20,7 @@ impl TerminalTabBar {
     Self {
       id: id.into(),
       scroll_handle: None,
+      vertical: false,
       children: vec![],
     }
   }
@@ -26,6 +28,12 @@ impl TerminalTabBar {
   /// Enable scroll tracking
   pub fn track_scroll(mut self, scroll_handle: &ScrollHandle) -> Self {
     self.scroll_handle = Some(scroll_handle.clone());
+    self
+  }
+
+  /// Render tabs vertically
+  pub fn vertical(mut self, vertical: bool) -> Self {
+    self.vertical = vertical;
     self
   }
 
@@ -40,22 +48,42 @@ impl RenderOnce for TerminalTabBar {
   fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
     let scroll_handle = self.scroll_handle;
     let children = self.children;
+    let vertical = self.vertical;
 
-    div()
-      .id(self.id)
-      .relative()
-      .h_full()
-      .min_w_0()
-      .overflow_x_hidden()
-      .child(
-        h_flex()
-          .id("tabs-container")
-          .h_full()
-          .gap_1()
-          .overflow_x_scroll()
-          .when_some(scroll_handle, |this, handle| this.track_scroll(&handle))
-          .children(children),
-      )
+    if vertical {
+      div()
+        .id(self.id)
+        .relative()
+        .h_full()
+        .w_full()
+        .overflow_y_hidden()
+        .child(
+          v_flex()
+            .id("tabs-container")
+            .h_full()
+            .w_full()
+            .gap_1()
+            .overflow_y_scroll()
+            .when_some(scroll_handle, |this, handle| this.track_scroll(&handle))
+            .children(children),
+        )
+    } else {
+      div()
+        .id(self.id)
+        .relative()
+        .h_full()
+        .min_w_0()
+        .overflow_x_hidden()
+        .child(
+          h_flex()
+            .id("tabs-container")
+            .h_full()
+            .gap_1()
+            .overflow_x_scroll()
+            .when_some(scroll_handle, |this, handle| this.track_scroll(&handle))
+            .children(children),
+        )
+    }
   }
 }
 
@@ -63,6 +91,7 @@ impl RenderOnce for TerminalTabBar {
 #[derive(IntoElement)]
 pub struct TerminalTab {
   selected: bool,
+  fill_height: bool,
   on_mouse_down: Option<Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>>,
   child: Option<AnyElement>,
 }
@@ -72,6 +101,7 @@ impl TerminalTab {
   pub fn new() -> Self {
     Self {
       selected: false,
+      fill_height: true,
       on_mouse_down: None,
       child: None,
     }
@@ -80,6 +110,12 @@ impl TerminalTab {
   /// Set whether this tab is selected
   pub fn selected(mut self, selected: bool) -> Self {
     self.selected = selected;
+    self
+  }
+
+  /// Control whether the tab container fills parent height.
+  pub fn fill_height(mut self, fill_height: bool) -> Self {
+    self.fill_height = fill_height;
     self
   }
 
@@ -112,12 +148,13 @@ impl RenderOnce for TerminalTab {
   fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
     let on_mouse_down = self.on_mouse_down;
     let child = self.child;
+    let fill_height = self.fill_height;
 
     div()
       .flex()
       .flex_shrink_0()
       .items_center()
-      .h_full()
+      .when(fill_height, |this| this.h_full())
       .cursor_pointer()
       .when_some(on_mouse_down, |this, handler| {
         this.on_mouse_down(MouseButton::Left, move |e, window, cx| {
