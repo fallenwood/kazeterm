@@ -129,9 +129,23 @@ impl MainWindow {
       .and_then(|item| item.split_container.get_active_terminal())
   }
 
+  pub(crate) fn active_tab_item_mut(&mut self) -> Option<&mut TabItem> {
+    self
+      .active_tab_ix
+      .and_then(|active_ix| self.items.get_mut(active_ix))
+  }
+
+  pub(crate) fn focus_terminal(
+    window: &mut Window,
+    terminal: &gpui::Entity<TerminalView>,
+    cx: &mut Context<Self>,
+  ) {
+    window.focus(&terminal.focus_handle(cx));
+  }
+
   pub(crate) fn focus_active_terminal(&self, window: &mut Window, cx: &mut Context<Self>) {
     if let Some(terminal) = self.active_terminal() {
-      window.focus(&terminal.focus_handle(cx));
+      Self::focus_terminal(window, &terminal, cx);
     }
   }
 
@@ -186,7 +200,7 @@ impl MainWindow {
             // Successfully closed a pane (but not the last one)
             // Focus the newly active terminal
             if let Some(terminal) = this.items[tab_pos].split_container.get_active_terminal() {
-              window.focus(&terminal.focus_handle(cx));
+              Self::focus_terminal(window, &terminal, cx);
             }
             cx.notify();
           }
@@ -297,7 +311,7 @@ impl MainWindow {
       });
 
       // Focus the terminal
-      window.focus(&terminal.focus_handle(cx));
+      Self::focus_terminal(window, &terminal, cx);
     }
 
     cx.notify();
