@@ -428,11 +428,7 @@ impl Render for MainWindow {
                                                 .disabled(is_first)
                                                 .on_click(move |_, _window, cx| {
                                                   view_move_left.update(cx, |this, cx| {
-                                                    if tab_ix > 0 {
-                                                      this.items.swap(tab_ix, tab_ix - 1);
-                                                      this.active_tab_ix = Some(tab_ix - 1);
-                                                      cx.notify();
-                                                    }
+                                                    this.move_tab_left(tab_ix, cx);
                                                   });
                                                 }),
                                             )
@@ -442,11 +438,7 @@ impl Render for MainWindow {
                                                 .disabled(is_last)
                                                 .on_click(move |_, _window, cx| {
                                                   view_move_right.update(cx, |this, cx| {
-                                                    if tab_ix + 1 < this.items.len() {
-                                                      this.items.swap(tab_ix, tab_ix + 1);
-                                                      this.active_tab_ix = Some(tab_ix + 1);
-                                                      cx.notify();
-                                                    }
+                                                    this.move_tab_right(tab_ix, cx);
                                                   });
                                                 }),
                                             )
@@ -457,12 +449,7 @@ impl Render for MainWindow {
                                                 .disabled(total_tabs <= 1)
                                                 .on_click(move |_, _window, cx| {
                                                   view_close_others.update(cx, |this, cx| {
-                                                    let keep_index = tab_index;
-                                                    this
-                                                      .items
-                                                      .retain(|tab| tab.index == keep_index);
-                                                    this.active_tab_ix = Some(0);
-                                                    cx.notify();
+                                                    this.close_other_tabs(tab_index, cx);
                                                   });
                                                 }),
                                             )
@@ -472,12 +459,7 @@ impl Render for MainWindow {
                                                 .disabled(is_last)
                                                 .on_click(move |_, _window, cx| {
                                                   view_close_right.update(cx, |this, cx| {
-                                                    let right_ix = tab_ix + 1;
-                                                    if right_ix < this.items.len() {
-                                                      this.items.truncate(right_ix);
-                                                      this.active_tab_ix = Some(tab_ix);
-                                                      cx.notify();
-                                                    }
+                                                    this.close_tabs_to_right(tab_ix, cx);
                                                   });
                                                 }),
                                             )
@@ -1024,11 +1006,7 @@ impl Render for MainWindow {
                                                   .disabled(is_first)
                                                   .on_click(move |_, _window, cx| {
                                                     view_move_left.update(cx, |this, cx| {
-                                                      if tab_ix > 0 {
-                                                        this.items.swap(tab_ix, tab_ix - 1);
-                                                        this.active_tab_ix = Some(tab_ix - 1);
-                                                        cx.notify();
-                                                      }
+                                                      this.move_tab_left(tab_ix, cx);
                                                     });
                                                   }),
                                               )
@@ -1038,11 +1016,7 @@ impl Render for MainWindow {
                                                   .disabled(is_last)
                                                   .on_click(move |_, _window, cx| {
                                                     view_move_right.update(cx, |this, cx| {
-                                                      if tab_ix + 1 < this.items.len() {
-                                                        this.items.swap(tab_ix, tab_ix + 1);
-                                                        this.active_tab_ix = Some(tab_ix + 1);
-                                                        cx.notify();
-                                                      }
+                                                      this.move_tab_right(tab_ix, cx);
                                                     });
                                                   }),
                                               )
@@ -1053,12 +1027,7 @@ impl Render for MainWindow {
                                                   .disabled(total_tabs <= 1)
                                                   .on_click(move |_, _window, cx| {
                                                     view_close_others.update(cx, |this, cx| {
-                                                      let keep_index = tab_index;
-                                                      this
-                                                        .items
-                                                        .retain(|tab| tab.index == keep_index);
-                                                      this.active_tab_ix = Some(0);
-                                                      cx.notify();
+                                                      this.close_other_tabs(tab_index, cx);
                                                     });
                                                   }),
                                               )
@@ -1068,12 +1037,7 @@ impl Render for MainWindow {
                                                   .disabled(is_last)
                                                   .on_click(move |_, _window, cx| {
                                                     view_close_right.update(cx, |this, cx| {
-                                                      let right_ix = tab_ix + 1;
-                                                      if right_ix < this.items.len() {
-                                                        this.items.truncate(right_ix);
-                                                        this.active_tab_ix = Some(tab_ix);
-                                                        cx.notify();
-                                                      }
+                                                      this.close_tabs_to_right(tab_ix, cx);
                                                     });
                                                   }),
                                               )

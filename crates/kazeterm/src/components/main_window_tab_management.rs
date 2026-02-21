@@ -300,6 +300,37 @@ impl MainWindow {
     cx.notify();
   }
 
+  pub(crate) fn move_tab_left(&mut self, tab_ix: usize, cx: &mut Context<Self>) {
+    if tab_ix > 0 {
+      self.items.swap(tab_ix, tab_ix - 1);
+      self.active_tab_ix = Some(tab_ix - 1);
+      cx.notify();
+    }
+  }
+
+  pub(crate) fn move_tab_right(&mut self, tab_ix: usize, cx: &mut Context<Self>) {
+    if tab_ix + 1 < self.items.len() {
+      self.items.swap(tab_ix, tab_ix + 1);
+      self.active_tab_ix = Some(tab_ix + 1);
+      cx.notify();
+    }
+  }
+
+  pub(crate) fn close_other_tabs(&mut self, keep_tab_index: usize, cx: &mut Context<Self>) {
+    self.items.retain(|tab| tab.index == keep_tab_index);
+    self.active_tab_ix = Some(0);
+    cx.notify();
+  }
+
+  pub(crate) fn close_tabs_to_right(&mut self, tab_ix: usize, cx: &mut Context<Self>) {
+    let right_ix = tab_ix + 1;
+    if right_ix < self.items.len() {
+      self.items.truncate(right_ix);
+      self.active_tab_ix = Some(tab_ix);
+      cx.notify();
+    }
+  }
+
   pub(crate) fn set_active_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
     self.active_tab_ix = Some(ix);
 
