@@ -9,12 +9,20 @@ use gpui_component::{
 };
 use themeing::SettingsStore;
 
-use super::main_window::MainWindow;
-use super::main_window::TAB_LABEL_MAX_WIDTH;
+use super::main_window::{MainWindow, TAB_LABEL_MAX_WIDTH, VERTICAL_TABBAR_MIN_WIDTH};
 use super::terminal_tab_bar::{TerminalTab, TerminalTabBar};
 use crate::components::{dragged_tab::{DraggedTab, DraggedTabView}, main_window::TAB_LABEL_MIN_WIDTH};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
+
+#[derive(Clone)]
+struct ResizeVerticalTabbar(pub EntityId);
+
+impl Render for ResizeVerticalTabbar {
+  fn render(&mut self, _window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    Empty
+  }
+}
 
 impl Render for MainWindow {
   fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -785,7 +793,7 @@ impl Render for MainWindow {
               div()
                 .h_full()
                 .flex_shrink_0()
-                .w(px(TAB_LABEL_MAX_WIDTH + 24.0))
+                .w(self.vertical_tabbar_width)
                 .bg(colors.title_bar_background)
                 .p_1()
                 .child(
@@ -1087,6 +1095,34 @@ impl Render for MainWindow {
                         .collect::<Vec<_>>(),
                     ),
                 ),
+            )
+            .child(
+              div()
+                .id("vertical-tabbar-resize-handle")
+                .h_full()
+                .w(px(6.0))
+                .cursor(CursorStyle::ResizeLeftRight)
+                .on_drag_move(cx.listener(
+                  |this, e: &DragMoveEvent<ResizeVerticalTabbar>, window, cx| {
+                    let ResizeVerticalTabbar(entity_id) = e.drag(cx);
+                    if cx.entity_id() != *entity_id {
+                      return;
+                    }
+
+                    let min_width = px(VERTICAL_TABBAR_MIN_WIDTH);
+                    let max_width = (window.bounds().size.width - px(160.0)).max(min_width);
+                    let next_width = e.event.position.x.max(min_width).min(max_width);
+                    if this.vertical_tabbar_width != next_width {
+                      this.vertical_tabbar_width = next_width;
+                      cx.notify();
+                    }
+                  },
+                ))
+                .on_drag(ResizeVerticalTabbar(cx.entity_id()), |drag, _, _, cx| {
+                  cx.stop_propagation();
+                  cx.new(|_| drag.clone())
+                })
+                .child(div().h_full().w(px(1.0)).bg(colors.border)),
             )
             .child(content)
             .into_any_element()
