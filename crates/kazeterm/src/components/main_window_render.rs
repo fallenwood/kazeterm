@@ -839,9 +839,11 @@ impl Render for MainWindow {
                               div()
                                 .id(ElementId::NamedInteger("tab-container".into(), tab_ix as u64))
                                 .group("tab-item")
+                                .w_full()
                                 .child(
                                   div()
                                     .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
+                                    .w_full()
                                     .cursor(CursorStyle::OpenHand)
                                     .on_drag(
                                       DraggedTab {
@@ -893,8 +895,6 @@ impl Render for MainWindow {
                                         .pr_1()
                                         .py_1()
                                         .items_center()
-                                        .min_w(px(TAB_LABEL_MIN_WIDTH))
-                                        .max_w(px(TAB_LABEL_MAX_WIDTH))
                                         .when(is_selected, |this| {
                                           this.bg(selected_bg).border_l_2().border_color(accent_color)
                                         })
