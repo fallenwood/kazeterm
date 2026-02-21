@@ -23,16 +23,7 @@ impl MainWindow {
       let working_directory = tab
         .split_container
         .get_active_terminal()
-        .and_then(|terminal| {
-          terminal
-            .read(cx)
-            .terminal()
-            .read(cx)
-            .pty_info
-            .current
-            .as_ref()
-            .map(|info| info.cwd.to_string_lossy().to_string())
-        });
+        .and_then(|terminal| Self::terminal_working_directory(&terminal, cx));
 
       // Create a new tab with the same shell and working directory
       self.insert_new_tab_with_profile(Some(&shell_path), working_directory, window, cx);
@@ -129,6 +120,39 @@ impl MainWindow {
     this.scroll_tabs_to_end = true;
 
     cx.notify();
+  }
+
+  pub(crate) fn active_terminal(&self) -> Option<gpui::Entity<TerminalView>> {
+    self
+      .active_tab_ix
+      .and_then(|active_ix| self.items.get(active_ix))
+      .and_then(|item| item.split_container.get_active_terminal())
+  }
+
+  pub(crate) fn focus_active_terminal(&self, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(terminal) = self.active_terminal() {
+      window.focus(&terminal.focus_handle(cx));
+    }
+  }
+
+  pub(crate) fn active_terminal_working_directory(&self, cx: &mut Context<Self>) -> Option<String> {
+    self
+      .active_terminal()
+      .and_then(|terminal| Self::terminal_working_directory(&terminal, cx))
+  }
+
+  pub(crate) fn terminal_working_directory(
+    terminal: &gpui::Entity<TerminalView>,
+    cx: &mut Context<Self>,
+  ) -> Option<String> {
+    terminal
+      .read(cx)
+      .terminal()
+      .read(cx)
+      .pty_info
+      .current
+      .as_ref()
+      .map(|info| info.cwd.to_string_lossy().to_string())
   }
 
   pub(crate) fn subscribe_terminal_view_event(
@@ -266,16 +290,14 @@ impl MainWindow {
     self.active_tab_ix = Some(ix);
 
     // Update search bar with the new active terminal
-    if let Some(item) = self.items.get(ix) {
-      if let Some(terminal) = item.split_container.get_active_terminal() {
-        let terminal_clone = terminal.clone();
-        self.search_bar.update(cx, |search_bar, _cx| {
-          search_bar.set_terminal_view(terminal_clone.clone());
-        });
+    if let Some(terminal) = self.active_terminal() {
+      let terminal_clone = terminal.clone();
+      self.search_bar.update(cx, |search_bar, _cx| {
+        search_bar.set_terminal_view(terminal_clone.clone());
+      });
 
-        // Focus the terminal
-        window.focus(&terminal.focus_handle(cx));
-      }
+      // Focus the terminal
+      window.focus(&terminal.focus_handle(cx));
     }
 
     cx.notify();

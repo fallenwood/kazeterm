@@ -14,17 +14,10 @@ impl MainWindow {
   }
 
   fn split_pane(&mut self, direction: SplitDirection, window: &mut Window, cx: &mut Context<Self>) {
+    let working_directory = self.active_terminal_working_directory(cx);
+
     if let Some(active_tab_ix) = self.active_tab_ix {
       if let Some(item) = self.items.get_mut(active_tab_ix) {
-        // Get the active terminal's working directory
-        let working_directory = if let Some(active_terminal) = item.split_container.get_active_terminal() {
-          active_terminal.read(cx).terminal().read(cx).pty_info.current.as_ref().map(|info| {
-            info.cwd.to_string_lossy().to_string()
-          })
-        } else {
-          None
-        };
-
         // Create a new terminal with the same shell
         let index = self
           .tab_index
@@ -62,16 +55,17 @@ impl MainWindow {
   }
 
   pub fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    let mut pane_closed = false;
+
     if let Some(active_tab_ix) = self.active_tab_ix {
       if let Some(item) = self.items.get_mut(active_tab_ix) {
-        if item.split_container.close_active_pane() {
-          // Focus the newly active terminal
-          if let Some(terminal) = item.split_container.get_active_terminal() {
-            window.focus(&terminal.focus_handle(cx));
-          }
-          cx.notify();
-        }
+        pane_closed = item.split_container.close_active_pane();
       }
+    }
+
+    if pane_closed {
+      self.focus_active_terminal(window, cx);
+      cx.notify();
     }
   }
 }

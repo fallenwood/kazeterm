@@ -1,4 +1,4 @@
-use gpui::{AppContext, Context, Entity, Focusable, Window};
+use gpui::{AppContext, Context, Entity, Window};
 
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
@@ -133,12 +133,6 @@ impl MainWindow {
 
   /// Helper to refocus the active terminal after closing dialogs
   pub fn refocus_active_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    if let Some(active_ix) = self.active_tab_ix {
-      if let Some(item) = self.items.get(active_ix) {
-        if let Some(terminal) = item.split_container.get_active_terminal() {
-          window.focus(&terminal.focus_handle(cx));
-        }
-      }
-    }
+    self.focus_active_terminal(window, cx);
   }
 }
