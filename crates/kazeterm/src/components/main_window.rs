@@ -13,6 +13,8 @@ pub(crate) use super::main_window_tab_item::TabItem;
 
 pub(crate) const TAB_LABEL_MIN_WIDTH: f32 = 60.0;
 pub(crate) const TAB_LABEL_MAX_WIDTH: f32 = 200.0;
+pub(crate) const VERTICAL_TABBAR_DEFAULT_WIDTH: f32 = TAB_LABEL_MAX_WIDTH + 24.0;
+pub(crate) const VERTICAL_TABBAR_MIN_WIDTH: f32 = TAB_LABEL_MIN_WIDTH + 24.0;
 
 pub struct MainWindow {
   pub(crate) focus_handle: FocusHandle,
@@ -30,6 +32,7 @@ pub struct MainWindow {
   pub(crate) tab_switcher_visible: bool,
   pub(crate) tab_switcher: Option<Entity<TabSwitcher>>,
   pub(crate) tab_switcher_selection: usize,
+  pub(crate) vertical_tabbar_width: Pixels,
   pub(crate) last_known_ctrl_state: bool,
   /// Tab rename dialog state
   pub(crate) rename_dialog: Option<Entity<TabRenameDialog>>,
@@ -87,6 +90,7 @@ impl MainWindow {
       tab_switcher_visible: false,
       tab_switcher: None,
       tab_switcher_selection: 0,
+      vertical_tabbar_width: px(VERTICAL_TABBAR_DEFAULT_WIDTH),
       last_known_ctrl_state: false,
       rename_dialog: None,
       _rename_dialog_subscription: None,
