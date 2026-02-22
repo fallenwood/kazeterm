@@ -1,4 +1,4 @@
-use gpui::{Context, Entity, Focusable, Window};
+use gpui::{Context, Entity, Window};
 
 use super::main_window::MainWindow;
 use crate::components::search_bar::{SearchBar, SearchBarCloseEvent};
@@ -17,14 +17,10 @@ impl MainWindow {
   pub(crate) fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.search_visible = !self.search_visible;
     if self.search_visible {
-      if let Some(active_ix) = self.active_tab_ix {
-        if let Some(item) = self.items.get(active_ix) {
-          if let Some(terminal) = item.split_container.get_active_terminal() {
-            self.search_bar.update(cx, |search_bar, _cx| {
-              search_bar.set_terminal_view(terminal);
-            });
-          }
-        }
+      if let Some(terminal) = self.active_terminal() {
+        self.search_bar.update(cx, |search_bar, _cx| {
+          search_bar.set_terminal_view(terminal);
+        });
       }
 
       // Focus on search bar input
@@ -37,13 +33,7 @@ impl MainWindow {
       });
 
       // Focus back on terminal
-      if let Some(active_ix) = self.active_tab_ix {
-        if let Some(item) = self.items.get(active_ix) {
-          if let Some(terminal) = item.split_container.get_active_terminal() {
-            window.focus(&terminal.focus_handle(cx));
-          }
-        }
-      }
+      self.focus_active_terminal(window, cx);
     }
 
     cx.notify();

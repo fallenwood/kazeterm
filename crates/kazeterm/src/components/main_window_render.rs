@@ -24,6 +24,130 @@ impl Render for ResizeVerticalTabbar {
   }
 }
 
+fn build_tab_context_menu(
+  menu: PopupMenu,
+  view: Entity<MainWindow>,
+  tab_index: usize,
+  tab_ix: usize,
+  is_first: bool,
+  is_last: bool,
+  total_tabs: usize,
+  move_prev_label: &'static str,
+  move_prev_icon: IconName,
+  move_next_label: &'static str,
+  move_next_icon: IconName,
+) -> PopupMenu {
+  let view_rename = view.clone();
+  let view_duplicate = view.clone();
+  let view_split_h = view.clone();
+  let view_split_v = view.clone();
+  let view_close_pane = view.clone();
+  let view_move_left = view.clone();
+  let view_move_right = view.clone();
+  let view_close_others = view.clone();
+  let view_close_right = view.clone();
+  let view_close_tab = view.clone();
+
+  menu
+    .item(
+      PopupMenuItem::new("Rename Tab")
+        .icon(Icon::empty().path("icons/pencil.svg"))
+        .on_click(move |_, window, cx| {
+          view_rename.update(cx, |this, cx| {
+            this.show_rename_dialog(tab_index, window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Duplicate Tab")
+        .icon(Icon::empty().path("icons/copy.svg"))
+        .on_click(move |_, window, cx| {
+          view_duplicate.update(cx, |this, cx| {
+            this.duplicate_tab(tab_index, window, cx);
+          });
+        }),
+    )
+    .separator()
+    .item(
+      PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)")
+        .icon(Icon::empty().path("icons/columns-2.svg"))
+        .on_click(move |_, window, cx| {
+          view_split_h.update(cx, |this, cx| {
+            this.split_pane_horizontal(window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)")
+        .icon(Icon::empty().path("icons/rows-2.svg"))
+        .on_click(move |_, window, cx| {
+          view_split_v.update(cx, |this, cx| {
+            this.split_pane_vertical(window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Close Pane (Ctrl+Shift+W)")
+        .icon(IconName::Close)
+        .on_click(move |_, window, cx| {
+          view_close_pane.update(cx, |this, cx| {
+            this.close_active_pane(window, cx);
+          });
+        }),
+    )
+    .separator()
+    .item(
+      PopupMenuItem::new(move_prev_label)
+        .icon(move_prev_icon)
+        .disabled(is_first)
+        .on_click(move |_, _window, cx| {
+          view_move_left.update(cx, |this, cx| {
+            this.move_tab_left(tab_ix, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new(move_next_label)
+        .icon(move_next_icon)
+        .disabled(is_last)
+        .on_click(move |_, _window, cx| {
+          view_move_right.update(cx, |this, cx| {
+            this.move_tab_right(tab_ix, cx);
+          });
+        }),
+    )
+    .separator()
+    .item(
+      PopupMenuItem::new("Close Other Tabs")
+        .icon(IconName::Close)
+        .disabled(total_tabs <= 1)
+        .on_click(move |_, _window, cx| {
+          view_close_others.update(cx, |this, cx| {
+            this.close_other_tabs(tab_index, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Close Tabs to Right")
+        .icon(IconName::Close)
+        .disabled(is_last)
+        .on_click(move |_, _window, cx| {
+          view_close_right.update(cx, |this, cx| {
+            this.close_tabs_to_right(tab_ix, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Close Tab")
+        .icon(IconName::Close)
+        .on_click(move |_, window, cx| {
+          view_close_tab.update(cx, |this, cx| {
+            this.remove_tab_by(tab_index, window, cx);
+          });
+        }),
+    )
+}
+
 impl Render for MainWindow {
   fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let search_visible = self.search_visible;
@@ -364,132 +488,19 @@ impl Render for MainWindow {
                                       .context_menu({
                                         let view = view.clone();
                                         move |menu, _window, _cx| {
-                                          let view_rename = view.clone();
-                                          let view_duplicate = view.clone();
-                                          let view_split_h = view.clone();
-                                          let view_split_v = view.clone();
-                                          let view_close_pane = view.clone();
-                                          let view_move_left = view.clone();
-                                          let view_move_right = view.clone();
-                                          let view_close_others = view.clone();
-                                          let view_close_right = view.clone();
-                                          let view_close_tab = view.clone();
-                                          menu
-                                            .item(
-                                              PopupMenuItem::new("Rename Tab")
-                                                .icon(Icon::empty().path("icons/pencil.svg"))
-                                                .on_click(move |_, window, cx| {
-                                                  view_rename.update(cx, |this, cx| {
-                                                    this.show_rename_dialog(tab_index, window, cx);
-                                                  });
-                                                }),
-                                            )
-                                            .item(
-                                              PopupMenuItem::new("Duplicate Tab")
-                                                .icon(Icon::empty().path("icons/copy.svg"))
-                                                .on_click(move |_, window, cx| {
-                                                  view_duplicate.update(cx, |this, cx| {
-                                                    this.duplicate_tab(tab_index, window, cx);
-                                                  });
-                                                }),
-                                            )
-                                            .separator()
-                                            .item(
-                                              PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)")
-                                                .icon(Icon::empty().path("icons/columns-2.svg"))
-                                                .on_click(move |_, window, cx| {
-                                                  view_split_h.update(cx, |this, cx| {
-                                                    this.split_pane_horizontal(window, cx);
-                                                  });
-                                                }),
-                                            )
-                                            .item(
-                                              PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)")
-                                                .icon(Icon::empty().path("icons/rows-2.svg"))
-                                                .on_click(move |_, window, cx| {
-                                                  view_split_v.update(cx, |this, cx| {
-                                                    this.split_pane_vertical(window, cx);
-                                                  });
-                                                }),
-                                            )
-                                            .item(
-                                              PopupMenuItem::new("Close Pane (Ctrl+Shift+W)")
-                                                .icon(IconName::Close)
-                                                .on_click(move |_, window, cx| {
-                                                  view_close_pane.update(cx, |this, cx| {
-                                                    this.close_active_pane(window, cx);
-                                                  });
-                                                }),
-                                            )
-                                            .separator()
-                                            .item(
-                                              PopupMenuItem::new("Move Left")
-                                                .icon(IconName::ArrowLeft)
-                                                .disabled(is_first)
-                                                .on_click(move |_, _window, cx| {
-                                                  view_move_left.update(cx, |this, cx| {
-                                                    if tab_ix > 0 {
-                                                      this.items.swap(tab_ix, tab_ix - 1);
-                                                      this.active_tab_ix = Some(tab_ix - 1);
-                                                      cx.notify();
-                                                    }
-                                                  });
-                                                }),
-                                            )
-                                            .item(
-                                              PopupMenuItem::new("Move Right")
-                                                .icon(IconName::ArrowRight)
-                                                .disabled(is_last)
-                                                .on_click(move |_, _window, cx| {
-                                                  view_move_right.update(cx, |this, cx| {
-                                                    if tab_ix + 1 < this.items.len() {
-                                                      this.items.swap(tab_ix, tab_ix + 1);
-                                                      this.active_tab_ix = Some(tab_ix + 1);
-                                                      cx.notify();
-                                                    }
-                                                  });
-                                                }),
-                                            )
-                                            .separator()
-                                            .item(
-                                              PopupMenuItem::new("Close Other Tabs")
-                                                .icon(IconName::Close)
-                                                .disabled(total_tabs <= 1)
-                                                .on_click(move |_, _window, cx| {
-                                                  view_close_others.update(cx, |this, cx| {
-                                                    let keep_index = tab_index;
-                                                    this
-                                                      .items
-                                                      .retain(|tab| tab.index == keep_index);
-                                                    this.active_tab_ix = Some(0);
-                                                    cx.notify();
-                                                  });
-                                                }),
-                                            )
-                                            .item(
-                                              PopupMenuItem::new("Close Tabs to Right")
-                                                .icon(IconName::Close)
-                                                .disabled(is_last)
-                                                .on_click(move |_, _window, cx| {
-                                                  view_close_right.update(cx, |this, cx| {
-                                                    let right_ix = tab_ix + 1;
-                                                    if right_ix < this.items.len() {
-                                                      this.items.truncate(right_ix);
-                                                      this.active_tab_ix = Some(tab_ix);
-                                                      cx.notify();
-                                                    }
-                                                  });
-                                                }),
-                                            )
-                                            .item(
-                                              PopupMenuItem::new("Close Tab")
-                                                .icon(IconName::Close)
-                                                .on_click(move |_, window, cx| {
-                                                  view_close_tab.update(cx, |this, cx| {
-                                                    this.remove_tab_by(tab_index, window, cx);
-                                                  });
-                                                }),
-                                            )
+                                          build_tab_context_menu(
+                                            menu,
+                                            view.clone(),
+                                            tab_index,
+                                            tab_ix,
+                                            is_first,
+                                            is_last,
+                                            total_tabs,
+                                            "Move Left",
+                                            IconName::ArrowLeft,
+                                            "Move Right",
+                                            IconName::ArrowRight,
+                                          )
                                         }
                                       }),
                                   ),
@@ -960,132 +971,19 @@ impl Render for MainWindow {
                                         .context_menu({
                                           let view = view.clone();
                                           move |menu, _window, _cx| {
-                                            let view_rename = view.clone();
-                                            let view_duplicate = view.clone();
-                                            let view_split_h = view.clone();
-                                            let view_split_v = view.clone();
-                                            let view_close_pane = view.clone();
-                                            let view_move_left = view.clone();
-                                            let view_move_right = view.clone();
-                                            let view_close_others = view.clone();
-                                            let view_close_right = view.clone();
-                                            let view_close_tab = view.clone();
-                                            menu
-                                              .item(
-                                                PopupMenuItem::new("Rename Tab")
-                                                  .icon(Icon::empty().path("icons/pencil.svg"))
-                                                  .on_click(move |_, window, cx| {
-                                                    view_rename.update(cx, |this, cx| {
-                                                      this.show_rename_dialog(tab_index, window, cx);
-                                                    });
-                                                  }),
-                                              )
-                                              .item(
-                                                PopupMenuItem::new("Duplicate Tab")
-                                                  .icon(Icon::empty().path("icons/copy.svg"))
-                                                  .on_click(move |_, window, cx| {
-                                                    view_duplicate.update(cx, |this, cx| {
-                                                      this.duplicate_tab(tab_index, window, cx);
-                                                    });
-                                                  }),
-                                              )
-                                              .separator()
-                                              .item(
-                                                PopupMenuItem::new("Split Horizontal (Ctrl+Shift+D)")
-                                                  .icon(Icon::empty().path("icons/columns-2.svg"))
-                                                  .on_click(move |_, window, cx| {
-                                                    view_split_h.update(cx, |this, cx| {
-                                                      this.split_pane_horizontal(window, cx);
-                                                    });
-                                                  }),
-                                              )
-                                              .item(
-                                                PopupMenuItem::new("Split Vertical (Ctrl+Shift+E)")
-                                                  .icon(Icon::empty().path("icons/rows-2.svg"))
-                                                  .on_click(move |_, window, cx| {
-                                                    view_split_v.update(cx, |this, cx| {
-                                                      this.split_pane_vertical(window, cx);
-                                                    });
-                                                  }),
-                                              )
-                                              .item(
-                                                PopupMenuItem::new("Close Pane (Ctrl+Shift+W)")
-                                                  .icon(IconName::Close)
-                                                  .on_click(move |_, window, cx| {
-                                                    view_close_pane.update(cx, |this, cx| {
-                                                      this.close_active_pane(window, cx);
-                                                    });
-                                                  }),
-                                              )
-                                              .separator()
-                                              .item(
-                                                PopupMenuItem::new("Move Up")
-                                                  .icon(IconName::ArrowUp)
-                                                  .disabled(is_first)
-                                                  .on_click(move |_, _window, cx| {
-                                                    view_move_left.update(cx, |this, cx| {
-                                                      if tab_ix > 0 {
-                                                        this.items.swap(tab_ix, tab_ix - 1);
-                                                        this.active_tab_ix = Some(tab_ix - 1);
-                                                        cx.notify();
-                                                      }
-                                                    });
-                                                  }),
-                                              )
-                                              .item(
-                                                PopupMenuItem::new("Move Down")
-                                                  .icon(IconName::ArrowDown)
-                                                  .disabled(is_last)
-                                                  .on_click(move |_, _window, cx| {
-                                                    view_move_right.update(cx, |this, cx| {
-                                                      if tab_ix + 1 < this.items.len() {
-                                                        this.items.swap(tab_ix, tab_ix + 1);
-                                                        this.active_tab_ix = Some(tab_ix + 1);
-                                                        cx.notify();
-                                                      }
-                                                    });
-                                                  }),
-                                              )
-                                              .separator()
-                                              .item(
-                                                PopupMenuItem::new("Close Other Tabs")
-                                                  .icon(IconName::Close)
-                                                  .disabled(total_tabs <= 1)
-                                                  .on_click(move |_, _window, cx| {
-                                                    view_close_others.update(cx, |this, cx| {
-                                                      let keep_index = tab_index;
-                                                      this
-                                                        .items
-                                                        .retain(|tab| tab.index == keep_index);
-                                                      this.active_tab_ix = Some(0);
-                                                      cx.notify();
-                                                    });
-                                                  }),
-                                              )
-                                              .item(
-                                                PopupMenuItem::new("Close Tabs to Right")
-                                                  .icon(IconName::Close)
-                                                  .disabled(is_last)
-                                                  .on_click(move |_, _window, cx| {
-                                                    view_close_right.update(cx, |this, cx| {
-                                                      let right_ix = tab_ix + 1;
-                                                      if right_ix < this.items.len() {
-                                                        this.items.truncate(right_ix);
-                                                        this.active_tab_ix = Some(tab_ix);
-                                                        cx.notify();
-                                                      }
-                                                    });
-                                                  }),
-                                              )
-                                              .item(
-                                                PopupMenuItem::new("Close Tab")
-                                                  .icon(IconName::Close)
-                                                  .on_click(move |_, window, cx| {
-                                                    view_close_tab.update(cx, |this, cx| {
-                                                      this.remove_tab_by(tab_index, window, cx);
-                                                    });
-                                                  }),
-                                              )
+                                            build_tab_context_menu(
+                                              menu,
+                                              view.clone(),
+                                              tab_index,
+                                              tab_ix,
+                                              is_first,
+                                              is_last,
+                                              total_tabs,
+                                              "Move Up",
+                                              IconName::ArrowUp,
+                                              "Move Down",
+                                              IconName::ArrowDown,
+                                            )
                                           }
                                         }),
                                     ),
