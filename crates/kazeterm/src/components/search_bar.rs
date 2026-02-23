@@ -33,12 +33,9 @@ impl SearchBar {
       &search_input_state,
       window,
       |view, state, event, _window, cx| match event {
-        gpui_component::input::InputEvent::Focus => {
-          tracing::debug!("Search input focused");
-        }
+        gpui_component::input::InputEvent::Focus => {}
         gpui_component::input::InputEvent::PressEnter { secondary } => {
           _ = secondary;
-          tracing::debug!("Performing search for query: {}", state.read(cx).value());
           view.query = state.read(cx).value().clone();
           view.perform_search(cx);
         }

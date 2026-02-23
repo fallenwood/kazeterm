@@ -225,22 +225,12 @@ impl Terminal {
   pub fn process_event(&mut self, event: AlacTermEvent, cx: &mut Context<Self>) {
     match event {
       AlacTermEvent::Title(title) => {
-        tracing::debug!(
-          "Terminal title changed to: '{}', current pty_info: {:?}",
-          title,
-          self.pty_info.current
-        );
-
         // Ignore shell title updates that come immediately after a process change
         // (e.g., bash's PROMPT_COMMAND setting title right after we switch back to bash)
         const PROCESS_CHANGE_GRACE_PERIOD: std::time::Duration =
           std::time::Duration::from_millis(100);
         if let Some(changed_at) = self.process_changed_at {
           if changed_at.elapsed() < PROCESS_CHANGE_GRACE_PERIOD {
-            tracing::debug!(
-              "Ignoring title update '{}' within grace period after process change",
-              title
-            );
             return;
           }
         }
@@ -248,10 +238,7 @@ impl Terminal {
         if title.is_empty() {
           // Fall back to current process name when title is empty
           if let Some(name) = self.pty_info.current_process_name() {
-            tracing::debug!("Empty title, falling back to process name: '{}'", name);
             self.title_text = name;
-          } else {
-            tracing::debug!("Empty title, but no process name available");
           }
         } else {
           self.title_text = title;
@@ -259,17 +246,9 @@ impl Terminal {
         cx.emit(Event::TitleChanged);
       }
       AlacTermEvent::ResetTitle => {
-        tracing::debug!(
-          "Terminal title reset, current pty_info: {:?}",
-          self.pty_info.current
-        );
-
         // Reset to current process name
         if let Some(name) = self.pty_info.current_process_name() {
-          tracing::debug!("Reset title to process name: '{}'", name);
           self.title_text = name;
-        } else {
-          tracing::debug!("Reset title, but no process name available");
         }
         cx.emit(Event::TitleChanged);
       }
@@ -311,11 +290,6 @@ impl Terminal {
         if self.pty_info.has_changed() {
           // Update title to current process name when foreground process changes
           if let Some(info) = &self.pty_info.current {
-            tracing::debug!(
-              "Process changed, updating title to: '{}' (was: '{}')",
-              info.name,
-              self.title_text
-            );
             self.title_text = info.name.clone();
             // Record when process changed so we can ignore shell title updates
             // that arrive shortly after (e.g., bash's PROMPT_COMMAND)
