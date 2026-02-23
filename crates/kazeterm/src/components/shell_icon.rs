@@ -207,7 +207,6 @@ mod windows_impl {
 
       let frame = image::Frame::new(img_buffer);
 
-      tracing::debug!("Successfully extracted icon for {}", exe_path);
       Some(Arc::new(RenderImage::new(vec![frame])))
     }
   }

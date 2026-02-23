@@ -698,13 +698,9 @@ async fn run_event_loop(
   event_bus: EventBus,
   cx: &mut AsyncApp,
 ) {
-  tracing::debug!("Event dispatch loop started");
-
   loop {
     match receiver.recv().await {
       Ok(event) => {
-        tracing::debug!("Dispatching event: {:?}", event);
-
         if let Err(e) = dispatch_event(&main_window, window_handle, event, &event_bus, cx).await {
           tracing::error!("Failed to dispatch event: {}", e);
           // If the main window is gone, exit the event loop
@@ -717,8 +713,6 @@ async fn run_event_loop(
       }
     }
   }
-
-  tracing::debug!("Event dispatch loop exited");
 }
 
 /// Dispatch an event to subscribers via the [`EventBus`].

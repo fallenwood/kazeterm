@@ -163,7 +163,7 @@ fn main() {
   // Initialize tracing
   tracing_subscriber::fmt()
     .with_env_filter(
-      tracing_subscriber::EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()),
+      tracing_subscriber::EnvFilter::from_default_env().add_directive(tracing::Level::WARN.into()),
     )
     .init();
 
@@ -171,10 +171,6 @@ fn main() {
 
   // Initialize theme system with embedded assets and custom path
   init_theme_system(&config);
-
-  // Log available themes
-  let available_themes = ::config::list_available_themes();
-  tracing::info!("Available themes: {:?}", available_themes);
 
   let app = Application::new().with_assets(Assets);
 
