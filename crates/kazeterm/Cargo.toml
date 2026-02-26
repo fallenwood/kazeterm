@@ -9,12 +9,7 @@ repository = "https://github.com/fallenwood/kazeterm"
 
 [dependencies]
 anyhow.workspace = true
-gpui = { workspace = true, features = [
-    "wayland",
-    # "x11",
-    "font-kit",
-    "windows-manifest",
-] }
+gpui = { workspace = true, features = ["font-kit"] }
 gpui-macros.workspace = true
 gpui-component.workspace = true
 alacritty_terminal.workspace = true
@@ -41,9 +36,13 @@ notify.workspace = true
 notify-debouncer-mini.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
+gpui = { workspace = true, features = ["windows-manifest"] }
 windows.workspace = true
 image.workspace = true
 uds_windows = "1"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+gpui = { workspace = true, features = ["wayland"] }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"
