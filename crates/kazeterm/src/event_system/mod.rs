@@ -41,15 +41,19 @@
 //! send_event(AppEvent::NewTerminalWithDefaultProfile);
 //! ```
 
+mod event_sources;
+mod json_event;
+
+pub use json_event::{EventSourceConfig, JsonEvent};
+
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use gpui::{AnyWindowHandle, App, AppContext, AsyncApp, WeakEntity, Window};
-use serde::Deserialize;
 use smol::channel::{Receiver, Sender, unbounded};
 
 use crate::components::MainWindow;
+use event_sources::{start_socket_reader, start_stdio_reader};
 
 /// Global event sender - can be accessed from any thread
 static EVENT_SENDER: OnceLock<Sender<AppEvent>> = OnceLock::new();
@@ -57,23 +61,6 @@ static EVENT_SENDER: OnceLock<Sender<AppEvent>> = OnceLock::new();
 /// Stored main window reference for event dispatch
 #[allow(dead_code)]
 static MAIN_WINDOW_HANDLE: OnceLock<AnyWindowHandle> = OnceLock::new();
-
-/// Configuration for the event source
-#[derive(Debug, Clone)]
-pub enum EventSourceConfig {
-  /// No external event source (events can still be sent programmatically)
-  None,
-  /// Read events from stdin (JSON, one per line)
-  Stdio,
-  /// Read events from a Unix domain socket (all platforms)
-  Socket { path: PathBuf },
-}
-
-impl Default for EventSourceConfig {
-  fn default() -> Self {
-    Self::None
-  }
-}
 
 /// Application events that can be triggered from any thread
 #[derive(Debug, Clone)]
@@ -338,69 +325,6 @@ pub fn build_default_event_bus() -> EventBus {
   bus
 }
 
-/// JSON representation of an event for external input
-#[derive(Debug, Deserialize)]
-#[serde(tag = "event")]
-pub enum JsonEvent {
-  NewTerminalWithDefaultProfile,
-  NewTerminalWithProfile {
-    profile_name: String,
-    working_directory: Option<String>,
-  },
-  CloseActiveTab,
-  CloseTab {
-    tab_index: usize,
-  },
-  NextTab,
-  PreviousTab,
-  SwitchToTab {
-    position: usize,
-  },
-  SplitHorizontal,
-  SplitVertical,
-  CloseActivePane,
-  ToggleSearch,
-  ShowAboutDialog,
-  ReloadConfig,
-  FocusActiveTerminal,
-  SendTextToTerminal {
-    text: String,
-  },
-  Custom {
-    name: String,
-    data: String,
-  },
-}
-
-impl From<JsonEvent> for AppEvent {
-  fn from(json: JsonEvent) -> Self {
-    match json {
-      JsonEvent::NewTerminalWithDefaultProfile => AppEvent::NewTerminalWithDefaultProfile,
-      JsonEvent::NewTerminalWithProfile {
-        profile_name,
-        working_directory,
-      } => AppEvent::NewTerminalWithProfile {
-        profile_name,
-        working_directory,
-      },
-      JsonEvent::CloseActiveTab => AppEvent::CloseActiveTab,
-      JsonEvent::CloseTab { tab_index } => AppEvent::CloseTab { tab_index },
-      JsonEvent::NextTab => AppEvent::NextTab,
-      JsonEvent::PreviousTab => AppEvent::PreviousTab,
-      JsonEvent::SwitchToTab { position } => AppEvent::SwitchToTab { position },
-      JsonEvent::SplitHorizontal => AppEvent::SplitHorizontal,
-      JsonEvent::SplitVertical => AppEvent::SplitVertical,
-      JsonEvent::CloseActivePane => AppEvent::CloseActivePane,
-      JsonEvent::ToggleSearch => AppEvent::ToggleSearch,
-      JsonEvent::ShowAboutDialog => AppEvent::ShowAboutDialog,
-      JsonEvent::ReloadConfig => AppEvent::ReloadConfig,
-      JsonEvent::FocusActiveTerminal => AppEvent::FocusActiveTerminal,
-      JsonEvent::SendTextToTerminal { text } => AppEvent::SendTextToTerminal { text },
-      JsonEvent::Custom { name, data } => AppEvent::Custom { name, data },
-    }
-  }
-}
-
 /// Send an event to the application from any thread.
 ///
 /// This function is thread-safe and can be called from background threads.
@@ -499,195 +423,6 @@ pub fn start_event_system(
     run_event_loop(main_window, window_handle, receiver, event_bus, cx).await;
   })
   .detach();
-}
-
-/// Start reading events from stdin in a background thread
-fn start_stdio_reader(sender: Sender<AppEvent>) {
-  std::thread::spawn(move || {
-    use std::io::BufRead;
-
-    tracing::info!("Starting stdin event reader");
-
-    let stdin = std::io::stdin();
-    let reader = stdin.lock();
-
-    for line in reader.lines() {
-      match line {
-        Ok(line) => {
-          let line = line.trim();
-          if line.is_empty() {
-            continue;
-          }
-
-          match serde_json::from_str::<JsonEvent>(line) {
-            Ok(json_event) => {
-              let event: AppEvent = json_event.into();
-              tracing::debug!("Received event from stdin: {:?}", event);
-              if sender.send_blocking(event).is_err() {
-                tracing::error!("Event channel closed, stopping stdin reader");
-                break;
-              }
-            }
-            Err(e) => {
-              tracing::warn!("Failed to parse event from stdin: {} - line: {}", e, line);
-            }
-          }
-        }
-        Err(e) => {
-          tracing::error!("Error reading from stdin: {}", e);
-          break;
-        }
-      }
-    }
-
-    tracing::info!("Stdin event reader stopped");
-  });
-}
-
-/// Start reading events from a Unix domain socket in a background thread
-fn start_socket_reader(sender: Sender<AppEvent>, path: PathBuf) {
-  std::thread::spawn(move || {
-    #[cfg(unix)]
-    {
-      start_unix_socket_reader_unix(sender, path);
-    }
-
-    #[cfg(windows)]
-    {
-      start_unix_socket_reader_windows(sender, path);
-    }
-  });
-}
-
-/// Unix domain socket reader (Unix platforms)
-#[cfg(unix)]
-fn start_unix_socket_reader_unix(sender: Sender<AppEvent>, path: PathBuf) {
-  use std::io::{BufRead, BufReader};
-  use std::os::unix::net::UnixListener;
-
-  tracing::info!("Starting Unix socket event reader at: {:?}", path);
-
-  // Remove existing socket file if it exists
-  let _ = std::fs::remove_file(&path);
-
-  let listener = match UnixListener::bind(&path) {
-    Ok(l) => l,
-    Err(e) => {
-      tracing::error!("Failed to bind Unix socket at {:?}: {}", path, e);
-      return;
-    }
-  };
-
-  tracing::info!("Listening for events on Unix socket: {:?}", path);
-
-  for stream in listener.incoming() {
-    match stream {
-      Ok(stream) => {
-        let sender = sender.clone();
-        std::thread::spawn(move || {
-          let reader = BufReader::new(stream);
-          for line in reader.lines() {
-            match line {
-              Ok(line) => {
-                let line = line.trim();
-                if line.is_empty() {
-                  continue;
-                }
-
-                match serde_json::from_str::<JsonEvent>(line) {
-                  Ok(json_event) => {
-                    let event: AppEvent = json_event.into();
-                    tracing::debug!("Received event from socket: {:?}", event);
-                    if sender.send_blocking(event).is_err() {
-                      tracing::error!("Event channel closed");
-                      break;
-                    }
-                  }
-                  Err(e) => {
-                    tracing::warn!("Failed to parse event from socket: {} - line: {}", e, line);
-                  }
-                }
-              }
-              Err(e) => {
-                tracing::debug!("Client disconnected: {}", e);
-                break;
-              }
-            }
-          }
-        });
-      }
-      Err(e) => {
-        tracing::error!("Failed to accept connection: {}", e);
-      }
-    }
-  }
-}
-
-/// Unix domain socket reader (Windows)
-///
-/// Windows has supported Unix domain sockets since Windows 10 version 1803.
-/// We use the uds_windows crate to provide UnixListener/UnixStream on Windows.
-#[cfg(windows)]
-fn start_unix_socket_reader_windows(sender: Sender<AppEvent>, path: PathBuf) {
-  use std::io::{BufRead, BufReader};
-  use uds_windows::UnixListener;
-
-  tracing::info!("Starting Unix socket event reader at: {:?}", path);
-
-  // Remove existing socket file if it exists
-  let _ = std::fs::remove_file(&path);
-
-  let listener = match UnixListener::bind(&path) {
-    Ok(l) => l,
-    Err(e) => {
-      tracing::error!("Failed to bind Unix socket at {:?}: {}", path, e);
-      return;
-    }
-  };
-
-  tracing::info!("Listening for events on Unix socket: {:?}", path);
-
-  for stream in listener.incoming() {
-    match stream {
-      Ok(stream) => {
-        let sender = sender.clone();
-        std::thread::spawn(move || {
-          let reader = BufReader::new(stream);
-          for line in reader.lines() {
-            match line {
-              Ok(line) => {
-                let line = line.trim();
-                if line.is_empty() {
-                  continue;
-                }
-
-                match serde_json::from_str::<JsonEvent>(line) {
-                  Ok(json_event) => {
-                    let event: AppEvent = json_event.into();
-                    tracing::debug!("Received event from socket: {:?}", event);
-                    if sender.send_blocking(event).is_err() {
-                      tracing::error!("Event channel closed");
-                      break;
-                    }
-                  }
-                  Err(e) => {
-                    tracing::warn!("Failed to parse event from socket: {} - line: {}", e, line);
-                  }
-                }
-              }
-              Err(e) => {
-                tracing::debug!("Client disconnected: {}", e);
-                break;
-              }
-            }
-          }
-        });
-      }
-      Err(e) => {
-        tracing::error!("Failed to accept connection: {}", e);
-      }
-    }
-  }
 }
 
 /// Run the event loop, reading events and dispatching them via the [`EventBus`].

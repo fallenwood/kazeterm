@@ -9,6 +9,7 @@ mod main_window_split_pane_actions;
 mod main_window_tab_item;
 mod main_window_tab_management;
 mod main_window_tab_switcher_logic;
+mod menu_builder;
 mod search_bar;
 mod shell_icon;
 mod split_pane;
