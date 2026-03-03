@@ -22,6 +22,9 @@ pub use theme::{
 pub mod migration;
 pub use migration::CURRENT_CONFIG_VERSION;
 
+mod keybinding;
+pub use keybinding::{KeybindingConfig, ParsedKeybinding};
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
   pub name: String,
@@ -59,6 +62,8 @@ pub struct Config {
   /// Close the application when the last tab is closed
   /// When false (default), a new tab is created instead
   pub close_on_last_tab: bool,
+  /// Custom keyboard shortcuts
+  pub keybindings: KeybindingConfig,
 }
 
 impl Default for Config {
@@ -83,6 +88,7 @@ impl Default for Config {
       minimap_enabled: false,
       vertical_tabs: false,
       close_on_last_tab: true,
+      keybindings: KeybindingConfig::default(),
     }
   }
 }
@@ -433,6 +439,7 @@ mod tests {
       minimap_enabled: false,
       vertical_tabs: false,
       close_on_last_tab: true,
+      keybindings: KeybindingConfig::default(),
     };
 
     // get_profile

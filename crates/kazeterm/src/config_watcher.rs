@@ -245,8 +245,11 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       let settings = create_settings_store(&new_config, system_is_dark);
 
       // Update globals
-      cx.set_global(new_config);
+      cx.set_global(new_config.clone());
       cx.set_global(settings);
+
+      // Re-bind terminal keybindings with updated config
+      terminal::bind_terminal_keys(cx, &new_config.keybindings);
 
       // Re-initialize gpui-component theme
       themeing::SettingsStore::init_gpui_component_theme(cx);

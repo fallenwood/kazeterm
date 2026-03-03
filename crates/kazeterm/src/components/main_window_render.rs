@@ -1,3 +1,4 @@
+use config::ParsedKeybinding;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
@@ -230,41 +231,38 @@ impl Render for MainWindow {
         // Track Ctrl state
         this.last_known_ctrl_state = e.keystroke.modifiers.control;
 
-        if e.keystroke.modifiers.control && e.keystroke.key == "tab" {
-          // Ctrl+Tab or Ctrl+Shift+Tab - just switch tabs without showing switcher
-          let forward = !e.keystroke.modifiers.shift;
+        let keybindings = &cx.global::<config::Config>().keybindings;
+        let mods = &e.keystroke.modifiers;
+        let key = &e.keystroke.key;
+
+        let kb_next = ParsedKeybinding::parse(&keybindings.next_tab);
+        let kb_prev = ParsedKeybinding::parse(&keybindings.previous_tab);
+        let kb_search = ParsedKeybinding::parse(&keybindings.toggle_search);
+        let kb_split_h = ParsedKeybinding::parse(&keybindings.split_horizontal);
+        let kb_split_v = ParsedKeybinding::parse(&keybindings.split_vertical);
+        let kb_close_pane = ParsedKeybinding::parse(&keybindings.close_pane);
+
+        if kb_next.matches(mods.control, mods.shift, mods.alt, key) {
           let current_ix = this.active_tab_ix.unwrap_or(0);
-          let next_ix = if forward {
-            (current_ix + 1) % this.items.len()
-          } else {
-            if current_ix == 0 {
-              this.items.len() - 1
-            } else {
-              current_ix - 1
-            }
-          };
+          let next_ix = (current_ix + 1) % this.items.len();
           this.set_active_tab(next_ix, window, cx);
-        } else if e.keystroke.modifiers.shift
-          && e.keystroke.modifiers.control
-          && e.keystroke.key == "f"
-        {
+        } else if kb_prev.matches(mods.control, mods.shift, mods.alt, key) {
+          let current_ix = this.active_tab_ix.unwrap_or(0);
+          let prev_ix = if current_ix == 0 {
+            this.items.len() - 1
+          } else {
+            current_ix - 1
+          };
+          this.set_active_tab(prev_ix, window, cx);
+        } else if kb_search.matches(mods.control, mods.shift, mods.alt, key) {
           this.toggle_search(window, cx);
         } else if e.keystroke.key == "Escape" && this.search_visible {
           this.toggle_search(window, cx);
-        } else if e.keystroke.modifiers.shift
-          && e.keystroke.modifiers.control
-          && e.keystroke.key == "d"
-        {
+        } else if kb_split_h.matches(mods.control, mods.shift, mods.alt, key) {
           this.split_pane_horizontal(window, cx);
-        } else if e.keystroke.modifiers.shift
-          && e.keystroke.modifiers.control
-          && e.keystroke.key == "e"
-        {
+        } else if kb_split_v.matches(mods.control, mods.shift, mods.alt, key) {
           this.split_pane_vertical(window, cx);
-        } else if e.keystroke.modifiers.shift
-          && e.keystroke.modifiers.control
-          && e.keystroke.key == "w"
-        {
+        } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, key) {
           this.close_active_pane(window, cx);
         }
       }))

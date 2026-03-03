@@ -177,7 +177,7 @@ fn main() {
   app.run(move |cx: &mut App| {
     Assets.load_fonts(cx).unwrap();
     gpui_component::init(cx);
-    terminal::init(cx);
+    terminal::init(cx, &config.keybindings);
 
     cx.set_global(crate::config::create_settings_store(
       &config,

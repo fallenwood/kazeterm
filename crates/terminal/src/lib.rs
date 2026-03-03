@@ -25,25 +25,32 @@ pub use terminal::{SelectionPhase, Terminal, TerminalEventListener};
 pub use terminal_bounds::TerminalBounds;
 pub use terminal_view::{TerminalEvent, TerminalView};
 
+use config::KeybindingConfig;
 use gpui::{App, KeyBinding};
 use terminal_view::{
   Copy, Paste, ScrollPageDown, ScrollPageUp, SendPageDown, SendPageUp, SendTab, SendTabPrev,
   ZoomIn, ZoomOut, ZoomReset,
 };
 
-pub fn init(cx: &mut App) {
+pub fn init(cx: &mut App, keybindings: &KeybindingConfig) {
   // Initialize ZoomState global
   cx.set_global(themeing::ZoomState::default());
 
+  bind_terminal_keys(cx, keybindings);
+}
+
+/// Register terminal keybindings from config.
+///
+/// This is also called during hot-reload to update bindings.
+pub fn bind_terminal_keys(cx: &mut App, keybindings: &KeybindingConfig) {
   cx.bind_keys([
     KeyBinding::new("tab", SendTab, Some("Terminal")),
     KeyBinding::new("shift-tab", SendTabPrev, Some("Terminal")),
-    KeyBinding::new("ctrl-shift-c", Copy, Some("Terminal")),
-    KeyBinding::new("ctrl-shift-v", Paste, Some("Terminal")),
-    // In alt screen mode (vim, less, etc.), send keys to the application
+    KeyBinding::new(&keybindings.copy, Copy, Some("Terminal")),
+    KeyBinding::new(&keybindings.paste, Paste, Some("Terminal")),
+    // Page up/down are context-dependent and not customizable
     KeyBinding::new("pageup", SendPageUp, Some("Terminal && screen == alt")),
     KeyBinding::new("pagedown", SendPageDown, Some("Terminal && screen == alt")),
-    // In normal mode, scroll the scrollback buffer
     KeyBinding::new("pageup", ScrollPageUp, Some("Terminal && screen == normal")),
     KeyBinding::new(
       "pagedown",
@@ -52,10 +59,8 @@ pub fn init(cx: &mut App) {
     ),
     KeyBinding::new("shift-pageup", ScrollPageUp, Some("Terminal")),
     KeyBinding::new("shift-pagedown", ScrollPageDown, Some("Terminal")),
-    // Zoom in/out
-    KeyBinding::new("ctrl-=", ZoomIn, Some("Terminal")),
-    KeyBinding::new("ctrl-+", ZoomIn, Some("Terminal")),
-    KeyBinding::new("ctrl--", ZoomOut, Some("Terminal")),
-    KeyBinding::new("ctrl-0", ZoomReset, Some("Terminal")),
+    KeyBinding::new(&keybindings.zoom_in, ZoomIn, Some("Terminal")),
+    KeyBinding::new(&keybindings.zoom_out, ZoomOut, Some("Terminal")),
+    KeyBinding::new(&keybindings.zoom_reset, ZoomReset, Some("Terminal")),
   ]);
 }

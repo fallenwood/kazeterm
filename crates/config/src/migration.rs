@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260220.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260303.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -30,6 +30,11 @@ fn migrations() -> &'static [Migration] {
       to_version: "20260220.1",
       migrate: migrate_v20260208_1_to_20260220_1,
     },
+    Migration {
+      from_version: "20260220.1",
+      to_version: "20260303.1",
+      migrate: migrate_v20260220_1_to_20260303_1,
+    },
   ]
 }
 
@@ -52,6 +57,16 @@ fn migrate_v20260208_1_to_20260220_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260220.1".to_string()),
+    );
+  }
+}
+
+/// Add custom keybindings configuration support.
+fn migrate_v20260220_1_to_20260303_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    table.insert(
+      "version".to_string(),
+      Value::String("20260303.1".to_string()),
     );
   }
 }
@@ -137,6 +152,18 @@ font_size = 18.0
     .unwrap()
   }
 
+  fn make_20260220_config() -> Value {
+    toml::from_str(
+      r#"
+version = "20260220.1"
+theme = "one"
+font_size = 18.0
+vertical_tabs = false
+"#,
+    )
+    .unwrap()
+  }
+
   #[test]
   fn no_migration_needed_for_current_version() {
     let mut config = make_current_config();
@@ -179,6 +206,17 @@ font_size = 18.0
     assert_eq!(
       config.get("vertical_tabs").unwrap().as_bool().unwrap(),
       false
+    );
+  }
+
+  #[test]
+  fn migrate_20260220_bumps_version_for_keybindings() {
+    let mut config = make_20260220_config();
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
     );
   }
 
