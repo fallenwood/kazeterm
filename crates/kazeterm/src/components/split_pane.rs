@@ -101,7 +101,7 @@ impl SplitPane {
         let first_result = first.as_mut().close_pane(pane_id);
         if first_result.closed {
           if let Some(new_first) = first_result.replacement {
-            *first = Box::new(new_first);
+            **first = new_first;
             return ClosePaneResult {
               replacement: None,
               closed: true,
@@ -118,7 +118,7 @@ impl SplitPane {
         let second_result = second.as_mut().close_pane(pane_id);
         if second_result.closed {
           if let Some(new_second) = second_result.replacement {
-            *second = Box::new(new_second);
+            **second = new_second;
             return ClosePaneResult {
               replacement: None,
               closed: true,
@@ -192,6 +192,7 @@ impl SplitPane {
     }
   }
 
+  #[allow(clippy::only_used_in_recursion)]
   pub fn render(
     &self,
     active_pane_id: Option<PaneId>,
@@ -199,7 +200,7 @@ impl SplitPane {
     cx: &mut App,
   ) -> AnyElement {
     match self {
-      SplitPane::Terminal { id, terminal } => {
+      SplitPane::Terminal { id: _, terminal } => {
         div()
           .size_full()
           .child(terminal.clone())
@@ -371,6 +372,7 @@ impl SplitContainer {
     self.active_pane_id.and_then(|id| self.root.find_terminal(id))
   }
 
+  #[allow(dead_code)]
   pub fn set_active_pane(&mut self, pane_id: PaneId) {
     if self.root.find_terminal(pane_id).is_some() {
       self.active_pane_id = Some(pane_id);

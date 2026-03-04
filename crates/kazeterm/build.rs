@@ -33,7 +33,7 @@ fn main() {
 
     let mut res = winresource::WindowsResource::new();
 
-    if let Some(explicit_rc_toolkit_path) = std::env::var("KAZETERM_TOOLKIT_PATH").ok() {
+    if let Ok(explicit_rc_toolkit_path) = std::env::var("KAZETERM_TOOLKIT_PATH") {
       res.set_toolkit_path(explicit_rc_toolkit_path.as_str());
     }
     res.set_icon(icon.to_str().unwrap());

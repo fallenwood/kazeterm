@@ -8,6 +8,7 @@ use gpui_component::{
 use super::main_window::MainWindow;
 use super::shell_icon::ShellIcon;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_tab_context_menu(
   menu: PopupMenu,
   view: Entity<MainWindow>,

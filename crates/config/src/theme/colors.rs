@@ -125,11 +125,10 @@ impl ThemeColors {
     }
 
     // Apply cursor if specified (otherwise uses accent)
-    if let Some(ref s) = self.cursor {
-      if let Some(c) = parse_hex_color(s) {
+    if let Some(ref s) = self.cursor
+      && let Some(c) = parse_hex_color(s) {
         palette.terminal_cursor = c;
       }
-    }
 
     // Derive UI colors from background
     // For dark themes: brighten for elevated, dim for recessed

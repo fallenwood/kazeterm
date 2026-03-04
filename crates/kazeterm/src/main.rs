@@ -195,25 +195,25 @@ fn main() {
     let event_config = event_source_config.clone();
 
     cx.spawn(async move |cx| {
-      let mut options = WindowOptions::default();
-      options.window_bounds = Some(gpui::WindowBounds::Windowed(gpui::Bounds {
-        origin: Point {
-          x: px(100f32),
-          y: px(100f32),
-        },
-        size: Size {
-          width: px(window_width),
-          height: px(window_height),
-        },
-      }));
-
-      // Hide system titlebar for custom window control
-      options.titlebar = Some(gpui::TitlebarOptions {
-        title: Some("Kazeterm".into()),
-        appears_transparent: true,
-        traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
-      });
-      options.window_decorations = Some(gpui::WindowDecorations::Client);
+      let options = WindowOptions {
+        window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
+          origin: Point {
+            x: px(100f32),
+            y: px(100f32),
+          },
+          size: Size {
+            width: px(window_width),
+            height: px(window_height),
+          },
+        })),
+        titlebar: Some(gpui::TitlebarOptions {
+          title: Some("Kazeterm".into()),
+          appears_transparent: true,
+          traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
+        }),
+        window_decorations: Some(gpui::WindowDecorations::Client),
+        ..Default::default()
+      };
 
       cx.open_window(options, |window, cx| {
         let view = crate::components::MainWindow::view(window, cx);

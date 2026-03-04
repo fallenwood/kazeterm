@@ -86,7 +86,7 @@ pub(super) fn find_from_grid_point<T: EventListener>(
       Some((url, true, url_match))
     } else {
       path_match(
-        &term,
+        term,
         line_start,
         line_end,
         point,
@@ -105,11 +105,10 @@ pub(super) fn find_from_grid_point<T: EventListener>(
       // Use Url::to_file_path() to properly handle Windows drive letters
       // (e.g., file:///C:/path -> C:\path)
       if maybe_url_or_path.starts_with("file://") {
-        if let Ok(url) = Url::parse(&maybe_url_or_path) {
-          if let Ok(path) = url.to_file_path() {
+        if let Ok(url) = Url::parse(&maybe_url_or_path)
+          && let Ok(path) = url.to_file_path() {
             return (path.to_string_lossy().into_owned(), false, word_match);
           }
-        }
         // Fallback: strip file:// prefix if URL parsing fails
         let path = maybe_url_or_path
           .strip_prefix("file://")
@@ -227,15 +226,14 @@ fn path_match<T>(
       prev_len = line.len();
       match cell.c {
         ' ' | '\t' => {
-          if hovered_point_byte_offset.is_some() && !prev_char_is_space {
-            if hovered_word_end_offset.is_none() {
+          if hovered_point_byte_offset.is_some() && !prev_char_is_space
+            && hovered_word_end_offset.is_none() {
               hovered_word_end_offset = Some(line.len());
             }
-          }
           line.push(' ');
           prev_char_is_space = true;
         }
-        c @ _ => {
+        c => {
           if hovered_point_byte_offset.is_none() && prev_char_is_space {
             hovered_word_start_offset = Some(line.len());
           }
@@ -306,7 +304,7 @@ fn path_match<T>(
 
     for (line_start_offset, captures) in once(
       regex
-        .captures_iter(&line)
+        .captures_iter(line)
         .next()
         .map(|captures| (0, captures)),
     )

@@ -3,6 +3,7 @@ use gpui::{AppContext, Context, Window};
 use super::main_window::MainWindow;
 use crate::components::tab_switcher::{TabSwitcher, TabSwitcherItem};
 
+#[allow(dead_code)]
 impl MainWindow {
   pub(crate) fn show_tab_switcher(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
     if self.items.len() <= 1 {
@@ -16,12 +17,10 @@ impl MainWindow {
       let current_ix = self.active_tab_ix.unwrap_or(0);
       self.tab_switcher_selection = if forward {
         (current_ix + 1) % self.items.len()
+      } else if current_ix == 0 {
+        self.items.len() - 1
       } else {
-        if current_ix == 0 {
-          self.items.len() - 1
-        } else {
-          current_ix - 1
-        }
+        current_ix - 1
       };
       self.tab_switcher_visible = true;
     } else {
@@ -60,8 +59,8 @@ impl MainWindow {
         let should_hide = cx
           .update(|_cx| {
             if let Some(this) = this_weak.upgrade() {
-              let switcher_visible = this.read(_cx).tab_switcher_visible;
-              switcher_visible
+              
+              this.read(_cx).tab_switcher_visible
             } else {
               false
             }

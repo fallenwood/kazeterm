@@ -39,7 +39,7 @@ impl Render for MainWindow {
 
     // Get current window bounds to detect resize
     let current_bounds = window.bounds();
-    let bounds_changed = self.last_bounds.map_or(true, |last| last != current_bounds);
+    let bounds_changed = self.last_bounds != Some(current_bounds);
 
     if bounds_changed {
       self.last_bounds = Some(current_bounds);
@@ -50,7 +50,6 @@ impl Render for MainWindow {
     if self.scroll_tabs_to_end {
       self.scroll_tabs_to_end = false;
       let scroll_handle = self.tab_scroll_handle.clone();
-      let vertical_tabs = vertical_tabs;
       cx.spawn(async move |_this, cx| {
         // Small delay to allow layout to complete
         // smol::Timer::after(std::time::Duration::from_millis(50)).await;
@@ -73,7 +72,6 @@ impl Render for MainWindow {
       let scroll_handle = self.tab_scroll_handle.clone();
       let active_tab_ix = self.active_tab_ix.unwrap_or_default();
       let total_tabs = self.items.len();
-      let vertical_tabs = vertical_tabs;
       cx.spawn(async move |_this, cx| {
         cx.update(|_cx| {
           if total_tabs > 0 && active_tab_ix < total_tabs {
@@ -131,9 +129,9 @@ impl Render for MainWindow {
             current_ix - 1
           };
           this.set_active_tab(prev_ix, window, cx);
-        } else if kb_search.matches(mods.control, mods.shift, mods.alt, key) {
-          this.toggle_search(window, cx);
-        } else if e.keystroke.key == "Escape" && this.search_visible {
+        } else if kb_search.matches(mods.control, mods.shift, mods.alt, key)
+          || (e.keystroke.key == "Escape" && this.search_visible)
+        {
           this.toggle_search(window, cx);
         } else if kb_split_h.matches(mods.control, mods.shift, mods.alt, key) {
           this.split_pane_horizontal(window, cx);
@@ -270,12 +268,11 @@ impl Render for MainWindow {
                                       if from_ix != to_ix {
                                         // Remove the item from the original position and insert at new position
                                         let item = this.items.remove(from_ix);
-                                        let insert_ix = if from_ix < to_ix { to_ix } else { to_ix };
-                                        this.items.insert(insert_ix, item);
+                                        this.items.insert(to_ix, item);
                                         // Update active tab index
                                         if let Some(active) = this.active_tab_ix {
                                           if active == from_ix {
-                                            this.active_tab_ix = Some(insert_ix);
+                                            this.active_tab_ix = Some(to_ix);
                                           } else if from_ix < active && active <= to_ix {
                                             this.active_tab_ix = Some(active - 1);
                                           } else if to_ix <= active && active < from_ix {
@@ -569,11 +566,10 @@ impl Render for MainWindow {
                                         let to_ix = tab_ix;
                                         if from_ix != to_ix {
                                           let item = this.items.remove(from_ix);
-                                          let insert_ix = if from_ix < to_ix { to_ix } else { to_ix };
-                                          this.items.insert(insert_ix, item);
+                                          this.items.insert(to_ix, item);
                                           if let Some(active) = this.active_tab_ix {
                                             if active == from_ix {
-                                              this.active_tab_ix = Some(insert_ix);
+                                              this.active_tab_ix = Some(to_ix);
                                             } else if from_ix < active && active <= to_ix {
                                               this.active_tab_ix = Some(active - 1);
                                             } else if to_ix <= active && active < from_ix {

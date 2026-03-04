@@ -4,6 +4,7 @@ use themeing::SettingsStore;
 
 use crate::components::shell_icon::ShellIcon;
 
+#[allow(dead_code)]
 pub struct TabSwitcherItem {
   pub index: usize,
   pub title: String,
@@ -11,6 +12,7 @@ pub struct TabSwitcherItem {
   pub is_selected: bool,
 }
 
+#[allow(dead_code)]
 pub struct TabSwitcher {
   items: Vec<TabSwitcherItem>,
   selected_index: usize,

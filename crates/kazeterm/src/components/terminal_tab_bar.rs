@@ -5,6 +5,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_component::{h_flex, v_flex};
 
+type MouseDownHandler = Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>;
+
 /// Terminal tab bar component - a scrollable container for tab items
 #[derive(IntoElement)]
 pub struct TerminalTabBar {
@@ -92,7 +94,7 @@ impl RenderOnce for TerminalTabBar {
 pub struct TerminalTab {
   selected: bool,
   fill_height: bool,
-  on_mouse_down: Option<Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>>,
+  on_mouse_down: Option<MouseDownHandler>,
   child: Option<AnyElement>,
 }
 

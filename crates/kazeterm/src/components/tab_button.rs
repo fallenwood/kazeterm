@@ -8,13 +8,15 @@ use gpui::{
 use gpui_component::{Icon, IconName, Sizable};
 use themeing::SettingsStore;
 
+type TabButtonClickHandler = Rc<dyn Fn(&TabButtonClickEvent, &mut Window, &mut App)>;
+
 #[derive(IntoElement)]
 pub struct TabButton {
   #[allow(unused)]
   id: ElementId,
   index: usize,
   visible: bool,
-  on_click: Option<Rc<dyn Fn(&TabButtonClickEvent, &mut Window, &mut App)>>,
+  on_click: Option<TabButtonClickHandler>,
 }
 
 #[derive(Clone, Debug)]

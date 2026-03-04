@@ -4,7 +4,8 @@ use config::Palette;
 use gpui::SharedString;
 
 pub fn default_settings() -> crate::SettingsStore {
-  let settings = crate::SettingsStore {
+  
+  crate::SettingsStore {
     active_theme: Arc::new(crate::Theme {
       id: String::from("one"),
       name: SharedString::from("One"),
@@ -14,6 +15,5 @@ pub fn default_settings() -> crate::SettingsStore {
     }),
     is_dark: true,
     is_system: false,
-  };
-  settings
+  }
 }

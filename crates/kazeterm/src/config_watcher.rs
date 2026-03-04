@@ -100,12 +100,11 @@ async fn run_file_watcher(
   }
 
   // Watch themes directory
-  if let Some(path) = &themes_path {
-    if path.exists() && path.is_dir() {
+  if let Some(path) = &themes_path
+    && path.exists() && path.is_dir() {
       tracing::info!("Watching themes directory: {}", path.display());
       watcher.watch(path, RecursiveMode::Recursive)?;
     }
-  }
 
   // Track pending changes for debouncing
   let mut pending_changes: HashSet<FileChangeType> = HashSet::new();
@@ -191,23 +190,19 @@ fn determine_change_type(
     }
 
     // If we're watching the parent directory, match by filename + same parent
-    if let (Some(cp_parent), Some(cp_name)) = (cp.parent(), cp.file_name()) {
-      if let (Some(changed_parent), Some(changed_name)) =
+    if let (Some(cp_parent), Some(cp_name)) = (cp.parent(), cp.file_name())
+      && let (Some(changed_parent), Some(changed_name)) =
         (changed_path.parent(), changed_path.file_name())
-      {
-        if cp_parent == changed_parent && cp_name == changed_name {
+        && cp_parent == changed_parent && cp_name == changed_name {
           return FileChangeType::Config;
         }
-      }
-    }
   }
 
   // Check if it's in the themes directory
-  if let Some(tp) = themes_path {
-    if changed_path.starts_with(tp) && changed_path.extension().is_some_and(|e| e == "toml") {
+  if let Some(tp) = themes_path
+    && changed_path.starts_with(tp) && changed_path.extension().is_some_and(|e| e == "toml") {
       return FileChangeType::Theme;
     }
-  }
 
   // Default to config (will reload everything anyway)
   FileChangeType::Config

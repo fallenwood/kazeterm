@@ -124,13 +124,13 @@ impl Render for AboutDialog {
                   .flex_col()
                   .gap_2()
                   .text_sm()
-                  .child(self.info_row("Theme", &theme_display, &theme))
-                  .child(self.info_row("Version", version, &theme))
-                  .child(self.info_row("Commit", short_hash, &theme))
-                  .child(self.info_row("License", license, &theme))
-                  .child(self.info_row("Author", author, &theme))
-                  .child(self.info_row_with_wrap("Repository", repo, &theme))
-                  .child(self.info_row_with_wrap("Config Location", &config_path_str, &theme)),
+                  .child(self.info_row("Theme", &theme_display, theme))
+                  .child(self.info_row("Version", version, theme))
+                  .child(self.info_row("Commit", short_hash, theme))
+                  .child(self.info_row("License", license, theme))
+                  .child(self.info_row("Author", author, theme))
+                  .child(self.info_row_with_wrap("Repository", repo, theme))
+                  .child(self.info_row_with_wrap("Config Location", &config_path_str, theme)),
               )
               // Close button
               .child(

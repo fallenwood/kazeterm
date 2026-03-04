@@ -182,7 +182,7 @@ mod windows_impl {
       // But we need to verify alpha - if all alpha values are 0, set them to 255
       let has_alpha = pixels
         .chunks(4)
-        .any(|chunk| chunk.get(3).map_or(false, |&a| a != 0));
+        .any(|chunk| chunk.get(3).is_some_and(|&a| a != 0));
       if !has_alpha {
         for chunk in pixels.chunks_mut(4) {
           if chunk.len() == 4 {

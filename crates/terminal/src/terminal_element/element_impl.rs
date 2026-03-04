@@ -94,9 +94,9 @@ impl Element for TerminalElement {
           font_features,
           font_weight,
           font_fallbacks: None,
-          font_size: font_size.into(),
+          font_size,
           font_style: FontStyle::Normal,
-          line_height: relative(line_height_multiplier).into(),
+          line_height: relative(line_height_multiplier),
           background_color: Some(theme.colors().terminal_ansi_background),
           white_space: WhiteSpace::Normal,
           color: theme.colors().terminal_foreground,
@@ -429,7 +429,7 @@ impl Element for TerminalElement {
         window.on_mouse_event(move |e: &gpui::MouseDownEvent, _phase, _window, cx| {
           if e.button == MouseButton::Left && scrollbar_bounds.contains(&e.position) {
             let relative_y = e.position.y - scrollbar_bounds.origin.y;
-            let position_ratio = (relative_y / scrollbar_bounds.size.height) as f32;
+            let position_ratio = relative_y / scrollbar_bounds.size.height;
 
             if scrollbar_state_for_down.is_on_thumb(position_ratio, scrollbar_bounds.size.height) {
               let (thumb_top_px, _) =
@@ -460,8 +460,8 @@ impl Element for TerminalElement {
         window.on_mouse_event(move |e: &gpui::MouseMoveEvent, _phase, _window, cx| {
           let drag_state = terminal_view_for_move.read(cx).scrollbar_drag_state;
 
-          if let Some((click_offset_from_thumb_px, last_mouse_y)) = drag_state {
-            if e.pressed_button == Some(MouseButton::Left) {
+          if let Some((click_offset_from_thumb_px, last_mouse_y)) = drag_state
+            && e.pressed_button == Some(MouseButton::Left) {
               let relative_y = e.position.y - scrollbar_bounds_for_move.origin.y;
               let current_mouse_y: f32 = relative_y.into();
 
@@ -485,7 +485,7 @@ impl Element for TerminalElement {
 
                 if scrollable_height > px(0.0) {
                   let thumb_top_clamped = thumb_top_px.clamp(px(0.0), scrollable_height);
-                  let normalized: f32 = (thumb_top_clamped / scrollable_height).into();
+                  let normalized: f32 = thumb_top_clamped / scrollable_height;
 
                   let new_offset = ((1.0 - normalized) * history_size as f32) as usize;
 
@@ -507,7 +507,6 @@ impl Element for TerminalElement {
                 });
               }
             }
-          }
         });
 
         let terminal_view_for_up = self.terminal_view.clone();

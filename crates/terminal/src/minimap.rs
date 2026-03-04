@@ -82,6 +82,7 @@ impl MinimapState {
 
 /// Render the minimap content
 /// This creates a simplified visualization of the terminal content
+#[allow(clippy::too_many_arguments)]
 pub fn paint_minimap(
   bounds: Bounds<Pixels>,
   cells: &[IndexedCell],

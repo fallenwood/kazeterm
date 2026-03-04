@@ -127,7 +127,7 @@ impl ScrollbarState {
 
     // Clamp y to valid range
     let thumb_top = y_px.clamp(px(0.0), scrollable_height);
-    let normalized: f32 = (thumb_top / scrollable_height).into();
+    let normalized: f32 = thumb_top / scrollable_height;
 
     // Invert: top = max offset, bottom = 0
     let offset = (1.0 - normalized) * self.history_size as f32;

@@ -44,11 +44,10 @@ impl TerminalElement {
       let terminal_view = terminal_view.clone();
 
       move |e, window, cx| {
-        if let Some(sb_bounds) = scrollbar_bounds {
-          if sb_bounds.contains(&e.position) {
+        if let Some(sb_bounds) = scrollbar_bounds
+          && sb_bounds.contains(&e.position) {
             return;
           }
-        }
 
         window.focus(&focus);
 
@@ -200,12 +199,10 @@ impl TerminalElement {
             terminal.update(cx, |term, cx| {
               term.copy_and_clear_selection(cx);
             });
-          } else {
-            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-              terminal.update(cx, |term, _cx| {
-                term.input(text.into_bytes());
-              });
-            }
+          } else if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+            terminal.update(cx, |term, _cx| {
+              term.input(text.into_bytes());
+            });
           }
         }
       });

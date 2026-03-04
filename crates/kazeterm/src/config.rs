@@ -16,7 +16,9 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
   // Load theme from assets by name
   let (theme_name, palette) = config::load_theme(&config.theme, is_dark);
 
-  let settings = themeing::SettingsStore {
+  
+
+  themeing::SettingsStore {
     active_theme: Arc::new(themeing::Theme {
       id: config.theme.clone(),
       name: SharedString::from(theme_name),
@@ -24,7 +26,5 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
     }),
     is_dark,
     is_system,
-  };
-
-  settings
+  }
 }

@@ -192,17 +192,15 @@ impl Terminal {
       ) {
         self.write_to_pty(bytes);
       }
-    } else {
-      if self.selection_phase == SelectionPhase::Ended {
-        let mouse_cell_index =
-          content_index_for_mouse(position, &self.last_content.terminal_bounds);
-        if let Some(link) = self.last_content.cells[mouse_cell_index].hyperlink() {
-          cx.open_url(link.uri());
-        } else if e.modifiers.secondary() {
-          self
-            .events
-            .push_back(InternalEvent::FindHyperlink(position, true));
-        }
+    } else if self.selection_phase == SelectionPhase::Ended {
+      let mouse_cell_index =
+        content_index_for_mouse(position, &self.last_content.terminal_bounds);
+      if let Some(link) = self.last_content.cells[mouse_cell_index].hyperlink() {
+        cx.open_url(link.uri());
+      } else if e.modifiers.secondary() {
+        self
+          .events
+          .push_back(InternalEvent::FindHyperlink(position, true));
       }
     }
 

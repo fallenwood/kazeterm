@@ -75,15 +75,7 @@ impl Terminal {
 
       let target_line = 5;
 
-      if visual_line < 0 || visual_line >= screen_lines {
-        let scroll_delta = visual_line - target_line;
-        drop(term);
-        if scroll_delta != 0 {
-          self
-            .events
-            .push_back(InternalEvent::Scroll(Scroll::Delta(-scroll_delta)));
-        }
-      } else if visual_line > 10 {
+      if visual_line < 0 || visual_line >= screen_lines || visual_line > 10 {
         let scroll_delta = visual_line - target_line;
         drop(term);
         if scroll_delta != 0 {

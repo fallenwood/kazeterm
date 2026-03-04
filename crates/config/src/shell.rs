@@ -313,8 +313,7 @@ pub fn detect_container_shells() -> Vec<DetectedShell> {
   if let Ok(output) = hidden_command("docker")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
-  {
-    if output.status.success() {
+    && output.status.success() {
       let containers = String::from_utf8_lossy(&output.stdout);
       for container in containers.lines() {
         let container = container.trim();
@@ -326,14 +325,12 @@ pub fn detect_container_shells() -> Vec<DetectedShell> {
         }
       }
     }
-  }
 
   // Detect Podman containers (Podman Desktop on Windows)
   if let Ok(output) = hidden_command("podman")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
-  {
-    if output.status.success() {
+    && output.status.success() {
       let containers = String::from_utf8_lossy(&output.stdout);
       for container in containers.lines() {
         let container = container.trim();
@@ -345,7 +342,6 @@ pub fn detect_container_shells() -> Vec<DetectedShell> {
         }
       }
     }
-  }
 
   shells
 }

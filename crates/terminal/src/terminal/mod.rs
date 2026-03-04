@@ -163,11 +163,10 @@ impl Terminal {
       AlacTermEvent::Title(title) => {
         const PROCESS_CHANGE_GRACE_PERIOD: std::time::Duration =
           std::time::Duration::from_millis(100);
-        if let Some(changed_at) = self.process_changed_at {
-          if changed_at.elapsed() < PROCESS_CHANGE_GRACE_PERIOD {
+        if let Some(changed_at) = self.process_changed_at
+          && changed_at.elapsed() < PROCESS_CHANGE_GRACE_PERIOD {
             return;
           }
-        }
 
         if title.is_empty() {
           if let Some(name) = self.pty_info.current_process_name() {
@@ -216,13 +215,12 @@ impl Terminal {
       AlacTermEvent::Wakeup => {
         cx.emit(Event::Wakeup);
 
-        if self.pty_info.has_changed() {
-          if let Some(info) = &self.pty_info.current {
+        if self.pty_info.has_changed()
+          && let Some(info) = &self.pty_info.current {
             self.title_text = info.name.clone();
             self.process_changed_at = Some(std::time::Instant::now());
             cx.emit(Event::TitleChanged);
           }
-        }
       }
       AlacTermEvent::ColorRequest(index, format) => {
         let color = self.term.lock().colors()[index].unwrap_or_else(|| {

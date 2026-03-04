@@ -141,7 +141,7 @@ impl TerminalView {
 
     Self {
       terminal,
-      focus_handle: focus_handle,
+      focus_handle,
       has_bell: false,
       blink_state: true,
       blinking_paused: false,
@@ -151,7 +151,7 @@ impl TerminalView {
       scroll_top: Pixels::ZERO,
       ime_state: None,
       scrollbar_drag_state: None,
-      index: index,
+      index,
       _subscriptions: vec![focus_in, focus_out],
       _terminal_subscriptions: terminal_subscriptions,
       momentum_scroll_task: Task::ready(()),
@@ -462,8 +462,8 @@ impl TerminalView {
     self.pause_cursor_blinking(window, cx);
 
     let handled = self.terminal.update(cx, |term, _cx| {
-      let handled = term.try_keystroke(&event.keystroke, true);
-      handled
+      
+      term.try_keystroke(&event.keystroke, true)
     });
 
     if handled {

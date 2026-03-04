@@ -164,6 +164,12 @@ pub struct EventBus {
   handlers: HashMap<&'static str, Vec<EventHandler>>,
 }
 
+impl Default for EventBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventBus {
   pub fn new() -> Self {
     Self {

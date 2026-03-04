@@ -60,7 +60,7 @@ impl MainWindow {
         };
 
         let working_directory =
-          working_directory.or(profile.map(|e| e.working_directory.clone()).flatten());
+          working_directory.or(profile.and_then(|e| e.working_directory.clone()));
         let shell_name = std::path::Path::new(&program)
           .file_stem()
           .and_then(|n| n.to_str())

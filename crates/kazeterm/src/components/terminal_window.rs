@@ -44,7 +44,7 @@ fn new_terminal(
       shell: Some(alac_shell),
       working_directory,
       drain_on_exit: true,
-      env: env,
+      env,
       #[cfg(windows)]
       escape_args: true,
     }

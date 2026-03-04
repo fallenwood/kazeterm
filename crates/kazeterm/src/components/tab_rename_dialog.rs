@@ -31,20 +31,17 @@ impl TabRenameDialog {
     let input_state = cx.new(|cx| InputState::new(window, cx).default_value(title));
 
     let subscription = cx.subscribe_in(&input_state, window, |view, state, event, _window, cx| {
-      match event {
-        gpui_component::input::InputEvent::PressEnter { .. } => {
-          let value = state.read(cx).value().to_string();
-          let new_title = if value.trim().is_empty() {
-            None // Clear custom title, revert to auto-title
-          } else {
-            Some(value)
-          };
-          cx.emit(TabRenameEvent {
-            tab_index: view.tab_index,
-            new_title,
-          });
-        }
-        _ => {}
+      if let gpui_component::input::InputEvent::PressEnter { .. } = event {
+        let value = state.read(cx).value().to_string();
+        let new_title = if value.trim().is_empty() {
+          None // Clear custom title, revert to auto-title
+        } else {
+          Some(value)
+        };
+        cx.emit(TabRenameEvent {
+          tab_index: view.tab_index,
+          new_title,
+        });
       }
     });
 

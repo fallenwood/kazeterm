@@ -6,8 +6,10 @@ use super::AppEvent;
 
 /// Configuration for the event source
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub enum EventSourceConfig {
   /// No external event source (events can still be sent programmatically)
+  #[default]
   None,
   /// Read events from stdin (JSON, one per line)
   Stdio,
@@ -15,11 +17,6 @@ pub enum EventSourceConfig {
   Socket { path: PathBuf },
 }
 
-impl Default for EventSourceConfig {
-  fn default() -> Self {
-    Self::None
-  }
-}
 
 /// JSON representation of an event for external input
 #[derive(Debug, Deserialize)]

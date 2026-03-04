@@ -299,8 +299,7 @@ impl SearchBar {
 
 impl Focusable for SearchBar {
   fn focus_handle(&self, cx: &App) -> FocusHandle {
-    let focus_handle = self.search_input_state.focus_handle(cx);
-    return focus_handle;
+    self.search_input_state.focus_handle(cx)
   }
 }
 
