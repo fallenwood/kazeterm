@@ -11,11 +11,14 @@ use gpui_component::{
 use themeing::SettingsStore;
 
 use super::main_window::{MainWindow, TAB_LABEL_MAX_WIDTH, VERTICAL_TABBAR_MIN_WIDTH};
-use super::menu_builder::{build_tab_context_menu, build_new_tab_menu};
+use super::menu_builder::{build_new_tab_menu, build_tab_context_menu};
 use super::terminal_tab_bar::{TerminalTab, TerminalTabBar};
-use crate::components::{dragged_tab::{DraggedTab, DraggedTabView}, main_window::TAB_LABEL_MIN_WIDTH};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
+use crate::components::{
+  dragged_tab::{DraggedTab, DraggedTabView},
+  main_window::TAB_LABEL_MIN_WIDTH,
+};
 
 #[derive(Clone)]
 struct ResizeVerticalTabbar(pub EntityId);
@@ -184,201 +187,206 @@ impl Render for MainWindow {
                     .track_scroll(&self.tab_scroll_handle)
                     .children(
                       self
-                      .items
-                      .iter()
-                      .enumerate()
-                      .map(|(tab_ix, item)| {
-                        let shell_icon = ShellIcon::new(&item.shell_path);
-                        let tab_index = item.index;
-                        let tab_title = item.display_title().to_string();
-                        let total_tabs = self.items.len();
-                        let is_first = tab_ix == 0;
-                        let is_last = tab_ix == total_tabs - 1;
-                        let is_selected = self.active_tab_ix == Some(tab_ix);
-                        let has_bell = item
-                          .split_container
-                          .all_terminals()
-                          .iter()
-                          .any(|(_, t)| t.read(cx).has_bell());
-                        let view = cx.entity();
-                        let view_for_click = view.clone();
-                        let all_terminals = item.split_container.all_terminals();
-                        // Define colors for selected tab highlight
-                        let selected_bg: gpui::Hsla = colors.tab_active_background;
-                        let normal_bg = colors.tab_inactive_background;
-                        let hover_bg = colors.element_hover;
-                        let text_color = colors.text;
-                        let text_muted = colors.text_muted;
-                        let accent_color = colors.text_accent;
-                        let warning_color = colors.terminal_ansi_yellow;
+                        .items
+                        .iter()
+                        .enumerate()
+                        .map(|(tab_ix, item)| {
+                          let shell_icon = ShellIcon::new(&item.shell_path);
+                          let tab_index = item.index;
+                          let tab_title = item.display_title().to_string();
+                          let total_tabs = self.items.len();
+                          let is_first = tab_ix == 0;
+                          let is_last = tab_ix == total_tabs - 1;
+                          let is_selected = self.active_tab_ix == Some(tab_ix);
+                          let has_bell = item
+                            .split_container
+                            .all_terminals()
+                            .iter()
+                            .any(|(_, t)| t.read(cx).has_bell());
+                          let view = cx.entity();
+                          let view_for_click = view.clone();
+                          let all_terminals = item.split_container.all_terminals();
+                          // Define colors for selected tab highlight
+                          let selected_bg: gpui::Hsla = colors.tab_active_background;
+                          let normal_bg = colors.tab_inactive_background;
+                          let hover_bg = colors.element_hover;
+                          let text_color = colors.text;
+                          let text_muted = colors.text_muted;
+                          let accent_color = colors.text_accent;
+                          let warning_color = colors.terminal_ansi_yellow;
 
-                        TerminalTab::new()
-                          .selected(is_selected)
-                          .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                            // Select this tab
-                            view_for_click.update(cx, |this, cx| {
-                              this.set_active_tab(tab_ix, window, cx);
-                            });
-                            // Clear bell when clicking on tab
-                            for (_, terminal) in &all_terminals {
-                              terminal.update(cx, |terminal_view, cx| {
-                                terminal_view.clear_bell(cx);
+                          TerminalTab::new()
+                            .selected(is_selected)
+                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                              // Select this tab
+                              view_for_click.update(cx, |this, cx| {
+                                this.set_active_tab(tab_ix, window, cx);
                               });
-                            }
-                            // Prevent TitleBar from starting window drag when clicking on tabs
-                            cx.stop_propagation();
-                          })
-                          .child(
-                            div()
-                              .id(ElementId::NamedInteger(
-                                "tab-container".into(),
-                                tab_ix as u64,
-                              ))
-                              .group("tab-item")
-                              .child(
-                                div()
-                                  .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
-                                  .cursor(CursorStyle::OpenHand)
-                                  .on_drag(
-                                    DraggedTab {
-                                      from_ix: tab_ix,
-                                      title: tab_title.clone(),
-                                      shell_path: item.shell_path.clone(),
-                                    },
-                                    |dragged: &DraggedTab, _offset, _window, cx| {
-                                      cx.new(|_cx| {
-                                        DraggedTabView::new(
-                                          dragged.title.clone(),
-                                          dragged.shell_path.clone(),
-                                        )
-                                      })
-                                    },
-                                  )
-                                  .drag_over::<DraggedTab>(move |style, _dragged, _window, _cx| {
-                                    // Visual feedback during drag - show drop indicator
-                                    style
-                                      .bg(accent_color.opacity(0.15))
-                                      .border_l_2()
-                                      .border_color(accent_color)
-                                  })
-                                  .on_drop(cx.listener(
-                                    move |this, dragged: &DraggedTab, _window, cx| {
-                                      let from_ix = dragged.from_ix;
-                                      let to_ix = tab_ix;
-                                      if from_ix != to_ix {
-                                        // Remove the item from the original position and insert at new position
-                                        let item = this.items.remove(from_ix);
-                                        this.items.insert(to_ix, item);
-                                        // Update active tab index
-                                        if let Some(active) = this.active_tab_ix {
-                                          if active == from_ix {
-                                            this.active_tab_ix = Some(to_ix);
-                                          } else if from_ix < active && active <= to_ix {
-                                            this.active_tab_ix = Some(active - 1);
-                                          } else if to_ix <= active && active < from_ix {
-                                            this.active_tab_ix = Some(active + 1);
+                              // Clear bell when clicking on tab
+                              for (_, terminal) in &all_terminals {
+                                terminal.update(cx, |terminal_view, cx| {
+                                  terminal_view.clear_bell(cx);
+                                });
+                              }
+                              // Prevent TitleBar from starting window drag when clicking on tabs
+                              cx.stop_propagation();
+                            })
+                            .child(
+                              div()
+                                .id(ElementId::NamedInteger(
+                                  "tab-container".into(),
+                                  tab_ix as u64,
+                                ))
+                                .group("tab-item")
+                                .child(
+                                  div()
+                                    .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
+                                    .cursor(CursorStyle::OpenHand)
+                                    .on_drag(
+                                      DraggedTab {
+                                        from_ix: tab_ix,
+                                        title: tab_title.clone(),
+                                        shell_path: item.shell_path.clone(),
+                                      },
+                                      |dragged: &DraggedTab, _offset, _window, cx| {
+                                        cx.new(|_cx| {
+                                          DraggedTabView::new(
+                                            dragged.title.clone(),
+                                            dragged.shell_path.clone(),
+                                          )
+                                        })
+                                      },
+                                    )
+                                    .drag_over::<DraggedTab>(
+                                      move |style, _dragged, _window, _cx| {
+                                        // Visual feedback during drag - show drop indicator
+                                        style
+                                          .bg(accent_color.opacity(0.15))
+                                          .border_l_2()
+                                          .border_color(accent_color)
+                                      },
+                                    )
+                                    .on_drop(cx.listener(
+                                      move |this, dragged: &DraggedTab, _window, cx| {
+                                        let from_ix = dragged.from_ix;
+                                        let to_ix = tab_ix;
+                                        if from_ix != to_ix {
+                                          // Remove the item from the original position and insert at new position
+                                          let item = this.items.remove(from_ix);
+                                          this.items.insert(to_ix, item);
+                                          // Update active tab index
+                                          if let Some(active) = this.active_tab_ix {
+                                            if active == from_ix {
+                                              this.active_tab_ix = Some(to_ix);
+                                            } else if from_ix < active && active <= to_ix {
+                                              this.active_tab_ix = Some(active - 1);
+                                            } else if to_ix <= active && active < from_ix {
+                                              this.active_tab_ix = Some(active + 1);
+                                            }
                                           }
+                                          cx.notify();
                                         }
-                                        cx.notify();
-                                      }
-                                    },
-                                  ))
-                                  .child(
-                                    h_flex()
-                                      .id(ElementId::NamedInteger(
-                                        "tab-inner".into(),
-                                        tab_ix as u64,
-                                      ))
-                                      .mt_1()
-                                      .h_full()
-                                      .gap_1p5()
-                                      .pl_2p5()
-                                      .pr_1()
-                                      .items_center()
-                                      .min_w(px(TAB_LABEL_MIN_WIDTH))
-                                      .max_w(px(TAB_LABEL_MAX_WIDTH))
-                                      // Background styling
-                                      .when(is_selected, |this| {
-                                        this.bg(selected_bg).border_b_2().border_color(accent_color)
-                                      })
-                                      .when(!is_selected, |this| {
-                                        this.bg(normal_bg).hover(|style| style.bg(hover_bg))
-                                      })
-                                      .rounded_t_md()
-                                      // Shell icon
-                                      .child(
-                                        div()
-                                          .flex_shrink_0()
-                                          .child(shell_icon.into_element(px(14.0))),
-                                      )
-                                      // Bell indicator
-                                      .when(has_bell, |this| {
-                                        this.child(
-                                          div().flex_shrink_0().child(
-                                            Icon::new(IconName::Bell)
-                                              .size_3()
-                                              .text_color(warning_color),
+                                      },
+                                    ))
+                                    .child(
+                                      h_flex()
+                                        .id(ElementId::NamedInteger(
+                                          "tab-inner".into(),
+                                          tab_ix as u64,
+                                        ))
+                                        .mt_1()
+                                        .h_full()
+                                        .gap_1p5()
+                                        .pl_2p5()
+                                        .pr_1()
+                                        .items_center()
+                                        .min_w(px(TAB_LABEL_MIN_WIDTH))
+                                        .max_w(px(TAB_LABEL_MAX_WIDTH))
+                                        // Background styling
+                                        .when(is_selected, |this| {
+                                          this
+                                            .bg(selected_bg)
+                                            .border_b_2()
+                                            .border_color(accent_color)
+                                        })
+                                        .when(!is_selected, |this| {
+                                          this.bg(normal_bg).hover(|style| style.bg(hover_bg))
+                                        })
+                                        .rounded_t_md()
+                                        // Shell icon
+                                        .child(
+                                          div()
+                                            .flex_shrink_0()
+                                            .child(shell_icon.into_element(px(14.0))),
+                                        )
+                                        // Bell indicator
+                                        .when(has_bell, |this| {
+                                          this.child(
+                                            div().flex_shrink_0().child(
+                                              Icon::new(IconName::Bell)
+                                                .size_3()
+                                                .text_color(warning_color),
+                                            ),
+                                          )
+                                        })
+                                        // Tab label with text truncation
+                                        .child(
+                                          div().flex_1().min_w_0().overflow_x_hidden().child(
+                                            Label::new(tab_title.clone())
+                                              .text_color(if is_selected {
+                                                text_color
+                                              } else {
+                                                text_muted
+                                              })
+                                              .whitespace_nowrap(),
                                           ),
                                         )
-                                      })
-                                      // Tab label with text truncation
-                                      .child(
-                                        div().flex_1().min_w_0().overflow_x_hidden().child(
-                                          Label::new(tab_title.clone())
-                                            .text_color(if is_selected {
-                                              text_color
-                                            } else {
-                                              text_muted
+                                        // Close button - visible on hover or when selected
+                                        .child({
+                                          let close_visible = is_selected;
+                                          div()
+                                            .flex_shrink_0()
+                                            .when(!close_visible, |this| {
+                                              this
+                                                .invisible()
+                                                .group_hover("tab-item", |style| style.visible())
                                             })
-                                            .whitespace_nowrap(),
-                                        ),
-                                      )
-                                      // Close button - visible on hover or when selected
-                                      .child({
-                                        let close_visible = is_selected;
-                                        div()
-                                          .flex_shrink_0()
-                                          .when(!close_visible, |this| {
-                                            this
-                                              .invisible()
-                                              .group_hover("tab-item", |style| style.visible())
-                                          })
-                                          .child(
-                                            TabButton::new("close", tab_index)
-                                              .visible(true)
-                                              .on_click(cx.listener(
-                                                |this, e: &TabButtonClickEvent, window, cx| {
-                                                  let tab_index = e.index;
-                                                  this.remove_tab_by(tab_index, window, cx);
-                                                },
-                                              )),
-                                          )
-                                      })
-                                      .on_mouse_down(MouseButton::Right, |_, _, cx| {
-                                        cx.stop_propagation();
-                                      })
-                                      .context_menu({
-                                        let view = view.clone();
-                                        move |menu, _window, _cx| {
-                                          build_tab_context_menu(
-                                            menu,
-                                            view.clone(),
-                                            tab_index,
-                                            tab_ix,
-                                            is_first,
-                                            is_last,
-                                            total_tabs,
-                                            "Move Left",
-                                            IconName::ArrowLeft,
-                                            "Move Right",
-                                            IconName::ArrowRight,
-                                          )
-                                        }
-                                      }),
-                                  ),
-                              ),
-                          )
-                      })
+                                            .child(
+                                              TabButton::new("close", tab_index)
+                                                .visible(true)
+                                                .on_click(cx.listener(
+                                                  |this, e: &TabButtonClickEvent, window, cx| {
+                                                    let tab_index = e.index;
+                                                    this.remove_tab_by(tab_index, window, cx);
+                                                  },
+                                                )),
+                                            )
+                                        })
+                                        .on_mouse_down(MouseButton::Right, |_, _, cx| {
+                                          cx.stop_propagation();
+                                        })
+                                        .context_menu({
+                                          let view = view.clone();
+                                          move |menu, _window, _cx| {
+                                            build_tab_context_menu(
+                                              menu,
+                                              view.clone(),
+                                              tab_index,
+                                              tab_ix,
+                                              is_first,
+                                              is_last,
+                                              total_tabs,
+                                              "Move Left",
+                                              IconName::ArrowLeft,
+                                              "Move Right",
+                                              IconName::ArrowRight,
+                                            )
+                                          }
+                                        }),
+                                    ),
+                                ),
+                            )
+                        })
                         .collect::<Vec<_>>(),
                     ),
                 )
@@ -531,7 +539,10 @@ impl Render for MainWindow {
                             })
                             .child(
                               div()
-                                .id(ElementId::NamedInteger("tab-container".into(), tab_ix as u64))
+                                .id(ElementId::NamedInteger(
+                                  "tab-container".into(),
+                                  tab_ix as u64,
+                                ))
                                 .group("tab-item")
                                 .w_full()
                                 .child(
@@ -554,12 +565,14 @@ impl Render for MainWindow {
                                         })
                                       },
                                     )
-                                    .drag_over::<DraggedTab>(move |style, _dragged, _window, _cx| {
-                                      style
-                                        .bg(accent_color.opacity(0.15))
-                                        .border_l_2()
-                                        .border_color(accent_color)
-                                    })
+                                    .drag_over::<DraggedTab>(
+                                      move |style, _dragged, _window, _cx| {
+                                        style
+                                          .bg(accent_color.opacity(0.15))
+                                          .border_l_2()
+                                          .border_color(accent_color)
+                                      },
+                                    )
                                     .on_drop(cx.listener(
                                       move |this, dragged: &DraggedTab, _window, cx| {
                                         let from_ix = dragged.from_ix;
@@ -589,7 +602,10 @@ impl Render for MainWindow {
                                         .py_1()
                                         .items_center()
                                         .when(is_selected, |this| {
-                                          this.bg(selected_bg).border_l_2().border_color(accent_color)
+                                          this
+                                            .bg(selected_bg)
+                                            .border_l_2()
+                                            .border_color(accent_color)
                                         })
                                         .when(!is_selected, |this| {
                                           this.bg(normal_bg).hover(|style| style.bg(hover_bg))

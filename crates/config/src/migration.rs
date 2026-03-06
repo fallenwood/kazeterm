@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260303.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260306.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -35,6 +35,11 @@ fn migrations() -> &'static [Migration] {
       to_version: "20260303.1",
       migrate: migrate_v20260220_1_to_20260303_1,
     },
+    Migration {
+      from_version: "20260303.1",
+      to_version: "20260306.1",
+      migrate: migrate_v20260303_1_to_20260306_1,
+    },
   ]
 }
 
@@ -67,6 +72,19 @@ fn migrate_v20260220_1_to_20260303_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260303.1".to_string()),
+    );
+  }
+}
+
+/// Add background_opacity configuration support.
+fn migrate_v20260303_1_to_20260306_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("background_opacity") {
+      table.insert("background_opacity".to_string(), Value::Float(1.0));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260306.1".to_string()),
     );
   }
 }
@@ -188,10 +206,7 @@ vertical_tabs = false
     );
     // Original fields are preserved
     assert_eq!(config.get("theme").unwrap().as_str().unwrap(), "one");
-    assert_eq!(
-      config.get("font_size").unwrap().as_float().unwrap(),
-      18.0
-    );
+    assert_eq!(config.get("font_size").unwrap().as_float().unwrap(), 18.0);
   }
 
   #[test]
@@ -217,6 +232,32 @@ vertical_tabs = false
     assert_eq!(
       config.get("version").unwrap().as_str().unwrap(),
       CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260303_adds_background_opacity() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260303.1"
+theme = "one"
+font_size = 18.0
+"#,
+    )
+    .unwrap();
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config
+        .get("background_opacity")
+        .unwrap()
+        .as_float()
+        .unwrap(),
+      1.0
     );
   }
 

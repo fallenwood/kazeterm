@@ -165,9 +165,9 @@ pub struct EventBus {
 }
 
 impl Default for EventBus {
-    fn default() -> Self {
-        Self::new()
-    }
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl EventBus {
@@ -183,9 +183,7 @@ impl EventBus {
   /// all be called in registration order when a matching event is dispatched.
   pub fn subscribe<F>(&mut self, discriminant: &'static str, handler: F)
   where
-    F: Fn(&mut MainWindow, AppEvent, &mut Window, &mut gpui::Context<MainWindow>)
-      + Send
-      + 'static,
+    F: Fn(&mut MainWindow, AppEvent, &mut Window, &mut gpui::Context<MainWindow>) + Send + 'static,
   {
     self
       .handlers
@@ -225,18 +223,15 @@ pub fn build_default_event_bus() -> EventBus {
     mw.insert_new_tab(window, cx);
   });
 
-  bus.subscribe(
-    "NewTerminalWithProfile",
-    |mw, event, window, cx| {
-      if let AppEvent::NewTerminalWithProfile {
-        profile_name,
-        working_directory,
-      } = event
-      {
-        mw.insert_new_tab_with_profile(Some(&profile_name), working_directory, window, cx);
-      }
-    },
-  );
+  bus.subscribe("NewTerminalWithProfile", |mw, event, window, cx| {
+    if let AppEvent::NewTerminalWithProfile {
+      profile_name,
+      working_directory,
+    } = event
+    {
+      mw.insert_new_tab_with_profile(Some(&profile_name), working_directory, window, cx);
+    }
+  });
 
   bus.subscribe("CloseActiveTab", |mw, _event, window, cx| {
     if let Some(active_ix) = mw.active_tab_ix

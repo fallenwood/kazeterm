@@ -313,35 +313,37 @@ pub fn detect_container_shells() -> Vec<DetectedShell> {
   if let Ok(output) = hidden_command("docker")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
-    && output.status.success() {
-      let containers = String::from_utf8_lossy(&output.stdout);
-      for container in containers.lines() {
-        let container = container.trim();
-        if !container.is_empty() {
-          shells.push(DetectedShell {
-            name: format!("[Docker] {}", container),
-            command: format!("docker exec -it {} /bin/sh", container),
-          });
-        }
+    && output.status.success()
+  {
+    let containers = String::from_utf8_lossy(&output.stdout);
+    for container in containers.lines() {
+      let container = container.trim();
+      if !container.is_empty() {
+        shells.push(DetectedShell {
+          name: format!("[Docker] {}", container),
+          command: format!("docker exec -it {} /bin/sh", container),
+        });
       }
     }
+  }
 
   // Detect Podman containers (Podman Desktop on Windows)
   if let Ok(output) = hidden_command("podman")
     .args(["ps", "--format", "{{.Names}}"])
     .output()
-    && output.status.success() {
-      let containers = String::from_utf8_lossy(&output.stdout);
-      for container in containers.lines() {
-        let container = container.trim();
-        if !container.is_empty() {
-          shells.push(DetectedShell {
-            name: format!("[Podman] {}", container),
-            command: format!("podman exec -it {} /bin/sh", container),
-          });
-        }
+    && output.status.success()
+  {
+    let containers = String::from_utf8_lossy(&output.stdout);
+    for container in containers.lines() {
+      let container = container.trim();
+      if !container.is_empty() {
+        shells.push(DetectedShell {
+          name: format!("[Podman] {}", container),
+          command: format!("podman exec -it {} /bin/sh", container),
+        });
       }
     }
+  }
 
   shells
 }

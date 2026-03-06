@@ -1,7 +1,7 @@
 use gpui::Hsla;
 
-use super::parse_hex_color;
 use super::ThemeColors;
+use super::parse_hex_color;
 use crate::Palette;
 
 impl ThemeColors {
@@ -126,9 +126,10 @@ impl ThemeColors {
 
     // Apply cursor if specified (otherwise uses accent)
     if let Some(ref s) = self.cursor
-      && let Some(c) = parse_hex_color(s) {
-        palette.terminal_cursor = c;
-      }
+      && let Some(c) = parse_hex_color(s)
+    {
+      palette.terminal_cursor = c;
+    }
 
     // Derive UI colors from background
     // For dark themes: brighten for elevated, dim for recessed

@@ -47,7 +47,9 @@ impl MainWindow {
 
     if let Some(item) = self.active_tab_item_mut() {
       // Split the active pane
-      item.split_container.split_active_pane(direction, new_terminal.clone());
+      item
+        .split_container
+        .split_active_pane(direction, new_terminal.clone());
     }
 
     // Focus the new terminal

@@ -1,11 +1,8 @@
-use alacritty_terminal::{
-  grid::Dimensions,
-  vte::ansi::CursorShape as AlacCursorShape,
-};
+use alacritty_terminal::{grid::Dimensions, vte::ansi::CursorShape as AlacCursorShape};
 use gpui::{
   AbsoluteLength, App, Bounds, Element, FontFeatures, FontStyle, FontWeight, HighlightStyle,
-  MouseButton, Pixels, Point, TextRun, TextStyle, UnderlineStyle, WhiteSpace,
-  Window, fill, px, relative,
+  MouseButton, Pixels, Point, TextRun, TextStyle, UnderlineStyle, WhiteSpace, Window, fill, px,
+  relative,
 };
 use themeing::ActiveTheme as _;
 
@@ -97,7 +94,15 @@ impl Element for TerminalElement {
           font_size,
           font_style: FontStyle::Normal,
           line_height: relative(line_height_multiplier),
-          background_color: Some(theme.colors().terminal_ansi_background),
+          background_color: Some({
+            let bg = theme.colors().terminal_ansi_background;
+            let opacity = config.get_background_opacity();
+            if opacity < 1.0 {
+              bg.opacity(opacity)
+            } else {
+              bg
+            }
+          }),
           white_space: WhiteSpace::Normal,
           color: theme.colors().terminal_foreground,
           ..Default::default()
@@ -134,7 +139,15 @@ impl Element for TerminalElement {
           )
         };
 
-        let background_color = theme.colors().terminal_ansi_background;
+        let background_color = {
+          let bg = theme.colors().terminal_ansi_background;
+          let opacity = config.get_background_opacity();
+          if opacity < 1.0 {
+            bg.opacity(opacity)
+          } else {
+            bg
+          }
+        };
 
         self.terminal.update(cx, |terminal, cx| {
           terminal.set_size(dimensions);
@@ -461,52 +474,53 @@ impl Element for TerminalElement {
           let drag_state = terminal_view_for_move.read(cx).scrollbar_drag_state;
 
           if let Some((click_offset_from_thumb_px, last_mouse_y)) = drag_state
-            && e.pressed_button == Some(MouseButton::Left) {
-              let relative_y = e.position.y - scrollbar_bounds_for_move.origin.y;
-              let current_mouse_y: f32 = relative_y.into();
+            && e.pressed_button == Some(MouseButton::Left)
+          {
+            let relative_y = e.position.y - scrollbar_bounds_for_move.origin.y;
+            let current_mouse_y: f32 = relative_y.into();
 
-              if (current_mouse_y - last_mouse_y).abs() < MIN_DRAG_DELTA_PX {
-                return;
-              }
-
-              let thumb_top_px = px(current_mouse_y - click_offset_from_thumb_px);
-              let track_height = scrollbar_bounds_for_move.size.height;
-
-              let history_size = terminal_for_move.read(cx).last_content.history_size;
-
-              if history_size > 0 {
-                let terminal_content = &terminal_for_move.read(cx).last_content;
-                let visible_lines = terminal_content.terminal_bounds.num_lines();
-                let total_lines = visible_lines + history_size;
-
-                let thumb_size_ratio = visible_lines as f32 / total_lines as f32;
-                let thumb_height = (track_height * thumb_size_ratio).max(px(MIN_THUMB_HEIGHT));
-                let scrollable_height = track_height - thumb_height;
-
-                if scrollable_height > px(0.0) {
-                  let thumb_top_clamped = thumb_top_px.clamp(px(0.0), scrollable_height);
-                  let normalized: f32 = thumb_top_clamped / scrollable_height;
-
-                  let new_offset = ((1.0 - normalized) * history_size as f32) as usize;
-
-                  let current_offset = terminal_content.display_offset;
-                  if new_offset != current_offset {
-                    terminal_for_move.update(cx, |terminal, cx| {
-                      terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
-                        new_offset as i32 - terminal.last_content.display_offset as i32,
-                      ));
-                      cx.notify();
-                    });
-                  }
-                }
-
-                terminal_view_for_move.update(cx, |view, _| {
-                  if let Some((offset, _)) = view.scrollbar_drag_state {
-                    view.scrollbar_drag_state = Some((offset, current_mouse_y));
-                  }
-                });
-              }
+            if (current_mouse_y - last_mouse_y).abs() < MIN_DRAG_DELTA_PX {
+              return;
             }
+
+            let thumb_top_px = px(current_mouse_y - click_offset_from_thumb_px);
+            let track_height = scrollbar_bounds_for_move.size.height;
+
+            let history_size = terminal_for_move.read(cx).last_content.history_size;
+
+            if history_size > 0 {
+              let terminal_content = &terminal_for_move.read(cx).last_content;
+              let visible_lines = terminal_content.terminal_bounds.num_lines();
+              let total_lines = visible_lines + history_size;
+
+              let thumb_size_ratio = visible_lines as f32 / total_lines as f32;
+              let thumb_height = (track_height * thumb_size_ratio).max(px(MIN_THUMB_HEIGHT));
+              let scrollable_height = track_height - thumb_height;
+
+              if scrollable_height > px(0.0) {
+                let thumb_top_clamped = thumb_top_px.clamp(px(0.0), scrollable_height);
+                let normalized: f32 = thumb_top_clamped / scrollable_height;
+
+                let new_offset = ((1.0 - normalized) * history_size as f32) as usize;
+
+                let current_offset = terminal_content.display_offset;
+                if new_offset != current_offset {
+                  terminal_for_move.update(cx, |terminal, cx| {
+                    terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+                      new_offset as i32 - terminal.last_content.display_offset as i32,
+                    ));
+                    cx.notify();
+                  });
+                }
+              }
+
+              terminal_view_for_move.update(cx, |view, _| {
+                if let Some((offset, _)) = view.scrollbar_drag_state {
+                  view.scrollbar_drag_state = Some((offset, current_mouse_y));
+                }
+              });
+            }
+          }
         });
 
         let terminal_view_for_up = self.terminal_view.clone();

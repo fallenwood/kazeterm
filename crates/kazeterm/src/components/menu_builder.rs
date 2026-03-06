@@ -1,7 +1,6 @@
 use gpui::*;
 use gpui_component::{
-  Icon, IconName,
-  h_flex,
+  Icon, IconName, h_flex,
   menu::{PopupMenu, PopupMenuItem},
 };
 

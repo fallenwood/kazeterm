@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use futures::FutureExt;
-use gpui::{App, AsyncApp};
+use gpui::{App, AppContext, AsyncApp, WindowBackgroundAppearance};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use smol::channel::unbounded;
 
@@ -101,10 +101,12 @@ async fn run_file_watcher(
 
   // Watch themes directory
   if let Some(path) = &themes_path
-    && path.exists() && path.is_dir() {
-      tracing::info!("Watching themes directory: {}", path.display());
-      watcher.watch(path, RecursiveMode::Recursive)?;
-    }
+    && path.exists()
+    && path.is_dir()
+  {
+    tracing::info!("Watching themes directory: {}", path.display());
+    watcher.watch(path, RecursiveMode::Recursive)?;
+  }
 
   // Track pending changes for debouncing
   let mut pending_changes: HashSet<FileChangeType> = HashSet::new();
@@ -193,16 +195,20 @@ fn determine_change_type(
     if let (Some(cp_parent), Some(cp_name)) = (cp.parent(), cp.file_name())
       && let (Some(changed_parent), Some(changed_name)) =
         (changed_path.parent(), changed_path.file_name())
-        && cp_parent == changed_parent && cp_name == changed_name {
-          return FileChangeType::Config;
-        }
+      && cp_parent == changed_parent
+      && cp_name == changed_name
+    {
+      return FileChangeType::Config;
+    }
   }
 
   // Check if it's in the themes directory
   if let Some(tp) = themes_path
-    && changed_path.starts_with(tp) && changed_path.extension().is_some_and(|e| e == "toml") {
-      return FileChangeType::Theme;
-    }
+    && changed_path.starts_with(tp)
+    && changed_path.extension().is_some_and(|e| e == "toml")
+  {
+    return FileChangeType::Theme;
+  }
 
   // Default to config (will reload everything anyway)
   FileChangeType::Config
@@ -249,6 +255,9 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       // Re-initialize gpui-component theme
       themeing::SettingsStore::init_gpui_component_theme(cx);
 
+      // Update window background appearance for transparency
+      update_window_background_appearance(cx, &new_config);
+
       tracing::info!("Config and theme reloaded successfully");
     }
     FileChangeType::Theme => {
@@ -291,4 +300,23 @@ pub fn watch_additional_path(path: PathBuf) {
     "Additional path requested for watching: {} (requires restart)",
     path.display()
   );
+}
+
+/// Update the window background appearance for all open windows based on opacity config.
+///
+/// When `background_opacity` < 1.0, the window is set to transparent so the desktop
+/// behind it is visible. When fully opaque, the window is set back to opaque mode.
+fn update_window_background_appearance(cx: &mut App, config: &Config) {
+  let opacity = config.get_background_opacity();
+  let appearance = if opacity < 1.0 {
+    WindowBackgroundAppearance::Transparent
+  } else {
+    WindowBackgroundAppearance::Opaque
+  };
+
+  for window_handle in cx.windows() {
+    let _ = cx.update_window(window_handle, |_, window, _| {
+      window.set_background_appearance(appearance);
+    });
+  }
 }

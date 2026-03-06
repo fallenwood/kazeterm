@@ -134,17 +134,14 @@ impl Render for AboutDialog {
               )
               // Close button
               .child(
-                gpui_component::h_flex()
-                  .mt_2()
-                  .justify_end()
-                  .child(
-                    Button::new("close")
-                      .primary()
-                      .label("Close")
-                      .on_click(cx.listener(|this, _, _window, cx| {
-                        this.close(cx);
-                      })),
-                  ),
+                gpui_component::h_flex().mt_2().justify_end().child(
+                  Button::new("close")
+                    .primary()
+                    .label("Close")
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                      this.close(cx);
+                    })),
+                ),
               ),
           ),
       )
@@ -152,12 +149,7 @@ impl Render for AboutDialog {
 }
 
 impl AboutDialog {
-  fn info_row(
-    &self,
-    label: &str,
-    value: &str,
-    theme: &gpui_component::Theme,
-  ) -> impl IntoElement {
+  fn info_row(&self, label: &str, value: &str, theme: &gpui_component::Theme) -> impl IntoElement {
     div()
       .flex()
       .gap_2()

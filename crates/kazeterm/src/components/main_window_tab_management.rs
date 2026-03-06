@@ -68,7 +68,13 @@ impl MainWindow {
           .to_lowercase();
         let working_directory = get_working_directory_pathbuf(working_directory);
 
-        (program, args, name.to_string(), shell_name, working_directory)
+        (
+          program,
+          args,
+          name.to_string(),
+          shell_name,
+          working_directory,
+        )
       } else {
         let shell = config.get_shell().clone();
         let shell_name = std::path::Path::new(&shell)
@@ -180,7 +186,11 @@ impl MainWindow {
       terminal::TerminalEvent::CloseTerminal(terminal_index) => {
         // Find the tab containing this terminal
         let tab_position = this.items.iter().position(|item| {
-          item.split_container.all_terminals().iter().any(|(_, t)| t.read(cx).index == *terminal_index)
+          item
+            .split_container
+            .all_terminals()
+            .iter()
+            .any(|(_, t)| t.read(cx).index == *terminal_index)
         });
 
         if let Some(tab_pos) = tab_position {
@@ -190,7 +200,9 @@ impl MainWindow {
           // Try to close just the pane within the split container
           let should_close_tab = {
             let item = &mut this.items[tab_pos];
-            !item.split_container.close_pane_by_terminal_index(*terminal_index, cx)
+            !item
+              .split_container
+              .close_pane_by_terminal_index(*terminal_index, cx)
           };
 
           if should_close_tab {
@@ -218,7 +230,11 @@ impl MainWindow {
         // Update tab title only if no custom title is set
         let tab_index = terminal_view.read(cx).index;
         if let Some(item) = this.items.iter_mut().find(|item| {
-          item.split_container.all_terminals().iter().any(|(_, t)| t.read(cx).index == tab_index)
+          item
+            .split_container
+            .all_terminals()
+            .iter()
+            .any(|(_, t)| t.read(cx).index == tab_index)
         }) {
           // Skip update if user has set a custom title
           if item.custom_title.is_some() {

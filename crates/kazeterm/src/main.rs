@@ -4,7 +4,9 @@
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
-use gpui::{App, AppContext, Application, Point, Size, WindowOptions, px};
+use gpui::{
+  App, AppContext, Application, Point, Size, WindowBackgroundAppearance, WindowOptions, px,
+};
 use themeing::SettingsStore;
 
 use crate::assets::Assets;
@@ -51,7 +53,9 @@ impl Args {
         if let Some(path) = &self.event_socket {
           EventSourceConfig::Socket { path: path.clone() }
         } else {
-          tracing::warn!("--event-socket is required when using socket event source, falling back to no events");
+          tracing::warn!(
+            "--event-socket is required when using socket event source, falling back to no events"
+          );
           EventSourceConfig::None
         }
       }
@@ -192,9 +196,16 @@ fn main() {
 
     let window_width = config.window_width;
     let window_height = config.window_height;
+    let background_opacity = config.get_background_opacity();
     let event_config = event_source_config.clone();
 
     cx.spawn(async move |cx| {
+      let window_background = if background_opacity < 1.0 {
+        WindowBackgroundAppearance::Transparent
+      } else {
+        WindowBackgroundAppearance::Opaque
+      };
+
       let options = WindowOptions {
         window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
           origin: Point {
@@ -212,6 +223,7 @@ fn main() {
           traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
         }),
         window_decorations: Some(gpui::WindowDecorations::Client),
+        window_background,
         ..Default::default()
       };
 

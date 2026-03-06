@@ -1,6 +1,6 @@
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::ActiveTheme;
+use gpui_component::button::{Button, ButtonVariants};
 
 /// Event emitted when the close confirmation dialog is resolved
 #[derive(Clone)]

@@ -5,7 +5,12 @@ use crate::components::tab_switcher::{TabSwitcher, TabSwitcherItem};
 
 #[allow(dead_code)]
 impl MainWindow {
-  pub(crate) fn show_tab_switcher(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+  pub(crate) fn show_tab_switcher(
+    &mut self,
+    forward: bool,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     if self.items.len() <= 1 {
       return;
     }
@@ -59,7 +64,6 @@ impl MainWindow {
         let should_hide = cx
           .update(|_cx| {
             if let Some(this) = this_weak.upgrade() {
-              
               this.read(_cx).tab_switcher_visible
             } else {
               false

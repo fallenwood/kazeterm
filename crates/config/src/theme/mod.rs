@@ -240,9 +240,10 @@ pub fn load_theme_from_assets(name: &str) -> Option<ThemeFile> {
     if path.exists() {
       tracing::debug!("Loading theme from filesystem: {}", path.display());
       if let Ok(content) = std::fs::read_to_string(path)
-        && let Ok(theme) = toml::from_str::<ThemeFile>(&content) {
-          return Some(theme);
-        }
+        && let Ok(theme) = toml::from_str::<ThemeFile>(&content)
+      {
+        return Some(theme);
+      }
     }
   }
 
@@ -259,15 +260,17 @@ pub fn list_available_themes() -> Vec<String> {
 
   // 1. List themes from custom path
   if let Some(custom_path) = get_custom_themes_path()
-    && let Ok(entries) = std::fs::read_dir(&custom_path) {
-      for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "toml")
-          && let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
-            themes.push(name.to_string());
-          }
+    && let Ok(entries) = std::fs::read_dir(&custom_path)
+  {
+    for entry in entries.flatten() {
+      let path = entry.path();
+      if path.extension().is_some_and(|ext| ext == "toml")
+        && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+      {
+        themes.push(name.to_string());
       }
     }
+  }
 
   // 2. List embedded themes
   if let Some(lister) = EMBEDDED_THEME_LISTER.get() {

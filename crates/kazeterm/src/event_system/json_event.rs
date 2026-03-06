@@ -5,8 +5,7 @@ use serde::Deserialize;
 use super::AppEvent;
 
 /// Configuration for the event source
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum EventSourceConfig {
   /// No external event source (events can still be sent programmatically)
   #[default]
@@ -16,7 +15,6 @@ pub enum EventSourceConfig {
   /// Read events from a Unix domain socket (all platforms)
   Socket { path: PathBuf },
 }
-
 
 /// JSON representation of an event for external input
 #[derive(Debug, Deserialize)]

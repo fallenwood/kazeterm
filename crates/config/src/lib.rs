@@ -62,6 +62,9 @@ pub struct Config {
   /// Close the application when the last tab is closed
   /// When false (default), a new tab is created instead
   pub close_on_last_tab: bool,
+  /// Window background opacity (0.0 = fully transparent, 1.0 = fully opaque)
+  /// Values between 0.0 and 1.0 allow seeing through the terminal window
+  pub background_opacity: f32,
   /// Custom keyboard shortcuts
   pub keybindings: KeybindingConfig,
 }
@@ -88,6 +91,7 @@ impl Default for Config {
       minimap_enabled: false,
       vertical_tabs: false,
       close_on_last_tab: true,
+      background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
     }
   }
@@ -123,7 +127,11 @@ fn detect_container_profiles() -> Vec<Profile> {
     .map(|s| {
       // Split command string into shell and args for containers
       // We know format is "docker exec -it ... /bin/sh" or "podman ..."
-      let parts: Vec<String> = s.command.split_whitespace().map(|s| s.to_string()).collect();
+      let parts: Vec<String> = s
+        .command
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .collect();
       let (shell, args) = if !parts.is_empty() {
         (parts[0].clone(), parts[1..].to_vec())
       } else {
@@ -141,6 +149,11 @@ fn detect_container_profiles() -> Vec<Profile> {
 }
 
 impl Config {
+  /// Get the background opacity clamped to valid range [0.0, 1.0]
+  pub fn get_background_opacity(&self) -> f32 {
+    self.background_opacity.clamp(0.0, 1.0)
+  }
+
   pub fn load() -> Self {
     let config_path = Self::get_config_file_path_impl();
 
@@ -187,9 +200,7 @@ impl Config {
     #[cfg(not(target_os = "windows"))]
     {
       if let Some(home_dir) = dirs::home_dir() {
-        return home_dir
-          .join(".config")
-          .join("kazeterm");
+        return home_dir.join(".config").join("kazeterm");
       }
     }
 
@@ -439,6 +450,7 @@ mod tests {
       minimap_enabled: false,
       vertical_tabs: false,
       close_on_last_tab: true,
+      background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
     };
 

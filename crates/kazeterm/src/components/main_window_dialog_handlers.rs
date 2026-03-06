@@ -7,7 +7,12 @@ use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
 
 impl MainWindow {
   /// Show rename dialog for a tab
-  pub(crate) fn show_rename_dialog(&mut self, tab_index: usize, window: &mut Window, cx: &mut Context<Self>) {
+  pub(crate) fn show_rename_dialog(
+    &mut self,
+    tab_index: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     // Find the tab's current display title
     let current_title = self
       .items
