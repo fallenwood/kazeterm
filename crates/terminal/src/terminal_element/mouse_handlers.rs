@@ -45,9 +45,10 @@ impl TerminalElement {
 
       move |e, window, cx| {
         if let Some(sb_bounds) = scrollbar_bounds
-          && sb_bounds.contains(&e.position) {
-            return;
-          }
+          && sb_bounds.contains(&e.position)
+        {
+          return;
+        }
 
         window.focus(&focus);
 

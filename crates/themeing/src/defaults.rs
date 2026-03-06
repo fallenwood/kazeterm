@@ -4,7 +4,6 @@ use config::Palette;
 use gpui::SharedString;
 
 pub fn default_settings() -> crate::SettingsStore {
-  
   crate::SettingsStore {
     active_theme: Arc::new(crate::Theme {
       id: String::from("one"),

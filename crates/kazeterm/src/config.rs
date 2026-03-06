@@ -1,9 +1,7 @@
 use config::{Config, ThemeMode};
 use gpui::Hsla;
 
-/// Apply background opacity to a color.
-/// Only modifies the alpha channel if opacity is less than 1.0.
-fn apply_opacity(color: Hsla, opacity: f32) -> Hsla {
+pub(crate) fn apply_background_opacity(color: Hsla, opacity: f32) -> Hsla {
   if opacity < 1.0 {
     color.opacity(opacity)
   } else {
@@ -27,20 +25,40 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
   // Load theme from assets by name
   let (theme_name, mut palette) = config::load_theme(&config.theme, is_dark);
 
-  // Apply background opacity to relevant background colors
   let opacity = config.get_background_opacity();
   if opacity < 1.0 {
-    palette.background = apply_opacity(palette.background, opacity);
-    palette.surface_background = apply_opacity(palette.surface_background, opacity);
+    palette.border = apply_background_opacity(palette.border, opacity);
+    palette.border_variant = apply_background_opacity(palette.border_variant, opacity);
+    palette.border_disabled = apply_background_opacity(palette.border_disabled, opacity);
     palette.elevated_surface_background =
-      apply_opacity(palette.elevated_surface_background, opacity);
-    palette.title_bar_background = apply_opacity(palette.title_bar_background, opacity);
+      apply_background_opacity(palette.elevated_surface_background, opacity);
+    palette.surface_background = apply_background_opacity(palette.surface_background, opacity);
+    palette.background = apply_background_opacity(palette.background, opacity);
+    palette.element_background = apply_background_opacity(palette.element_background, opacity);
+    palette.element_hover = apply_background_opacity(palette.element_hover, opacity);
+    palette.element_active = apply_background_opacity(palette.element_active, opacity);
+    palette.element_selected = apply_background_opacity(palette.element_selected, opacity);
+    palette.element_selection_background =
+      apply_background_opacity(palette.element_selection_background, opacity);
+    palette.element_disabled = apply_background_opacity(palette.element_disabled, opacity);
+    palette.title_bar_background = apply_background_opacity(palette.title_bar_background, opacity);
     palette.title_bar_inactive_background =
-      apply_opacity(palette.title_bar_inactive_background, opacity);
-    palette.tab_inactive_background = apply_opacity(palette.tab_inactive_background, opacity);
-    palette.tab_active_background = apply_opacity(palette.tab_active_background, opacity);
-    palette.terminal_background = apply_opacity(palette.terminal_background, opacity);
-    palette.terminal_ansi_background = apply_opacity(palette.terminal_ansi_background, opacity);
+      apply_background_opacity(palette.title_bar_inactive_background, opacity);
+    palette.tab_inactive_background =
+      apply_background_opacity(palette.tab_inactive_background, opacity);
+    palette.tab_active_background =
+      apply_background_opacity(palette.tab_active_background, opacity);
+    palette.search_match_background =
+      apply_background_opacity(palette.search_match_background, opacity);
+    palette.search_highlight_background =
+      apply_background_opacity(palette.search_highlight_background, opacity);
+    palette.terminal_background = apply_background_opacity(palette.terminal_background, opacity);
+    palette.terminal_ansi_background =
+      apply_background_opacity(palette.terminal_ansi_background, opacity);
+    palette.scrollbar_track_background =
+      apply_background_opacity(palette.scrollbar_track_background, opacity);
+    palette.scrollbar_thumb_background =
+      apply_background_opacity(palette.scrollbar_thumb_background, opacity);
   }
 
   themeing::SettingsStore {

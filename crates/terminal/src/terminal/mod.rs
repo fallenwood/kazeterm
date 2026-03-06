@@ -1,8 +1,8 @@
 use std::{cmp, collections::VecDeque, process::ExitStatus, sync::Arc};
 
 use crate::{
-  TerminalBounds, indexed_cell::IndexedCell, mouse::grid_point_and_side,
-  pty_info::PtyProcessInfo, terminal_content::TerminalContent, terminal_hyperlinks::RegexSearches,
+  TerminalBounds, indexed_cell::IndexedCell, mouse::grid_point_and_side, pty_info::PtyProcessInfo,
+  terminal_content::TerminalContent, terminal_hyperlinks::RegexSearches,
 };
 use alacritty_terminal::{
   Term,
@@ -164,9 +164,10 @@ impl Terminal {
         const PROCESS_CHANGE_GRACE_PERIOD: std::time::Duration =
           std::time::Duration::from_millis(100);
         if let Some(changed_at) = self.process_changed_at
-          && changed_at.elapsed() < PROCESS_CHANGE_GRACE_PERIOD {
-            return;
-          }
+          && changed_at.elapsed() < PROCESS_CHANGE_GRACE_PERIOD
+        {
+          return;
+        }
 
         if title.is_empty() {
           if let Some(name) = self.pty_info.current_process_name() {
@@ -186,15 +187,13 @@ impl Terminal {
       AlacTermEvent::ClipboardStore(_, data) => {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(data))
       }
-      AlacTermEvent::ClipboardLoad(_, format) => {
-        self.write_to_pty(
-          match &cx.read_from_clipboard().and_then(|item| item.text()) {
-            Some(text) => format(text),
-            _ => format(""),
-          }
-          .into_bytes(),
-        )
-      }
+      AlacTermEvent::ClipboardLoad(_, format) => self.write_to_pty(
+        match &cx.read_from_clipboard().and_then(|item| item.text()) {
+          Some(text) => format(text),
+          _ => format(""),
+        }
+        .into_bytes(),
+      ),
       AlacTermEvent::PtyWrite(out) => self.write_to_pty(out.into_bytes()),
       AlacTermEvent::TextAreaSizeRequest(format) => {
         self.write_to_pty(format(self.last_content.terminal_bounds.into()).into_bytes())
@@ -216,11 +215,12 @@ impl Terminal {
         cx.emit(Event::Wakeup);
 
         if self.pty_info.has_changed()
-          && let Some(info) = &self.pty_info.current {
-            self.title_text = info.name.clone();
-            self.process_changed_at = Some(std::time::Instant::now());
-            cx.emit(Event::TitleChanged);
-          }
+          && let Some(info) = &self.pty_info.current
+        {
+          self.title_text = info.name.clone();
+          self.process_changed_at = Some(std::time::Instant::now());
+          cx.emit(Event::TitleChanged);
+        }
       }
       AlacTermEvent::ColorRequest(index, format) => {
         let color = self.term.lock().colors()[index].unwrap_or_else(|| {

@@ -86,6 +86,8 @@ impl Element for TerminalElement {
 
         let theme = cx.theme().clone();
 
+        let terminal_background_color = theme.colors().terminal_ansi_background;
+
         let text_style = TextStyle {
           font_family,
           font_features,
@@ -94,15 +96,7 @@ impl Element for TerminalElement {
           font_size,
           font_style: FontStyle::Normal,
           line_height: relative(line_height_multiplier),
-          background_color: Some({
-            let bg = theme.colors().terminal_ansi_background;
-            let opacity = config.get_background_opacity();
-            if opacity < 1.0 {
-              bg.opacity(opacity)
-            } else {
-              bg
-            }
-          }),
+          background_color: Some(terminal_background_color),
           white_space: WhiteSpace::Normal,
           color: theme.colors().terminal_foreground,
           ..Default::default()
@@ -139,15 +133,7 @@ impl Element for TerminalElement {
           )
         };
 
-        let background_color = {
-          let bg = theme.colors().terminal_ansi_background;
-          let opacity = config.get_background_opacity();
-          if opacity < 1.0 {
-            bg.opacity(opacity)
-          } else {
-            bg
-          }
-        };
+        let background_color = terminal_background_color;
 
         self.terminal.update(cx, |terminal, cx| {
           terminal.set_size(dimensions);

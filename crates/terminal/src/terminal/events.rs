@@ -1,6 +1,4 @@
-use alacritty_terminal::{
-  event::{Event as AlacTermEvent, EventListener},
-};
+use alacritty_terminal::event::{Event as AlacTermEvent, EventListener};
 use futures::channel::mpsc::UnboundedSender;
 
 #[derive(Clone)]

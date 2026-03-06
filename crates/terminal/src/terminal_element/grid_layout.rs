@@ -5,16 +5,13 @@ use alacritty_terminal::{
   vte::ansi::{Color, NamedColor},
 };
 use gpui::{
-  App, Font, FontStyle, FontWeight, HighlightStyle, Pixels, StrikethroughStyle, TextRun,
-  TextStyle, UnderlineStyle,
+  App, Font, FontStyle, FontWeight, HighlightStyle, Pixels, StrikethroughStyle, TextRun, TextStyle,
+  UnderlineStyle,
 };
 use itertools::Itertools;
 use themeing::{ActiveTheme as _, convert_color};
 
-use crate::{
-  background_region::BackgroundRegion,
-  indexed_cell::IndexedCell,
-};
+use crate::{background_region::BackgroundRegion, indexed_cell::IndexedCell};
 
 use super::BatchedTextRun;
 use super::LayoutRect;
@@ -53,7 +50,10 @@ impl TerminalElement {
       for cell in line {
         let mut fg = cell.fg;
         let mut bg = cell.bg;
-        if cell.flags.contains(alacritty_terminal::term::cell::Flags::INVERSE) {
+        if cell
+          .flags
+          .contains(alacritty_terminal::term::cell::Flags::INVERSE)
+        {
           std::mem::swap(&mut fg, &mut bg);
         }
 
@@ -76,7 +76,10 @@ impl TerminalElement {
           }
         }
 
-        if cell.flags.contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR_SPACER) {
+        if cell
+          .flags
+          .contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR_SPACER)
+        {
           continue;
         }
 
@@ -171,8 +174,7 @@ impl TerminalElement {
       fg.a *= 0.7;
     }
 
-    let underline = (flags
-      .intersects(alacritty_terminal::term::cell::Flags::ALL_UNDERLINES)
+    let underline = (flags.intersects(alacritty_terminal::term::cell::Flags::ALL_UNDERLINES)
       || indexed.cell.hyperlink().is_some())
     .then(|| UnderlineStyle {
       color: Some(fg),

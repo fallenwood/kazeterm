@@ -99,7 +99,6 @@ impl Render for MainWindow {
     let menu_view = view.clone();
 
     let colors = setting_store.theme().colors().clone();
-
     div()
       .flex()
       .flex_col()

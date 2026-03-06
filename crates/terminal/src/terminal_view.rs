@@ -282,7 +282,9 @@ impl TerminalView {
 
         let should_continue = this
           .update_in(cx, |this, _window, cx| {
-            let should_continue = this.terminal.update(cx, |term, _| term.apply_momentum_scroll());
+            let should_continue = this
+              .terminal
+              .update(cx, |term, _| term.apply_momentum_scroll());
             cx.notify();
             should_continue
           })
@@ -461,10 +463,9 @@ impl TerminalView {
     self.clear_bell(cx);
     self.pause_cursor_blinking(window, cx);
 
-    let handled = self.terminal.update(cx, |term, _cx| {
-      
-      term.try_keystroke(&event.keystroke, true)
-    });
+    let handled = self
+      .terminal
+      .update(cx, |term, _cx| term.try_keystroke(&event.keystroke, true));
 
     if handled {
       cx.stop_propagation();

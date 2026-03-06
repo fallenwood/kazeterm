@@ -6,9 +6,7 @@ use alacritty_terminal::{
 };
 use gpui::{Context, Pixels, TouchPhase, px};
 
-use crate::{
-  mouse::grid_point_and_side,
-};
+use crate::mouse::grid_point_and_side;
 
 use super::{
   Event, InternalEvent, SelectionPhase, Terminal, TouchMode, TouchState, content_index_for_mouse,
@@ -193,8 +191,7 @@ impl Terminal {
         self.write_to_pty(bytes);
       }
     } else if self.selection_phase == SelectionPhase::Ended {
-      let mouse_cell_index =
-        content_index_for_mouse(position, &self.last_content.terminal_bounds);
+      let mouse_cell_index = content_index_for_mouse(position, &self.last_content.terminal_bounds);
       if let Some(link) = self.last_content.cells[mouse_cell_index].hyperlink() {
         cx.open_url(link.uri());
       } else if e.modifiers.secondary() {
@@ -475,11 +472,7 @@ impl Terminal {
     }
   }
 
-  fn drag_line_delta(
-    &self,
-    e: &gpui::MouseMoveEvent,
-    region: gpui::Bounds<Pixels>,
-  ) -> Option<i32> {
+  fn drag_line_delta(&self, e: &gpui::MouseMoveEvent, region: gpui::Bounds<Pixels>) -> Option<i32> {
     let top = region.origin.y;
     let bottom = region.bottom_left().y;
 

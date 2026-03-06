@@ -1,26 +1,19 @@
 use std::ops::RangeInclusive;
 
-use alacritty_terminal::{
-  grid::Dimensions,
-  index::Point as AlacPoint,
-  term::TermMode,
-};
+use alacritty_terminal::{grid::Dimensions, index::Point as AlacPoint, term::TermMode};
 use gpui::{
-  Entity, FocusHandle, Hsla, InteractiveElement, IntoElement, Pixels, Point,
-  ShapedLine, StatefulInteractiveElement, TextStyle, point,
+  Entity, FocusHandle, Hsla, InteractiveElement, IntoElement, Pixels, Point, ShapedLine,
+  StatefulInteractiveElement, TextStyle, point,
 };
 
-use crate::{
-  cursor_layout::CursorLayout,
-  scrollbar::ScrollbarState,
-};
+use crate::{cursor_layout::CursorLayout, scrollbar::ScrollbarState};
 
 use super::batched_text_run::BatchedTextRun;
 use super::layout_rect::LayoutRect;
+use super::terminal::Terminal;
 use super::terminal_bounds::TerminalBounds;
 use super::terminal_content::TerminalContent;
 use super::terminal_view::TerminalView;
-use super::terminal::Terminal;
 
 mod element_impl;
 mod grid_layout;

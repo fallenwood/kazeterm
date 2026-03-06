@@ -1,6 +1,7 @@
 use gpui::*;
 use gpui_component::{h_flex, v_flex};
 use terminal::TerminalView;
+use themeing::SettingsStore;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDirection {
@@ -209,6 +210,7 @@ impl SplitPane {
         ratio,
       } => {
         let ratio = *ratio;
+        let colors = cx.global::<SettingsStore>().theme().colors().clone();
         match direction {
           SplitDirection::Horizontal => v_flex()
             .size_full()
@@ -218,7 +220,7 @@ impl SplitPane {
                 .size_full()
                 .child(first.render(active_pane_id, window, cx)),
             )
-            .child(div().h_1().w_full().bg(gpui::rgb(0x3a3a3a)))
+            .child(div().h_1().w_full().bg(colors.border_variant))
             .child(
               div()
                 .flex_basis(relative(1.0 - ratio))
@@ -234,7 +236,7 @@ impl SplitPane {
                 .size_full()
                 .child(first.render(active_pane_id, window, cx)),
             )
-            .child(div().w_1().h_full().bg(gpui::rgb(0x3a3a3a)))
+            .child(div().w_1().h_full().bg(colors.border_variant))
             .child(
               div()
                 .flex_basis(relative(1.0 - ratio))

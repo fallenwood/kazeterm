@@ -7,8 +7,7 @@ use alacritty_terminal::{
 use gpui::{Pixels, Point};
 
 use crate::{
-  background_region::BackgroundRegion,
-  highlighted_range_line::HighlightedRangeLine,
+  background_region::BackgroundRegion, highlighted_range_line::HighlightedRangeLine,
   indexed_cell::IndexedCell,
 };
 
@@ -58,14 +57,11 @@ pub(crate) fn is_blank(cell: &IndexedCell) -> bool {
     return false;
   }
 
-  if cell
-    .flags
-    .intersects(
-      alacritty_terminal::term::cell::Flags::ALL_UNDERLINES
-        | alacritty_terminal::term::cell::Flags::INVERSE
-        | alacritty_terminal::term::cell::Flags::STRIKEOUT,
-    )
-  {
+  if cell.flags.intersects(
+    alacritty_terminal::term::cell::Flags::ALL_UNDERLINES
+      | alacritty_terminal::term::cell::Flags::INVERSE
+      | alacritty_terminal::term::cell::Flags::STRIKEOUT,
+  ) {
     return false;
   }
 
