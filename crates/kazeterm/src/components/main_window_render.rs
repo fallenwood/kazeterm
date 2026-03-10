@@ -709,7 +709,7 @@ impl Render for MainWindow {
                   cx.stop_propagation();
                   cx.new(|_| drag.clone())
                 })
-                .child(div().h_full().w(px(1.0)).bg(colors.border)),
+                .bg(colors.border),
             )
             .child(content)
             .into_any_element()
