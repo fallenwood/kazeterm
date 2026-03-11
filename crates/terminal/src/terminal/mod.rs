@@ -9,7 +9,7 @@ use alacritty_terminal::{
   event::Event as AlacTermEvent,
   event_loop::{EventLoopSender, Msg, Notifier},
   grid::{Dimensions as _, Scroll},
-  index::{Direction, Point as AlacPoint},
+  index::{Column as AlacColumn, Direction, Line as AlacLine, Point as AlacPoint},
   selection::Selection,
   sync::FairMutex,
 };
@@ -103,6 +103,33 @@ impl Terminal {
 
   pub fn last_content(&self) -> &TerminalContent {
     &self.last_content
+  }
+
+  /// Collect all grid cells (history + visible) for minimap rendering.
+  /// Returns cells with 0-based line numbers (0 = oldest history line).
+  pub fn collect_minimap_cells(&self) -> Vec<IndexedCell> {
+    let term = self.term.lock_unfair();
+    let history_size = term.history_size();
+    let screen_lines = term.screen_lines();
+    let columns = term.columns();
+    let total_lines = history_size + screen_lines;
+
+    let mut cells = Vec::new();
+    for line_idx in 0..total_lines {
+      let original_line = line_idx as i32 - history_size as i32;
+      let row = &term.grid()[AlacLine(original_line)];
+      for col_idx in 0..columns {
+        let cell = &row[AlacColumn(col_idx)];
+        if cell.c != ' ' && cell.c != '\t' && cell.c != '\0' {
+          cells.push(IndexedCell {
+            point: AlacPoint::new(AlacLine(line_idx as i32), AlacColumn(col_idx)),
+            cell: cell.clone(),
+          });
+        }
+      }
+    }
+
+    cells
   }
 
   pub fn set_size(&mut self, new_bounds: TerminalBounds) {
