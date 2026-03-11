@@ -3,6 +3,8 @@ use gpui_component::{h_flex, v_flex};
 use terminal::TerminalView;
 use themeing::SettingsStore;
 
+use super::main_window::MainWindow;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDirection {
   Horizontal,
@@ -11,6 +13,34 @@ pub enum SplitDirection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PaneId(pub usize);
+
+/// Drag payload for resizing split pane dividers.
+#[derive(Clone)]
+pub(crate) struct ResizeSplitDivider {
+  entity_id: EntityId,
+  /// Path through the split tree to identify which split node owns this divider.
+  /// Each entry: `false` = first child, `true` = second child.
+  path: Vec<bool>,
+  direction: SplitDirection,
+}
+
+impl Render for ResizeSplitDivider {
+  fn render(&mut self, _window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    Empty
+  }
+}
+
+/// Encode a tree path as a single `usize` for use in element IDs.
+fn path_to_usize(path: &[bool]) -> usize {
+  let mut result = 0usize;
+  for (i, b) in path.iter().enumerate() {
+    if *b {
+      result |= 1 << i;
+    }
+  }
+  // Use bit length to disambiguate paths of different lengths (e.g. [] vs [false])
+  result | (1 << path.len())
+}
 
 pub enum SplitPane {
   Terminal {
@@ -192,12 +222,32 @@ impl SplitPane {
     }
   }
 
+  /// Update the split ratio at the given tree path.
+  pub fn update_ratio(&mut self, path: &[bool], new_ratio: f32) {
+    if let SplitPane::Split {
+      ratio,
+      first,
+      second,
+      ..
+    } = self
+    {
+      if path.is_empty() {
+        *ratio = new_ratio;
+      } else if !path[0] {
+        first.update_ratio(&path[1..], new_ratio);
+      } else {
+        second.update_ratio(&path[1..], new_ratio);
+      }
+    }
+  }
+
   #[allow(clippy::only_used_in_recursion)]
   pub fn render(
     &self,
     active_pane_id: Option<PaneId>,
+    path: Vec<bool>,
     window: &mut Window,
-    cx: &mut App,
+    cx: &mut Context<MainWindow>,
   ) -> AnyElement {
     match self {
       SplitPane::Terminal { id: _, terminal } => {
@@ -210,41 +260,105 @@ impl SplitPane {
         ratio,
       } => {
         let ratio = *ratio;
+        let direction = *direction;
         let colors = cx.global::<SettingsStore>().theme().colors().clone();
-        match direction {
+
+        let mut first_path = path.clone();
+        first_path.push(false);
+        let mut second_path = path.clone();
+        second_path.push(true);
+
+        let first_element = first.render(active_pane_id, first_path, window, cx);
+        let second_element = second.render(active_pane_id, second_path, window, cx);
+
+        let path_id = path_to_usize(&path);
+        let container_id = ElementId::from(("split-container", path_id));
+        let divider_id = ElementId::from(("split-divider", path_id));
+
+        let drag_value = ResizeSplitDivider {
+          entity_id: cx.entity_id(),
+          path: path.clone(),
+          direction,
+        };
+
+        let divider = match direction {
           SplitDirection::Horizontal => v_flex()
-            .size_full()
-            .child(
-              div()
-                .flex_basis(relative(ratio))
-                .size_full()
-                .child(first.render(active_pane_id, window, cx)),
-            )
-            .child(div().h_1().w_full().bg(colors.border_variant))
-            .child(
-              div()
-                .flex_basis(relative(1.0 - ratio))
-                .size_full()
-                .child(second.render(active_pane_id, window, cx)),
-            )
-            .into_any_element(),
+            .id(divider_id)
+            .h(px(6.0))
+            .w_full()
+            .flex_shrink_0()
+            .justify_center()
+            .cursor(CursorStyle::ResizeUpDown)
+            .hover(|style| style.bg(colors.border))
+            .on_drag(drag_value, |drag, _, _, cx| {
+              cx.stop_propagation();
+              cx.new(|_| drag.clone())
+            })
+            .child(div().h(px(1.0)).w_full().bg(colors.border_variant)),
           SplitDirection::Vertical => h_flex()
-            .size_full()
-            .child(
-              div()
-                .flex_basis(relative(ratio))
-                .size_full()
-                .child(first.render(active_pane_id, window, cx)),
-            )
-            .child(div().w_1().h_full().bg(colors.border_variant))
-            .child(
-              div()
-                .flex_basis(relative(1.0 - ratio))
-                .size_full()
-                .child(second.render(active_pane_id, window, cx)),
-            )
-            .into_any_element(),
-        }
+            .id(divider_id)
+            .w(px(6.0))
+            .h_full()
+            .flex_shrink_0()
+            .justify_center()
+            .cursor(CursorStyle::ResizeLeftRight)
+            .hover(|style| style.bg(colors.border))
+            .on_drag(drag_value, |drag, _, _, cx| {
+              cx.stop_propagation();
+              cx.new(|_| drag.clone())
+            })
+            .child(div().w(px(1.0)).h_full().bg(colors.border_variant)),
+        };
+
+        let container = match direction {
+          SplitDirection::Horizontal => v_flex(),
+          SplitDirection::Vertical => h_flex(),
+        };
+
+        container
+          .id(container_id)
+          .size_full()
+          .on_drag_move(cx.listener({
+            let path = path.clone();
+            move |this, e: &DragMoveEvent<ResizeSplitDivider>, _window, cx| {
+              let drag = e.drag(cx);
+              if cx.entity_id() != drag.entity_id || drag.path != path {
+                return;
+              }
+              let new_ratio = match drag.direction {
+                SplitDirection::Horizontal => {
+                  ((e.event.position.y - e.bounds.origin.y) / e.bounds.size.height).clamp(0.1, 0.9)
+                }
+                SplitDirection::Vertical => {
+                  ((e.event.position.x - e.bounds.origin.x) / e.bounds.size.width).clamp(0.1, 0.9)
+                }
+              };
+              if let Some(active_ix) = this.active_tab_ix {
+                if let Some(item) = this.items.get_mut(active_ix) {
+                  item.split_container.update_ratio(&path, new_ratio);
+                }
+              }
+              cx.notify();
+            }
+          }))
+          .child(
+            div()
+              .flex_basis(relative(ratio))
+              .size_full()
+              .min_h_0()
+              .min_w_0()
+              .child(first_element),
+          )
+          .child(divider)
+          .child(
+            div()
+              .flex_basis(relative(1.0 - ratio))
+              .size_full()
+              .min_h_0()
+              .min_w_0()
+              .child(second_element),
+          )
+          .into_any_element()
       }
     }
   }
@@ -373,7 +487,11 @@ impl SplitContainer {
     self.root.all_terminals()
   }
 
-  pub fn render(&self, window: &mut Window, cx: &mut App) -> AnyElement {
-    self.root.render(self.active_pane_id, window, cx)
+  pub fn update_ratio(&mut self, path: &[bool], new_ratio: f32) {
+    self.root.update_ratio(path, new_ratio);
+  }
+
+  pub fn render(&self, window: &mut Window, cx: &mut Context<MainWindow>) -> AnyElement {
+    self.root.render(self.active_pane_id, vec![], window, cx)
   }
 }
