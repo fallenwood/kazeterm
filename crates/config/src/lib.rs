@@ -62,6 +62,9 @@ pub struct Config {
   /// Close the application when the last tab is closed
   /// When false (default), a new tab is created instead
   pub close_on_last_tab: bool,
+  /// Show a tab switcher popup when using Ctrl+Tab / Ctrl+Shift+Tab
+  /// When false, tabs switch directly without showing a popup
+  pub tab_switcher_popup: bool,
   /// Window background opacity (0.0 = fully transparent, 1.0 = fully opaque)
   /// Values between 0.0 and 1.0 allow seeing through the terminal window
   pub background_opacity: f32,
@@ -91,6 +94,7 @@ impl Default for Config {
       minimap_enabled: false,
       vertical_tabs: false,
       close_on_last_tab: true,
+      tab_switcher_popup: true,
       background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
     }
@@ -450,6 +454,7 @@ mod tests {
       minimap_enabled: false,
       vertical_tabs: false,
       close_on_last_tab: true,
+      tab_switcher_popup: true,
       background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
     };

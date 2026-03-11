@@ -118,19 +118,28 @@ impl Render for MainWindow {
         let kb_split_h = ParsedKeybinding::parse(&keybindings.split_horizontal);
         let kb_split_v = ParsedKeybinding::parse(&keybindings.split_vertical);
         let kb_close_pane = ParsedKeybinding::parse(&keybindings.close_pane);
+        let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
 
         if kb_next.matches(mods.control, mods.shift, mods.alt, key) {
-          let current_ix = this.active_tab_ix.unwrap_or(0);
-          let next_ix = (current_ix + 1) % this.items.len();
-          this.set_active_tab(next_ix, window, cx);
-        } else if kb_prev.matches(mods.control, mods.shift, mods.alt, key) {
-          let current_ix = this.active_tab_ix.unwrap_or(0);
-          let prev_ix = if current_ix == 0 {
-            this.items.len() - 1
+          if tab_switcher_popup {
+            this.show_tab_switcher(true, window, cx);
           } else {
-            current_ix - 1
-          };
-          this.set_active_tab(prev_ix, window, cx);
+            let current_ix = this.active_tab_ix.unwrap_or(0);
+            let next_ix = (current_ix + 1) % this.items.len();
+            this.set_active_tab(next_ix, window, cx);
+          }
+        } else if kb_prev.matches(mods.control, mods.shift, mods.alt, key) {
+          if tab_switcher_popup {
+            this.show_tab_switcher(false, window, cx);
+          } else {
+            let current_ix = this.active_tab_ix.unwrap_or(0);
+            let prev_ix = if current_ix == 0 {
+              this.items.len() - 1
+            } else {
+              current_ix - 1
+            };
+            this.set_active_tab(prev_ix, window, cx);
+          }
         } else if kb_search.matches(mods.control, mods.shift, mods.alt, key)
           || (e.keystroke.key == "Escape" && this.search_visible)
         {
@@ -147,6 +156,16 @@ impl Render for MainWindow {
         // Track Ctrl state
         this.last_known_ctrl_state = e.keystroke.modifiers.control;
       }))
+      .on_modifiers_changed(cx.listener(
+        move |this, e: &ModifiersChangedEvent, window, cx| {
+          this.last_known_ctrl_state = e.modifiers.control;
+
+          // Dismiss tab switcher when Ctrl is released
+          if this.tab_switcher_visible && !e.modifiers.control {
+            this.hide_tab_switcher(window, cx);
+          }
+        },
+      ))
       .on_mouse_move(cx.listener(move |this, _e: &MouseMoveEvent, _window, _cx| {
         // Track Ctrl state from mouse events
         this.last_known_ctrl_state = _e.modifiers.control;

@@ -32,7 +32,6 @@ pub struct MainWindow {
   pub(crate) last_bounds: Option<gpui::Bounds<Pixels>>,
   pub(crate) tab_switcher_visible: bool,
   pub(crate) tab_switcher: Option<Entity<TabSwitcher>>,
-  #[allow(dead_code)]
   pub(crate) tab_switcher_selection: usize,
   pub(crate) vertical_tabbar_width: Pixels,
   pub(crate) last_known_ctrl_state: bool,
