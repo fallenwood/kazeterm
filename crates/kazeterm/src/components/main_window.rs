@@ -13,8 +13,9 @@ pub(crate) use super::main_window_tab_item::TabItem;
 
 pub(crate) const TAB_LABEL_MIN_WIDTH: f32 = 60.0;
 pub(crate) const TAB_LABEL_MAX_WIDTH: f32 = 200.0;
-pub(crate) const VERTICAL_TABBAR_DEFAULT_WIDTH: f32 = TAB_LABEL_MAX_WIDTH + 24.0;
 pub(crate) const VERTICAL_TABBAR_MIN_WIDTH: f32 = TAB_LABEL_MIN_WIDTH + 24.0;
+pub(crate) const VERTICAL_TABBAR_MAX_WIDTH: f32 = TAB_LABEL_MAX_WIDTH + 24.0;
+const VERTICAL_TABBAR_WIDTH_RATIO: f32 = 0.175;
 
 pub struct MainWindow {
   pub(crate) focus_handle: FocusHandle,
@@ -91,7 +92,9 @@ impl MainWindow {
       tab_switcher_visible: false,
       tab_switcher: None,
       tab_switcher_selection: 0,
-      vertical_tabbar_width: px(VERTICAL_TABBAR_DEFAULT_WIDTH),
+      vertical_tabbar_width: (window.bounds().size.width * VERTICAL_TABBAR_WIDTH_RATIO)
+        .max(px(VERTICAL_TABBAR_MIN_WIDTH))
+        .min(px(VERTICAL_TABBAR_MAX_WIDTH)),
       last_known_ctrl_state: false,
       rename_dialog: None,
       _rename_dialog_subscription: None,

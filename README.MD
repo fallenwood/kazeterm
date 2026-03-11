@@ -14,7 +14,7 @@ A lightweight cross-platform terminal app based on Alacritty, inspired by Window
 
 #### Windows
 
-MSVC target is required.
+MSVC target is required for release build.
 
 #### Fedora
 
