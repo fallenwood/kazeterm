@@ -32,6 +32,7 @@ impl TerminalElement {
     mode: TermMode,
     hitbox: &gpui::Hitbox,
     scrollbar_bounds: Option<Bounds<Pixels>>,
+    minimap_bounds: Option<Bounds<Pixels>>,
     window: &mut Window,
   ) {
     let focus = self.focus.clone();
@@ -46,6 +47,11 @@ impl TerminalElement {
       move |e, window, cx| {
         if let Some(sb_bounds) = scrollbar_bounds
           && sb_bounds.contains(&e.position)
+        {
+          return;
+        }
+        if let Some(mm_bounds) = minimap_bounds
+          && mm_bounds.contains(&e.position)
         {
           return;
         }

@@ -9,6 +9,7 @@ use themeing::ActiveTheme as _;
 use crate::{
   cursor_layout::CursorLayout,
   highlighted_range_line::HighlightedRange,
+  minimap::{MINIMAP_WIDTH, MinimapState, paint_minimap},
   scrollbar::{MIN_THUMB_HEIGHT, SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
   terminal_input_handler::TerminalInputHandler,
 };
@@ -74,6 +75,7 @@ impl Element for TerminalElement {
         let hitbox = hitbox.unwrap();
         let config = cx.global::<::config::Config>();
         let zoom_state = cx.global::<themeing::ZoomState>();
+        let minimap_enabled = config.minimap_enabled;
 
         let font_family = gpui::SharedString::from(config.font_family.clone());
         let line_height_multiplier = 1.18_f32;
@@ -105,6 +107,11 @@ impl Element for TerminalElement {
         let text_system = cx.text_system();
         let gutter;
         let scrollbar_width = px(SCROLLBAR_WIDTH);
+        let minimap_width = if minimap_enabled {
+          px(MINIMAP_WIDTH)
+        } else {
+          px(0.0)
+        };
         let (dimensions, _line_height_px) = {
           let rem_size = window.rem_size();
           let font_pixels = text_style.font_size.to_pixels(rem_size);
@@ -118,7 +125,7 @@ impl Element for TerminalElement {
           gutter = cell_width;
 
           let mut size = bounds.size;
-          size.width -= gutter + scrollbar_width;
+          size.width -= gutter + scrollbar_width + minimap_width;
 
           if size.width < cell_width * 2.0 {
             size.width = cell_width * 2.0;
@@ -139,6 +146,12 @@ impl Element for TerminalElement {
           terminal.set_size(dimensions);
           terminal.sync(window, cx);
         });
+
+        let minimap_cells = if minimap_enabled {
+          self.terminal.read(cx).collect_minimap_cells()
+        } else {
+          Vec::new()
+        };
 
         let TerminalContent {
           cells,
@@ -266,6 +279,28 @@ impl Element for TerminalElement {
           None
         };
 
+        let (minimap_state, minimap_bounds) = if minimap_enabled {
+          let minimap_state = MinimapState::new(
+            total_lines,
+            visible_lines,
+            display_offset,
+            history_size,
+          );
+          let minimap_bounds = Bounds {
+            origin: Point {
+              x: bounds.origin.x + bounds.size.width - scrollbar_width - minimap_width,
+              y: bounds.origin.y,
+            },
+            size: gpui::Size {
+              width: minimap_width,
+              height: bounds.size.height,
+            },
+          };
+          (Some(minimap_state), Some(minimap_bounds))
+        } else {
+          (None, None)
+        };
+
         LayoutState {
           hitbox,
           batched_text_runs,
@@ -284,6 +319,9 @@ impl Element for TerminalElement {
             None
           },
           scrollbar_bounds,
+          minimap_state,
+          minimap_bounds,
+          minimap_cells,
         }
       },
     )
@@ -320,7 +358,7 @@ impl Element for TerminalElement {
           .map(|cursor| cursor.bounding_rect(origin)),
       };
 
-      self.register_mouse_listeners(layout.mode, &layout.hitbox, layout.scrollbar_bounds, window);
+      self.register_mouse_listeners(layout.mode, &layout.hitbox, layout.scrollbar_bounds, layout.minimap_bounds, window);
       if window.modifiers().secondary()
         && bounds.contains(&window.mouse_position())
         && self.terminal_view.read(cx).hover.is_some()
@@ -519,6 +557,44 @@ impl Element for TerminalElement {
                 cx.notify();
               });
             }
+          }
+        });
+      }
+
+      // Paint minimap
+      if let (Some(minimap_state), Some(minimap_bounds)) =
+        (&layout.minimap_state, &layout.minimap_bounds)
+      {
+        let theme = cx.theme();
+        let background_color = theme.colors().terminal_ansi_background;
+        let viewport_color = theme.colors().scrollbar_thumb_background;
+        paint_minimap(
+          *minimap_bounds,
+          &layout.minimap_cells,
+          minimap_state.visible_lines,
+          layout.dimensions.columns(),
+          minimap_state,
+          theme,
+          background_color,
+          viewport_color,
+          window,
+        );
+
+        // Minimap click-to-scroll
+        let minimap_bounds = *minimap_bounds;
+        let minimap_state_clone = minimap_state.clone();
+        let terminal_for_minimap = self.terminal.clone();
+        window.on_mouse_event(move |e: &gpui::MouseDownEvent, _phase, _window, cx| {
+          if e.button == MouseButton::Left && minimap_bounds.contains(&e.position) {
+            let relative_y = e.position.y - minimap_bounds.origin.y;
+            let position_ratio: f32 = (relative_y / minimap_bounds.size.height).into();
+            let new_offset = minimap_state_clone.position_to_offset(position_ratio);
+            terminal_for_minimap.update(cx, |terminal, cx| {
+              terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+                new_offset as i32 - terminal.last_content.display_offset as i32,
+              ));
+              cx.notify();
+            });
           }
         });
       }

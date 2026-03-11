@@ -6,7 +6,7 @@ use gpui::{
   StatefulInteractiveElement, TextStyle, point,
 };
 
-use crate::{cursor_layout::CursorLayout, scrollbar::ScrollbarState};
+use crate::{cursor_layout::CursorLayout, minimap::MinimapState, scrollbar::ScrollbarState};
 
 use super::batched_text_run::BatchedTextRun;
 use super::layout_rect::LayoutRect;
@@ -120,4 +120,7 @@ pub struct LayoutState {
   base_text_style: TextStyle,
   scrollbar_state: Option<ScrollbarState>,
   scrollbar_bounds: Option<gpui::Bounds<Pixels>>,
+  minimap_state: Option<MinimapState>,
+  minimap_bounds: Option<gpui::Bounds<Pixels>>,
+  minimap_cells: Vec<crate::indexed_cell::IndexedCell>,
 }
