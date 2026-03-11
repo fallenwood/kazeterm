@@ -3,7 +3,6 @@ use gpui::{AppContext, Context, Window};
 use super::main_window::MainWindow;
 use crate::components::tab_switcher::{TabSwitcher, TabSwitcherItem};
 
-#[allow(dead_code)]
 impl MainWindow {
   pub(crate) fn show_tab_switcher(
     &mut self,
@@ -15,10 +14,7 @@ impl MainWindow {
       return;
     }
 
-    let was_visible = self.tab_switcher_visible;
-
     if !self.tab_switcher_visible {
-      // First time showing the switcher - initialize selection
       let current_ix = self.active_tab_ix.unwrap_or(0);
       self.tab_switcher_selection = if forward {
         (current_ix + 1) % self.items.len()
@@ -29,7 +25,6 @@ impl MainWindow {
       };
       self.tab_switcher_visible = true;
     } else {
-      // Switcher already visible - cycle selection
       if forward {
         self.tab_switcher_selection = (self.tab_switcher_selection + 1) % self.items.len();
       } else {
@@ -41,42 +36,9 @@ impl MainWindow {
       }
     }
 
-    // Switch to the selected tab immediately
-    self.set_active_tab(self.tab_switcher_selection, window, cx);
     self.update_tab_switcher(cx);
+    self.set_active_tab(self.tab_switcher_selection, window, cx);
     cx.notify();
-
-    // Start polling if we just showed the switcher
-    if !was_visible {
-      self.start_ctrl_polling(cx);
-    }
-  }
-
-  pub(crate) fn start_ctrl_polling(&self, cx: &mut Context<Self>) {
-    // Poll to detect when Ctrl is released
-    cx.spawn(async move |this_weak, cx| {
-      loop {
-        smol::Timer::after(std::time::Duration::from_millis(50)).await;
-
-        // Check if Ctrl is still pressed (always true for now)
-        let _ctrl_pressed = true; // Can't reliably check on Wayland without X11 libs
-
-        let should_hide = cx
-          .update(|_cx| {
-            if let Some(this) = this_weak.upgrade() {
-              this.read(_cx).tab_switcher_visible
-            } else {
-              false
-            }
-          })
-          .unwrap_or(false);
-
-        if !should_hide {
-          break;
-        }
-      }
-    })
-    .detach();
   }
 
   pub(crate) fn hide_tab_switcher(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
