@@ -441,7 +441,7 @@ impl Render for MainWindow {
                   ),
               );
 
-        if window.is_fullscreen() {
+        if window.is_fullscreen() && !cfg!(target_os = "macos") {
           div()
             .flex_shrink_0()
             .id("title-bar")
