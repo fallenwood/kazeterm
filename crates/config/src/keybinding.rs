@@ -31,6 +31,8 @@ pub struct KeybindingConfig {
   pub split_vertical: String,
   /// Close active pane
   pub close_pane: String,
+  /// Toggle fullscreen mode
+  pub toggle_fullscreen: String,
 }
 
 impl Default for KeybindingConfig {
@@ -47,6 +49,7 @@ impl Default for KeybindingConfig {
       split_horizontal: "ctrl-shift-d".to_string(),
       split_vertical: "ctrl-shift-e".to_string(),
       close_pane: "ctrl-shift-w".to_string(),
+      toggle_fullscreen: "f11".to_string(),
     }
   }
 }

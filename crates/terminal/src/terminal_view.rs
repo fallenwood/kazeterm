@@ -463,6 +463,15 @@ impl TerminalView {
     self.clear_bell(cx);
     self.pause_cursor_blinking(window, cx);
 
+    // Let MainWindow-level keybindings pass through without terminal consumption
+    let keybindings = &cx.global::<config::Config>().keybindings;
+    let mods = &event.keystroke.modifiers;
+    let key = &event.keystroke.key;
+    let kb_fullscreen = config::ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
+    if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
+      return;
+    }
+
     let handled = self
       .terminal
       .update(cx, |term, _cx| term.try_keystroke(&event.keystroke, true));

@@ -2,7 +2,7 @@ use config::ParsedKeybinding;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-  Icon, IconName, Sizable, StyledExt, TitleBar,
+  ActiveTheme, Icon, IconName, Sizable, StyledExt, TITLE_BAR_HEIGHT, TitleBar,
   button::{Button, ButtonVariants},
   h_flex,
   label::Label,
@@ -118,6 +118,7 @@ impl Render for MainWindow {
         let kb_split_h = ParsedKeybinding::parse(&keybindings.split_horizontal);
         let kb_split_v = ParsedKeybinding::parse(&keybindings.split_vertical);
         let kb_close_pane = ParsedKeybinding::parse(&keybindings.close_pane);
+        let kb_fullscreen = ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
         let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
 
         if kb_next.matches(mods.control, mods.shift, mods.alt, key) {
@@ -150,6 +151,8 @@ impl Render for MainWindow {
           this.split_pane_vertical(window, cx);
         } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, key) {
           this.close_active_pane(window, cx);
+        } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
+          window.toggle_fullscreen();
         }
       }))
       .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, _cx| {
@@ -182,18 +185,8 @@ impl Render for MainWindow {
           // No-op
         }),
       )
-      .child(
-        TitleBar::new()
-          .on_close_window({
-            let main_window = view.clone();
-            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-              main_window.update(cx, |this, cx| {
-                this.show_close_confirm_dialog(window, cx);
-              });
-            }
-          })
-          .child(
-            div()
+      .child({
+        let titlebar_content = div()
               .h_flex()
               .flex_1()
               .flex_basis(px(0.0))
@@ -446,9 +439,36 @@ impl Render for MainWindow {
                         }
                       }),
                   ),
-              ),
-          ),
-      )
+              );
+
+        if window.is_fullscreen() {
+          div()
+            .flex_shrink_0()
+            .id("title-bar")
+            .flex()
+            .flex_row()
+            .items_center()
+            .h(TITLE_BAR_HEIGHT)
+            .pl_3()
+            .border_b_1()
+            .border_color(cx.theme().title_bar_border)
+            .bg(cx.theme().title_bar)
+            .child(titlebar_content)
+            .into_any_element()
+        } else {
+          TitleBar::new()
+            .on_close_window({
+              let main_window = view.clone();
+              move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                main_window.update(cx, |this, cx| {
+                  this.show_close_confirm_dialog(window, cx);
+                });
+              }
+            })
+            .child(titlebar_content)
+            .into_any_element()
+        }
+      })
       .child({
         let active_ix = self.active_tab_ix.unwrap_or_default();
         let content = div()
