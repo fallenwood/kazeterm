@@ -31,6 +31,7 @@ tracing-subscriber.workspace = true
 notify.workspace = true
 notify-debouncer-mini.workspace = true
 notify-rust.workspace = true
+which = "7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"

@@ -3190,6 +3190,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uds_windows",
+ "which 7.0.3",
  "windows 0.61.3",
  "winresource",
 ]

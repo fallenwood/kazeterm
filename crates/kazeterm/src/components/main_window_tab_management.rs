@@ -304,15 +304,37 @@ impl MainWindow {
         use windows::Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC};
         use windows::core::w;
         unsafe {
-          // Play the Windows default notification sound (SystemAsterisk)
           let _ = PlaySoundW(w!("SystemAsterisk"), None, SND_ALIAS | SND_ASYNC);
         }
       });
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-      // TODO: not working
-      print!("\x07");
+      std::thread::spawn(|| {
+        use objc::{class, msg_send, sel, sel_impl};
+        unsafe {
+          let _: () = msg_send![class!(NSSound), beep];
+        }
+      });
+    }
+    #[cfg(target_os = "linux")]
+    {
+      std::thread::spawn(|| {
+        if which::which("canberra-gtk-play").is_err() {
+          tracing::debug!("Skipping bell sound because canberra-gtk-play is not available");
+          return;
+        }
+
+        if let Err(error) = std::process::Command::new("canberra-gtk-play")
+          .args(["--id", "bell"])
+          .stdin(std::process::Stdio::null())
+          .stdout(std::process::Stdio::null())
+          .stderr(std::process::Stdio::null())
+          .spawn()
+        {
+          tracing::debug!("Failed to spawn canberra-gtk-play for bell sound: {error}");
+        }
+      });
     }
   }
 
