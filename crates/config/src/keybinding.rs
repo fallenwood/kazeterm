@@ -49,7 +49,11 @@ impl Default for KeybindingConfig {
       split_horizontal: "ctrl-shift-d".to_string(),
       split_vertical: "ctrl-shift-e".to_string(),
       close_pane: "ctrl-shift-w".to_string(),
-      toggle_fullscreen: "f11".to_string(),
+      toggle_fullscreen: if cfg!(target_os = "macos") {
+        "f12".to_string()
+      } else {
+        "f11".to_string()
+      },
     }
   }
 }
