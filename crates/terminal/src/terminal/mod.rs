@@ -70,6 +70,9 @@ pub struct Terminal {
   pub scroll_velocity: f32,
   pub last_scroll_time: Option<std::time::Instant>,
   pub touch_state: Option<TouchState>,
+  /// Tracks the last time the user sent input (keystrokes/paste) to the terminal.
+  /// Used to determine if a bell follows a long-running command.
+  pub last_input_time: std::time::Instant,
 }
 
 impl Terminal {
@@ -98,6 +101,7 @@ impl Terminal {
       scroll_velocity: 0.0,
       last_scroll_time: None,
       touch_state: None,
+      last_input_time: std::time::Instant::now(),
     }
   }
 

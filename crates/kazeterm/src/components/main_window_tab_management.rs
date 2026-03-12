@@ -223,6 +223,30 @@ impl MainWindow {
         let has_bell = terminal_view.read(cx).has_bell();
         if has_bell {
           this.play_bell_sound();
+
+          let threshold_secs =
+            cx.global::<config::Config>().long_running_threshold_secs;
+          let idle_duration = terminal_view
+            .read(cx)
+            .terminal()
+            .read(cx)
+            .last_input_time
+            .elapsed();
+
+          if idle_duration >= std::time::Duration::from_secs(threshold_secs) {
+            let tab_title = this
+              .items
+              .iter()
+              .find(|item| {
+                item
+                  .split_container
+                  .all_terminals()
+                  .iter()
+                  .any(|(_pos, t)| t.entity_id() == terminal_view.entity_id())
+              })
+              .map(|item| item.display_title().to_string());
+            Self::send_bell_notification(tab_title);
+          }
         }
         cx.notify();
       }
@@ -253,6 +277,16 @@ impl MainWindow {
         }
       }
     }
+  }
+
+  fn send_bell_notification(tab_title: Option<String>) {
+    std::thread::spawn(move || {
+      let title = tab_title.as_deref().unwrap_or("Terminal");
+      let _ = notify_rust::Notification::new()
+        .summary("Kazeterm")
+        .body(&format!("Bell from {title}"))
+        .show();
+    });
   }
 
   pub(crate) fn play_bell_sound(&self) {
