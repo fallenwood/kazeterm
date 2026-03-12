@@ -292,7 +292,7 @@ impl MainWindow {
       let title = tab_title.as_deref().unwrap_or("Terminal");
       let _ = notify_rust::Notification::new()
         .summary("Kazeterm")
-        .body(&format!("Bell from {title}"))
+        .body(&format!("{title}"))
         .show();
     });
   }
