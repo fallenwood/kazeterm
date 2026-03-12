@@ -45,6 +45,8 @@ pub struct MainWindow {
   /// About dialog state
   pub(crate) about_dialog: Option<Entity<AboutDialog>>,
   pub(crate) _about_dialog_subscription: Option<gpui::Subscription>,
+  /// Tracks the last time an OS notification was sent, for throttling.
+  pub(crate) last_notification_time: Option<std::time::Instant>,
 }
 
 impl MainWindow {
@@ -102,6 +104,7 @@ impl MainWindow {
       _close_confirm_subscription: None,
       about_dialog: None,
       _about_dialog_subscription: None,
+      last_notification_time: None,
     };
     main_window.insert_new_tab(window, cx);
     main_window

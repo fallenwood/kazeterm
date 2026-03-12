@@ -73,6 +73,10 @@ pub struct Config {
   /// Minimum idle time (in seconds) since last input before a bell triggers
   /// a native OS notification. Set to 0 to notify on every bell.
   pub long_running_threshold_secs: u64,
+  /// Minimum interval (in seconds) between consecutive OS notifications.
+  /// Prevents notification spam when many bells fire in quick succession.
+  /// Set to 0 to allow every notification. Default is 15 seconds.
+  pub notification_interval_secs: u64,
 }
 
 impl Default for Config {
@@ -101,6 +105,7 @@ impl Default for Config {
       background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
+      notification_interval_secs: 15,
     }
   }
 }
@@ -462,6 +467,7 @@ mod tests {
       background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
+      notification_interval_secs: 15,
     };
 
     // get_profile

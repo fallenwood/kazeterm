@@ -233,7 +233,14 @@ impl MainWindow {
             .last_input_time
             .elapsed();
 
-          if idle_duration >= std::time::Duration::from_secs(threshold_secs) {
+          let interval_secs =
+            cx.global::<config::Config>().notification_interval_secs;
+          let interval_ok = match this.last_notification_time {
+            Some(last) => last.elapsed() >= std::time::Duration::from_secs(interval_secs),
+            None => true,
+          };
+
+          if idle_duration >= std::time::Duration::from_secs(threshold_secs) && interval_ok {
             let tab_title = this
               .items
               .iter()
@@ -246,6 +253,7 @@ impl MainWindow {
               })
               .map(|item| item.display_title().to_string());
             Self::send_bell_notification(tab_title);
+            this.last_notification_time = Some(std::time::Instant::now());
           }
         }
         cx.notify();
