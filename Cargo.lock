@@ -3167,6 +3167,8 @@ dependencies = [
  "image",
  "notify",
  "notify-debouncer-mini",
+ "objc",
+ "raw-window-handle",
  "regex",
  "rust-embed",
  "serde",

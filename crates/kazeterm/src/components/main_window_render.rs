@@ -152,7 +152,11 @@ impl Render for MainWindow {
         } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, key) {
           this.close_active_pane(window, cx);
         } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
-          window.toggle_fullscreen();
+          if cfg!(target_os = "macos") {
+            window.zoom_window();
+          } else {
+            window.toggle_fullscreen();
+          }
         }
       }))
       .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, _cx| {

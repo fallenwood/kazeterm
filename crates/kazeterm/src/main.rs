@@ -1,6 +1,10 @@
 // Disable command line from opening on release mode
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate objc;
+
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
@@ -230,6 +234,38 @@ fn main() {
       cx.open_window(options, |window, cx| {
         let view = crate::components::MainWindow::view(window, cx);
         let window_handle = window.window_handle();
+
+        // On macOS, disable fullscreen so the green button zooms instead,
+        // keeping native traffic lights visible.
+        #[cfg(target_os = "macos")]
+        {
+          use raw_window_handle::HasWindowHandle;
+          if let Ok(handle) =
+            <gpui::Window as HasWindowHandle>::window_handle(window)
+          {
+            if let raw_window_handle::RawWindowHandle::AppKit(appkit) =
+              handle.as_raw()
+            {
+              let ns_view =
+                appkit.ns_view.as_ptr() as *mut objc::runtime::Object;
+              unsafe {
+                let ns_window: *mut objc::runtime::Object =
+                  objc::msg_send![ns_view, window];
+                if !ns_window.is_null() {
+                  let current: u64 =
+                    objc::msg_send![ns_window, collectionBehavior];
+                  // Remove FullScreenPrimary (1 << 7), add FullScreenNone (1 << 9)
+                  let new_behavior =
+                    (current & !(1u64 << 7)) | (1u64 << 9);
+                  let _: () = objc::msg_send![
+                    ns_window,
+                    setCollectionBehavior: new_behavior
+                  ];
+                }
+              }
+            }
+          }
+        }
 
         // Initialize the event system with a weak reference to the main window
         let main_window_weak = view.downgrade();
