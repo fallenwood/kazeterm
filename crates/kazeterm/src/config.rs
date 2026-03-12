@@ -30,8 +30,6 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
     palette.border = apply_background_opacity(palette.border, opacity);
     palette.border_variant = apply_background_opacity(palette.border_variant, opacity);
     palette.border_disabled = apply_background_opacity(palette.border_disabled, opacity);
-    palette.elevated_surface_background =
-      apply_background_opacity(palette.elevated_surface_background, opacity);
     palette.surface_background = apply_background_opacity(palette.surface_background, opacity);
     palette.background = apply_background_opacity(palette.background, opacity);
     palette.element_background = apply_background_opacity(palette.element_background, opacity);
