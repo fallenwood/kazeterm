@@ -152,7 +152,11 @@ impl Render for MainWindow {
         } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, key) {
           this.close_active_pane(window, cx);
         } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
-          window.toggle_fullscreen();
+          if cfg!(target_os = "macos") {
+            window.zoom_window();
+          } else {
+            window.toggle_fullscreen();
+          }
         }
       }))
       .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, _cx| {
@@ -441,8 +445,7 @@ impl Render for MainWindow {
                   ),
               );
 
-        if window.is_fullscreen() {
-          let close_view = view.clone();
+        if window.is_fullscreen() && !cfg!(target_os = "macos") {
           div()
             .flex_shrink_0()
             .id("title-bar")
@@ -455,45 +458,6 @@ impl Render for MainWindow {
             .border_color(cx.theme().title_bar_border)
             .bg(cx.theme().title_bar)
             .child(titlebar_content)
-            .when(cfg!(target_os = "macos"), |this| {
-              this.child(
-                h_flex()
-                  .flex_shrink_0()
-                  .items_center()
-                  .h_full()
-                  .child(
-                    Button::new("fs-minimize")
-                      .ghost()
-                      .small()
-                      .icon(IconName::WindowMinimize)
-                      .on_click(|_, window: &mut Window, _| {
-                        window.minimize_window();
-                      }),
-                  )
-                  .child(
-                    Button::new("fs-restore")
-                      .ghost()
-                      .small()
-                      .icon(IconName::WindowRestore)
-                      .on_click(|_, window: &mut Window, _| {
-                        window.toggle_fullscreen();
-                      }),
-                  )
-                  .child(
-                    Button::new("fs-close")
-                      .ghost()
-                      .small()
-                      .icon(IconName::WindowClose)
-                      .on_click({
-                        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                          close_view.update(cx, |this, cx| {
-                            this.show_close_confirm_dialog(window, cx);
-                          });
-                        }
-                      }),
-                  ),
-              )
-            })
             .into_any_element()
         } else {
           TitleBar::new()
