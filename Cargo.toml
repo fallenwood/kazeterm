@@ -40,6 +40,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 notify = "7.0"
 notify-debouncer-mini = "0.5"
+notify-rust = "4"
 
 [workspace.dependencies.windows]
 version = "0.61"

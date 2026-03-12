@@ -223,6 +223,38 @@ impl MainWindow {
         let has_bell = terminal_view.read(cx).has_bell();
         if has_bell {
           this.play_bell_sound();
+
+          let threshold_secs =
+            cx.global::<config::Config>().long_running_threshold_secs;
+          let idle_duration = terminal_view
+            .read(cx)
+            .terminal()
+            .read(cx)
+            .last_input_time
+            .elapsed();
+
+          let interval_secs =
+            cx.global::<config::Config>().notification_interval_secs;
+          let interval_ok = match this.last_notification_time {
+            Some(last) => last.elapsed() >= std::time::Duration::from_secs(interval_secs),
+            None => true,
+          };
+
+          if idle_duration >= std::time::Duration::from_secs(threshold_secs) && interval_ok {
+            let tab_title = this
+              .items
+              .iter()
+              .find(|item| {
+                item
+                  .split_container
+                  .all_terminals()
+                  .iter()
+                  .any(|(_pos, t)| t.entity_id() == terminal_view.entity_id())
+              })
+              .map(|item| item.display_title().to_string());
+            Self::send_bell_notification(tab_title);
+            this.last_notification_time = Some(std::time::Instant::now());
+          }
         }
         cx.notify();
       }
@@ -255,6 +287,16 @@ impl MainWindow {
     }
   }
 
+  fn send_bell_notification(tab_title: Option<String>) {
+    std::thread::spawn(move || {
+      let title = tab_title.as_deref().unwrap_or("Terminal");
+      let _ = notify_rust::Notification::new()
+        .summary("Kazeterm")
+        .body(&format!("{title}"))
+        .show();
+    });
+  }
+
   pub(crate) fn play_bell_sound(&self) {
     #[cfg(target_os = "windows")]
     {
@@ -262,15 +304,37 @@ impl MainWindow {
         use windows::Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC};
         use windows::core::w;
         unsafe {
-          // Play the Windows default notification sound (SystemAsterisk)
           let _ = PlaySoundW(w!("SystemAsterisk"), None, SND_ALIAS | SND_ASYNC);
         }
       });
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-      // TODO: not working
-      print!("\x07");
+      std::thread::spawn(|| {
+        use objc::{class, msg_send, sel, sel_impl};
+        unsafe {
+          let _: () = msg_send![class!(NSSound), beep];
+        }
+      });
+    }
+    #[cfg(target_os = "linux")]
+    {
+      std::thread::spawn(|| {
+        if which::which("canberra-gtk-play").is_err() {
+          tracing::debug!("Skipping bell sound because canberra-gtk-play is not available");
+          return;
+        }
+
+        if let Err(error) = std::process::Command::new("canberra-gtk-play")
+          .args(["--id", "bell"])
+          .stdin(std::process::Stdio::null())
+          .stdout(std::process::Stdio::null())
+          .stderr(std::process::Stdio::null())
+          .spawn()
+        {
+          tracing::debug!("Failed to spawn canberra-gtk-play for bell sound: {error}");
+        }
+      });
     }
   }
 

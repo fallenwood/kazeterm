@@ -19,6 +19,7 @@ impl Terminal {
   }
 
   pub fn input(&mut self, input: impl Into<Cow<'static, [u8]>>) {
+    self.last_input_time = std::time::Instant::now();
     self.events.push_back(InternalEvent::Scroll(Scroll::Bottom));
     self.events.push_back(InternalEvent::SetSelection(None));
     self.write_to_pty(input);
