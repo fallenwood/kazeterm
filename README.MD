@@ -39,7 +39,14 @@ apt install -y \
 ```
 
 #### macOS
-No special requirements are needed.
+
+XCode is needed for metal sdk
+
+```
+xcode-select --switch /Applications/Xcode.app/Contents/Developer
+xcodebuild -runFirstLaunch
+xcodebuild -downloadComponent MetalToolchain
+```
 
 ### Run Build Commands
 
