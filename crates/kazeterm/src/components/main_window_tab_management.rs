@@ -506,7 +506,8 @@ impl MainWindow {
   }
 
   /// Collect the current session state from all open tabs.
-  pub(crate) fn collect_session_data(&self, cx: &Context<Self>) -> ::config::SessionData {
+  /// Forces a pty info refresh to get the latest working directories.
+  pub(crate) fn collect_session_data(&self, cx: &mut Context<Self>) -> ::config::SessionData {
     let tabs: Vec<::config::SavedTab> = self
       .items
       .iter()
@@ -514,15 +515,17 @@ impl MainWindow {
         let working_directory = item
           .split_container
           .get_active_terminal()
-          .and_then(|terminal| {
-            terminal
-              .read(cx)
-              .terminal()
-              .read(cx)
-              .pty_info
-              .current
-              .as_ref()
-              .map(|info| info.cwd.to_string_lossy().to_string())
+          .and_then(|terminal_view| {
+            let inner = terminal_view.read(cx).terminal().clone();
+            // Force refresh pty info to get the latest CWD
+            inner.update(cx, |term, _| {
+              term.pty_info.has_changed();
+              term
+                .pty_info
+                .current
+                .as_ref()
+                .map(|info| info.cwd.to_string_lossy().to_string())
+            })
           });
 
         ::config::SavedTab {
@@ -542,6 +545,7 @@ impl MainWindow {
   }
 
   /// Restore tabs from saved session data.
+  /// Creates terminals directly from saved shell paths and working directories.
   pub(crate) fn restore_session(
     &mut self,
     session_data: ::config::SessionData,
@@ -549,19 +553,46 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     for saved_tab in &session_data.tabs {
-      self.insert_new_tab_with_profile(
-        Some(&saved_tab.shell_path),
-        saved_tab.working_directory.clone(),
+      let index = self
+        .tab_index
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+      let shell_program = saved_tab.shell_path.clone();
+      let shell_name = std::path::Path::new(&shell_program)
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&shell_program)
+        .to_lowercase();
+      let working_directory =
+        get_working_directory_pathbuf(saved_tab.working_directory.clone());
+
+      let terminal = crate::components::terminal_window::new_terminal_window_with_shell(
         window,
+        index,
+        &shell_program,
+        vec![],
+        working_directory,
         cx,
       );
+      let subscription = cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event);
 
-      // Apply custom title if set
-      if let Some(ref custom_title) = saved_tab.custom_title {
-        if let Some(item) = self.items.last_mut() {
-          item.custom_title = Some(custom_title.clone());
-        }
-      }
+      let split_container = SplitContainer::new(terminal.clone());
+
+      let item = TabItem {
+        index,
+        title: shell_name.clone(),
+        custom_title: saved_tab.custom_title.clone(),
+        shell_path: shell_program,
+        _shell_name: shell_name,
+        split_container,
+        _subscription: subscription,
+      };
+      self.items.push(item);
+      self.active_tab_ix = Some(self.items.len() - 1);
+
+      terminal.update(cx, |view, _cx| {
+        window.focus(&view.focus_handle);
+      });
     }
 
     // Restore active tab
