@@ -164,7 +164,16 @@ fn detect_container_profiles() -> Vec<Profile> {
 impl Config {
   /// Get the background opacity clamped to valid range [0.0, 1.0]
   pub fn get_background_opacity(&self) -> f32 {
-    self.background_opacity.clamp(0.0, 1.0)
+    #[cfg(target_os = "linux")]
+    {
+      self.background_opacity.clamp(0.0, 1.0)
+    }
+
+    // Hack
+    #[cfg(not(target_os = "linux"))]
+    {
+      (self.background_opacity / 2.0).clamp(0.0, 1.0)
+    }
   }
 
   pub fn load() -> Self {
