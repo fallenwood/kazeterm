@@ -504,6 +504,79 @@ impl MainWindow {
 
     cx.notify();
   }
+
+  /// Collect the current session state from all open tabs.
+  pub(crate) fn collect_session_data(&self, cx: &Context<Self>) -> ::config::SessionData {
+    let tabs: Vec<::config::SavedTab> = self
+      .items
+      .iter()
+      .map(|item| {
+        let working_directory = item
+          .split_container
+          .get_active_terminal()
+          .and_then(|terminal| {
+            terminal
+              .read(cx)
+              .terminal()
+              .read(cx)
+              .pty_info
+              .current
+              .as_ref()
+              .map(|info| info.cwd.to_string_lossy().to_string())
+          });
+
+        ::config::SavedTab {
+          shell_path: item.shell_path.clone(),
+          working_directory,
+          custom_title: item.custom_title.clone(),
+        }
+      })
+      .collect();
+
+    let active_tab_index = self.active_tab_ix.unwrap_or(0);
+
+    ::config::SessionData {
+      tabs,
+      active_tab_index,
+    }
+  }
+
+  /// Restore tabs from saved session data.
+  pub(crate) fn restore_session(
+    &mut self,
+    session_data: ::config::SessionData,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    for saved_tab in &session_data.tabs {
+      self.insert_new_tab_with_profile(
+        Some(&saved_tab.shell_path),
+        saved_tab.working_directory.clone(),
+        window,
+        cx,
+      );
+
+      // Apply custom title if set
+      if let Some(ref custom_title) = saved_tab.custom_title {
+        if let Some(item) = self.items.last_mut() {
+          item.custom_title = Some(custom_title.clone());
+        }
+      }
+    }
+
+    // Restore active tab
+    let active_ix = session_data
+      .active_tab_index
+      .min(self.items.len().saturating_sub(1));
+    if !self.items.is_empty() {
+      self.set_active_tab(active_ix, window, cx);
+    }
+
+    // Clean up the session file after successful restore
+    if let Err(e) = ::config::SessionData::delete() {
+      tracing::warn!("Failed to delete session file after restore: {}", e);
+    }
+  }
 }
 
 pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -> Option<PathBuf> {

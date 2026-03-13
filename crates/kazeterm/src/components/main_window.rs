@@ -6,6 +6,7 @@ use gpui_component::Size;
 use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
 use crate::components::search_bar::SearchBar;
+use crate::components::session_restore_error_dialog::SessionRestoreErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
 
@@ -47,6 +48,9 @@ pub struct MainWindow {
   pub(crate) _about_dialog_subscription: Option<gpui::Subscription>,
   /// Tracks the last time an OS notification was sent, for throttling.
   pub(crate) last_notification_time: Option<std::time::Instant>,
+  /// Session restore error dialog state
+  pub(crate) session_restore_error_dialog: Option<Entity<SessionRestoreErrorDialog>>,
+  pub(crate) _session_restore_error_subscription: Option<gpui::Subscription>,
 }
 
 impl MainWindow {
@@ -105,8 +109,29 @@ impl MainWindow {
       about_dialog: None,
       _about_dialog_subscription: None,
       last_notification_time: None,
+      session_restore_error_dialog: None,
+      _session_restore_error_subscription: None,
     };
-    main_window.insert_new_tab(window, cx);
+
+    let config = cx.global::<::config::Config>();
+    if config.restore_sessions {
+      match ::config::SessionData::load() {
+        Ok(Some(session_data)) => {
+          main_window.restore_session(session_data, window, cx);
+        }
+        Ok(None) => {
+          // No session file, start with a default tab
+          main_window.insert_new_tab(window, cx);
+        }
+        Err(e) => {
+          tracing::error!("Failed to restore session: {}", e);
+          main_window.show_session_restore_error(e.to_string(), window, cx);
+        }
+      }
+    } else {
+      main_window.insert_new_tab(window, cx);
+    }
+
     main_window
   }
 }

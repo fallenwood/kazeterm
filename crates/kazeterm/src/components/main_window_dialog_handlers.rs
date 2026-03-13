@@ -3,6 +3,9 @@ use gpui::{AppContext, Context, Entity, Window};
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
+use crate::components::session_restore_error_dialog::{
+  SessionRestoreErrorDialog, SessionRestoreErrorEvent,
+};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
 
 impl MainWindow {
@@ -83,6 +86,15 @@ impl MainWindow {
   ) {
     match event {
       CloseConfirmEvent::Confirm => {
+        // Save sessions if enabled
+        let config = cx.global::<::config::Config>();
+        if config.restore_sessions {
+          let session_data = self.collect_session_data(cx);
+          if let Err(e) = session_data.save() {
+            tracing::error!("Failed to save session: {}", e);
+          }
+        }
+
         // User confirmed, close the window
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
@@ -139,5 +151,53 @@ impl MainWindow {
   /// Helper to refocus the active terminal after closing dialogs
   pub fn refocus_active_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.focus_active_terminal(window, cx);
+  }
+
+  /// Show session restore error dialog
+  pub fn show_session_restore_error(
+    &mut self,
+    error_message: String,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let dialog =
+      cx.new(|cx| SessionRestoreErrorDialog::new(error_message, window, cx));
+    let subscription =
+      cx.subscribe_in(&dialog, window, Self::on_session_restore_error_event);
+
+    self.session_restore_error_dialog = Some(dialog);
+    self._session_restore_error_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  pub(crate) fn on_session_restore_error_event(
+    &mut self,
+    _dialog: &Entity<SessionRestoreErrorDialog>,
+    event: &SessionRestoreErrorEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    match event {
+      SessionRestoreErrorEvent::RemoveAndStartFresh => {
+        // Delete the session file and start with a default tab
+        if let Err(e) = ::config::SessionData::delete() {
+          tracing::error!("Failed to delete session file: {}", e);
+        }
+        self.session_restore_error_dialog = None;
+        self._session_restore_error_subscription = None;
+        self.insert_new_tab(window, cx);
+      }
+      SessionRestoreErrorEvent::KeepAndExit => {
+        // Leave the session file untouched, close the app
+        self.session_restore_error_dialog = None;
+        self._session_restore_error_subscription = None;
+        window.remove_window();
+      }
+    }
+  }
+
+  /// Check if session restore error dialog is currently showing
+  pub fn is_session_restore_error_visible(&self) -> bool {
+    self.session_restore_error_dialog.is_some()
   }
 }

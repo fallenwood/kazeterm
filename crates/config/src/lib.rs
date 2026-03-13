@@ -5,6 +5,9 @@ use std::path::PathBuf;
 pub mod palette;
 pub use palette::Palette;
 
+mod session;
+pub use session::{SavedTab, SessionData};
+
 mod ssh;
 pub use ssh::get_ssh_hosts;
 
@@ -77,6 +80,10 @@ pub struct Config {
   /// Prevents notification spam when many bells fire in quick succession.
   /// Set to 0 to allow every notification. Default is 5 seconds.
   pub notification_interval_secs: u64,
+  /// Restore terminal sessions (tabs, working directories) from the previous run.
+  /// When enabled, sessions are saved on close and restored on next launch.
+  /// Disabled by default.
+  pub restore_sessions: bool,
 }
 
 impl Default for Config {
@@ -106,6 +113,7 @@ impl Default for Config {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 5,
+      restore_sessions: false,
     }
   }
 }
@@ -477,6 +485,7 @@ mod tests {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 5,
+      restore_sessions: false,
     };
 
     // get_profile

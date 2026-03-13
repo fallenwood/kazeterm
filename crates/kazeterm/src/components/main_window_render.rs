@@ -519,6 +519,13 @@ impl Render for MainWindow {
             } else {
               this
             }
+          })
+          .when(self.session_restore_error_dialog.is_some(), |this| {
+            if let Some(dialog) = &self.session_restore_error_dialog {
+              this.child(dialog.clone())
+            } else {
+              this
+            }
           });
 
         if vertical_tabs {
