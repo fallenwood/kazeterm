@@ -11,7 +11,10 @@ use windows::Win32::{Foundation::HANDLE, System::Threading::GetProcessId};
 use sysinfo::{Pid, Process, ProcessRefreshKind, RefreshKind, System, UpdateKind};
 
 pub struct ProcessIdGetter {
+  #[cfg(unix)]
   handle: i32,
+  #[cfg(windows)]
+  handle: isize,
   fallback_pid: u32,
 }
 
@@ -47,7 +50,7 @@ impl ProcessIdGetter {
       .unwrap_or_else(|| unsafe { NonZeroU32::new_unchecked(GetProcessId(HANDLE(handle as _))) });
 
     ProcessIdGetter {
-      handle: handle as i32,
+      handle: handle as isize,
       fallback_pid: u32::from(fallback_pid),
     }
   }
@@ -123,18 +126,25 @@ impl PtyProcessInfo {
 
   fn load(&mut self) -> Option<ProcessInfo> {
     let process = self.refresh()?;
-    let cwd = process.cwd().map_or(PathBuf::new(), |p| p.to_owned());
+    let fresh_cwd = process.cwd().map(|p| p.to_owned());
+    let name = process.name().to_str()?.to_owned();
+    let argv: Vec<String> = process
+      .cmd()
+      .iter()
+      .filter_map(|s| s.to_str().map(ToOwned::to_owned))
+      .collect();
 
-    let info = ProcessInfo {
-      name: process.name().to_str()?.to_owned(),
-      cwd,
-      argv: process
-        .cmd()
-        .iter()
-        .filter_map(|s| s.to_str().map(ToOwned::to_owned))
-        .collect(),
+    // If sysinfo returned an empty/missing CWD, preserve the previously cached CWD
+    let cwd = match fresh_cwd {
+      Some(p) if !p.as_os_str().is_empty() => p,
+      _ => self
+        .current
+        .as_ref()
+        .map(|c| c.cwd.clone())
+        .unwrap_or_default(),
     };
-    Some(info)
+
+    Some(ProcessInfo { name, cwd, argv })
   }
 
   /// Updates the cached process info, returns whether the Zed-relevant info has changed
@@ -143,12 +153,33 @@ impl PtyProcessInfo {
     let has_changed = match (&self.current, &new_info) {
       (None, None) => false,
       (Some(prev), Some(now)) => prev.cwd != now.cwd || prev.name != now.name,
-      _ => true,
+      (None, Some(_)) => true,
+      // Don't discard existing info when refresh temporarily fails
+      (Some(_), None) => false,
     };
     if has_changed {
       self.current = new_info;
     }
     has_changed
+  }
+
+  /// Force a CWD refresh and return the best known working directory.
+  /// Tries a fresh sysinfo read first, falls back to the cached value.
+  pub fn current_cwd(&mut self) -> Option<PathBuf> {
+    // Try fresh load
+    if let Some(info) = self.load() {
+      if !info.cwd.as_os_str().is_empty() {
+        let cwd = info.cwd.clone();
+        self.current = Some(info);
+        return Some(cwd);
+      }
+    }
+    // Fall back to cached
+    self
+      .current
+      .as_ref()
+      .map(|c| c.cwd.clone())
+      .filter(|p| !p.as_os_str().is_empty())
   }
 
   /// Refreshes and returns the current process name

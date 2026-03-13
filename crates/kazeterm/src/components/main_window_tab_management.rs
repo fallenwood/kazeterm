@@ -517,14 +517,11 @@ impl MainWindow {
           .get_active_terminal()
           .and_then(|terminal_view| {
             let inner = terminal_view.read(cx).terminal().clone();
-            // Force refresh pty info to get the latest CWD
             inner.update(cx, |term, _| {
-              term.pty_info.has_changed();
               term
                 .pty_info
-                .current
-                .as_ref()
-                .map(|info| info.cwd.to_string_lossy().to_string())
+                .current_cwd()
+                .map(|p| p.to_string_lossy().to_string())
             })
           });
 
