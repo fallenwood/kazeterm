@@ -18,10 +18,10 @@ pub fn set_macos_app_icon() {
     if ns_data.is_null() {
       return;
     }
-    let ns_image: *mut objc::runtime::Object = msg_send![
-      msg_send![class!(NSImage), alloc],
-      initWithData: ns_data
-    ];
+    let ns_image_alloc: *mut objc::runtime::Object =
+      msg_send![class!(NSImage), alloc];
+    let ns_image: *mut objc::runtime::Object =
+      msg_send![ns_image_alloc, initWithData: ns_data];
     if ns_image.is_null() {
       return;
     }

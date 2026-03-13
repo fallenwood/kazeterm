@@ -289,12 +289,85 @@ impl MainWindow {
 
   fn send_bell_notification(tab_title: Option<String>) {
     std::thread::spawn(move || {
-      let title = tab_title.as_deref().unwrap_or("Terminal");
-      let _ = notify_rust::Notification::new()
-        .summary("Kazeterm")
-        .body(&format!("{title}"))
-        .show();
+      let body = tab_title.as_deref().unwrap_or("Terminal");
+      #[cfg(target_os = "macos")]
+      {
+        // Bypass notify-rust on macOS to avoid the "select application" dialog
+        // caused by mac-notification-sys. Use NSUserNotificationCenter via objc,
+        // falling back to osascript if the (deprecated) class is unavailable.
+        if !Self::send_notification_native(body) {
+          Self::send_notification_osascript(body);
+        }
+      }
+      #[cfg(not(target_os = "macos"))]
+      {
+        let _ = notify_rust::Notification::new()
+          .summary("Kazeterm")
+          .body(&format!("{body}"))
+          .show();
+      }
     });
+  }
+
+  #[cfg(target_os = "macos")]
+  fn send_notification_native(body: &str) -> bool {
+    use objc::runtime::Class;
+
+    unsafe {
+      let Some(_) = Class::get("NSUserNotification") else {
+        return false;
+      };
+
+      let notification: *mut objc::runtime::Object =
+        msg_send![class!(NSUserNotification), new];
+      if notification.is_null() {
+        return false;
+      }
+
+      let title_bytes = "Kazeterm";
+      let title_ns: *mut objc::runtime::Object =
+        msg_send![class!(NSString), alloc];
+      let title_ns: *mut objc::runtime::Object = msg_send![
+        title_ns,
+        initWithBytes: title_bytes.as_ptr()
+        length: title_bytes.len()
+        encoding: 4usize // NSUTF8StringEncoding
+      ];
+
+      let body_ns: *mut objc::runtime::Object =
+        msg_send![class!(NSString), alloc];
+      let body_ns: *mut objc::runtime::Object = msg_send![
+        body_ns,
+        initWithBytes: body.as_ptr()
+        length: body.len()
+        encoding: 4usize
+      ];
+
+      let _: () = msg_send![notification, setTitle: title_ns];
+      let _: () = msg_send![notification, setInformativeText: body_ns];
+
+      let center: *mut objc::runtime::Object = msg_send![
+        class!(NSUserNotificationCenter),
+        defaultUserNotificationCenter
+      ];
+      if center.is_null() {
+        return false;
+      }
+      let _: () =
+        msg_send![center, deliverNotification: notification];
+      true
+    }
+  }
+
+  #[cfg(target_os = "macos")]
+  fn send_notification_osascript(body: &str) {
+    let escaped = body.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+      r#"display notification "{escaped}" with title "Kazeterm""#
+    );
+    let _ = std::process::Command::new("osascript")
+      .args(["-e", &script])
+      .output();
   }
 
   pub(crate) fn play_bell_sound(&self) {
