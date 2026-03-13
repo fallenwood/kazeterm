@@ -3193,6 +3193,7 @@ dependencies = [
  "which 7.0.3",
  "windows 0.61.3",
  "winresource",
+ "x11rb",
 ]
 
 [[package]]

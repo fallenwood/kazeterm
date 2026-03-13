@@ -85,6 +85,32 @@ cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.inf
 
 This produces `coverage/lcov.info`.
 
+## File Paths
+
+### Configuration
+
+| Platform | Path |
+|----------|------|
+| Windows  | `%APPDATA%\kazeterm\kazeterm.toml` |
+| Linux/macOS    | `~/.config/kazeterm/kazeterm.toml` |
+
+### Custom Themes
+
+| Platform | Path |
+|----------|------|
+| Windows  | `%APPDATA%\kazeterm\themes\` |
+| Linux/macOS    | `~/.config/kazeterm/themes/` |
+
+### Desktop Integration (Linux)
+
+On first launch, KazeTerm installs icon and desktop entry files for window manager / compositor icon display:
+
+| File | Path |
+|------|------|
+| Desktop entry | `~/.local/share/applications/kazeterm.desktop` |
+| SVG icon      | `~/.local/share/icons/hicolor/scalable/apps/kazeterm.svg` |
+| PNG icons     | `~/.local/share/icons/hicolor/{size}x{size}/apps/kazeterm.png` (256, 128, 64, 48) |
+
 ## License
 
 - Some code is derived from Zed; this code inherits Zed's GPL-v3 license.

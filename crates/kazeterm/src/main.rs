@@ -17,6 +17,7 @@ use crate::assets::Assets;
 use crate::event_system::EventSourceConfig;
 use ::config::Config;
 
+mod app_icon;
 mod assets;
 mod components;
 mod config;
@@ -198,6 +199,15 @@ fn main() {
     // Start config and theme hot reload watcher
     config_watcher::start_config_watcher(cx);
 
+    // Set macOS Dock icon from embedded PNG
+    #[cfg(target_os = "macos")]
+    app_icon::set_macos_app_icon();
+
+    // Install icon + .desktop file so Wayland compositors and X11 WMs can
+    // resolve the app icon from the app_id / WM_CLASS.
+    #[cfg(target_os = "linux")]
+    app_icon::install_linux_desktop_icon();
+
     let window_width = config.window_width;
     let window_height = config.window_height;
     let background_opacity = config.get_background_opacity();
@@ -228,6 +238,7 @@ fn main() {
         }),
         window_decorations: Some(gpui::WindowDecorations::Client),
         window_background,
+        app_id: Some("kazeterm".into()),
         ..Default::default()
       };
 
@@ -266,6 +277,10 @@ fn main() {
             }
           }
         }
+
+        // Set X11 window icon from embedded PNG
+        #[cfg(target_os = "linux")]
+        app_icon::set_x11_window_icon(window);
 
         // Initialize the event system with a weak reference to the main window
         let main_window_weak = view.downgrade();
