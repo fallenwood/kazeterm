@@ -308,15 +308,19 @@ impl MainWindow {
         }
       });
     }
+
     #[cfg(target_os = "macos")]
     {
-      std::thread::spawn(|| {
-        use objc::{class, msg_send, sel, sel_impl};
-        unsafe {
-          let _: () = msg_send![class!(NSSound), beep];
-        }
-      });
+      #[link(name = "AudioToolbox", kind = "framework")]
+      unsafe extern "C" {
+        fn AudioServicesPlayAlertSound(inSystemSoundID: u32);
+      }
+      // kSystemSoundID_UserPreferredAlert plays the user's preferred alert sound
+      unsafe {
+        AudioServicesPlayAlertSound(0x00001000);
+      }
     }
+
     #[cfg(target_os = "linux")]
     {
       std::thread::spawn(|| {
