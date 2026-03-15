@@ -10,5 +10,6 @@ pub use command::{
 };
 pub use parser::KittyParser;
 pub use placement::PlacementManager;
+#[cfg(unix)]
 pub use pty_filter::GraphicsPtyFilter;
 pub use storage::KittyImageStorage;
