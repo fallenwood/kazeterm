@@ -236,6 +236,8 @@ pub struct RawGraphicsCommand {
   pub cursor_line: i32,
   /// Column number when APC was intercepted.
   pub cursor_column: i32,
+  /// When true, signals that all images should be cleared (terminal reset/clear).
+  pub clear_all: bool,
 }
 
 /// A placement that's been resolved for the current viewport with its image data.

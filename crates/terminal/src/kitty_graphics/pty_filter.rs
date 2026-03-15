@@ -197,6 +197,7 @@ mod unix {
                   data: cmd_data,
                   cursor_line,
                   cursor_column,
+                  clear_all: false,
                 });
               }
               self.apc_buf.clear();
@@ -209,6 +210,22 @@ mod unix {
             }
           }
         }
+      }
+
+      // Detect terminal clear/reset sequences in pass-through bytes.
+      // ESC[2J (erase display), ESC[3J (erase display+scrollback), ESC c (RIS).
+      let has_clear = self
+        .pending
+        .windows(4)
+        .any(|w| w == b"\x1b[2J" || w == b"\x1b[3J")
+        || self.pending.windows(2).any(|w| w == b"\x1bc");
+      if has_clear {
+        let _ = self.graphics_tx.send(RawGraphicsCommand {
+          data: Vec::new(),
+          cursor_line: 0,
+          cursor_column: 0,
+          clear_all: true,
+        });
       }
 
       if self.pending.is_empty() {

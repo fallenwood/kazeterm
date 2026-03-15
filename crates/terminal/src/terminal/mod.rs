@@ -196,6 +196,11 @@ impl Terminal {
 
     let mut responses = Vec::new();
     for raw_cmd in raw_commands {
+      if raw_cmd.clear_all {
+        self.placement_manager.clear();
+        self.image_storage.clear();
+        continue;
+      }
       let cursor_line = raw_cmd.cursor_line;
       let cursor_column = raw_cmd.cursor_column;
       if let Some(cmd) = self.graphics_parser.parse(&raw_cmd.data) {
