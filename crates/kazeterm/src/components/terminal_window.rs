@@ -71,8 +71,9 @@ fn new_terminal(
 
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
-    // Keep original PTY alive — its master fd is shared via dup'd copies.
-    std::mem::forget(pty);
+    // Drop original Pty — dup'd fds keep the PTY master alive.
+    // This also deregisters the SIGCHLD handler installed by alacritty.
+    drop(pty);
 
     (pty_tx, pty_info, Some(graphics_rx))
   };

@@ -4,6 +4,30 @@
 //! This module provides a transparent PTY wrapper that intercepts `\x1b_G...\x1b\\`
 //! sequences before they reach the VTE parser, extracts graphics commands, and
 //! passes remaining bytes through to alacritty.
+//!
+//! ## Architecture
+//!
+//! The filter uses a pipe to decouple PTY reads from the EventLoop:
+//!
+//! ```text
+//!   PTY master (non-blocking, shared via dup)
+//!       │                              ▲
+//!       │ read                         │ write (user input)
+//!       ▼                              │
+//!   Filter Thread ──► Pipe ──► EventLoop (read_file)
+//!       │                              │
+//!       ▼                        write_file (PTY master dup)
+//!   Graphics Channel
+//! ```
+//!
+//! Key subtlety: alacritty sets the PTY master fd to `O_NONBLOCK`. Since `dup()`
+//! shares the file description, our duped fds are also non-blocking. The filter
+//! thread handles this with `poll(2)` to wait for data.
+//!
+//! The EventLoop expects a single poll token for both reads and writes. Since our
+//! read path (pipe) and write path (PTY master) use different fds, we register
+//! them separately with the same epoll key — reads from the pipe, writes to the
+//! PTY master.
 
 #[cfg(unix)]
 mod unix {
@@ -42,19 +66,24 @@ mod unix {
   /// Implements `EventedReadWrite` and `EventedPty` so it can be used as a
   /// drop-in replacement for alacritty's Pty in the EventLoop.
   pub struct GraphicsPtyFilter {
+    /// Pipe read end — the EventLoop reads filtered PTY output from here.
     read_file: File,
+    /// PTY master dup — the EventLoop writes user input here.
     write_file: File,
+    /// Pipe read end for child exit notification.
     child_event_file: File,
     child_pid: u32,
+    /// Whether write_file is currently registered with the Poller.
+    write_registered: bool,
     _filter_handle: JoinHandle<()>,
   }
 
   impl GraphicsPtyFilter {
     /// Create a graphics-filtering PTY wrapper from an alacritty Pty.
     ///
-    /// This extracts the master fd, sets up filter plumbing, and spawns
-    /// the filter thread. The original Pty is consumed (dropped after
-    /// fd extraction — duped fds keep the PTY alive).
+    /// This dups the master fd, sets up filter plumbing, and spawns
+    /// the filter thread. The caller should drop the original Pty after
+    /// this — duped fds keep the PTY alive.
     ///
     /// Returns `(filter, graphics_rx)`.
     pub fn new(
@@ -102,18 +131,12 @@ mod unix {
 
       // Channel for extracted graphics commands.
       let (graphics_tx, graphics_rx) = mpsc::channel();
-      let filter_graphics_tx = graphics_tx.clone();
 
       // Spawn filter thread.
       let filter_handle = std::thread::Builder::new()
         .name("kitty-graphics-filter".into())
         .spawn(move || {
-          filter_thread_main(
-            read_dup,
-            pipe_write_fd,
-            child_event_write_fd,
-            filter_graphics_tx,
-          );
+          filter_thread_main(read_dup, pipe_write_fd, child_event_write_fd, graphics_tx);
         })
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
@@ -133,6 +156,7 @@ mod unix {
           write_file,
           child_event_file,
           child_pid,
+          write_registered: false,
           _filter_handle: filter_handle,
         },
         graphics_rx,
@@ -160,9 +184,16 @@ mod unix {
       interest: Event,
       poll_mode: PollMode,
     ) -> io::Result<()> {
-      // Register the filtered output pipe for read/write events.
+      // Register pipe read end for readable events (never writable — it's a pipe).
       unsafe {
-        poll.add_with_mode(&self.read_file, interest, poll_mode)?;
+        poll.add_with_mode(&self.read_file, Event::readable(interest.key), poll_mode)?;
+      }
+      // Register PTY master dup for writable events if needed.
+      if interest.writable {
+        unsafe {
+          poll.add_with_mode(&self.write_file, Event::writable(interest.key), poll_mode)?;
+        }
+        self.write_registered = true;
       }
       // Register the child event pipe for child exit notification.
       unsafe {
@@ -180,16 +211,38 @@ mod unix {
       interest: Event,
       poll_mode: PollMode,
     ) -> io::Result<()> {
-      poll.modify_with_mode(&self.read_file, interest, poll_mode)?;
-      poll.modify_with_mode(
-        &self.child_event_file,
-        Event::readable(PTY_CHILD_EVENT_TOKEN),
-        PollMode::Level,
-      )
+      // Pipe read end always stays readable-only.
+      poll.modify_with_mode(&self.read_file, Event::readable(interest.key), poll_mode)?;
+      // Toggle write fd registration based on write interest.
+      match (interest.writable, self.write_registered) {
+        (true, false) => {
+          unsafe {
+            poll.add_with_mode(&self.write_file, Event::writable(interest.key), poll_mode)?;
+          }
+          self.write_registered = true;
+        }
+        (false, true) => {
+          poll.delete(&self.write_file)?;
+          self.write_registered = false;
+        }
+        (true, true) => {
+          poll.modify_with_mode(
+            &self.write_file,
+            Event::writable(interest.key),
+            poll_mode,
+          )?;
+        }
+        (false, false) => {}
+      }
+      Ok(())
     }
 
     fn deregister(&mut self, poll: &Arc<Poller>) -> io::Result<()> {
       poll.delete(&self.read_file)?;
+      if self.write_registered {
+        poll.delete(&self.write_file)?;
+        self.write_registered = false;
+      }
       poll.delete(&self.child_event_file)
     }
 
@@ -247,10 +300,31 @@ mod unix {
     }
   }
 
+  /// Block until `fd` becomes readable using `poll(2)`.
+  fn wait_for_readable(fd: RawFd) {
+    let mut pfd = libc::pollfd {
+      fd,
+      events: libc::POLLIN,
+      revents: 0,
+    };
+    loop {
+      let ret = unsafe { libc::poll(&mut pfd, 1, -1) };
+      if ret >= 0 {
+        break;
+      }
+      if io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+        break;
+      }
+    }
+  }
+
   /// The filter thread's main function.
   ///
   /// Reads raw bytes from the PTY master, scans for APC graphics sequences,
   /// sends them to the graphics channel, and writes remaining bytes to the pipe.
+  ///
+  /// The PTY master fd is non-blocking (set by alacritty), so we use `poll(2)`
+  /// to wait for data when `read()` returns `WouldBlock`.
   fn filter_thread_main(
     pty_read_fd: RawFd,
     pipe_write_fd: RawFd,
@@ -275,6 +349,11 @@ mod unix {
         }
         Ok(n) => n,
         Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+          // PTY master fd is non-blocking; wait for data with poll(2).
+          wait_for_readable(pty_read_fd);
+          continue;
+        }
         Err(_) => {
           let _ = (&child_event_write).write_all(&[1]);
           break;
