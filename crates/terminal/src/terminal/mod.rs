@@ -4,7 +4,7 @@ use crate::{
   TerminalBounds, indexed_cell::IndexedCell,
   kitty_graphics::{
     ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
-    KittyResponse, PlacementManager, RawGraphicsCommand,
+    PlacementManager, RawGraphicsCommand,
   },
   mouse::grid_point_and_side,
   pty_info::PtyProcessInfo,
@@ -198,7 +198,6 @@ impl Terminal {
       }
     }
 
-    let mut responses = Vec::new();
     for raw_cmd in raw_commands {
       if raw_cmd.clear_all {
         self.placement_manager.clear();
@@ -208,19 +207,13 @@ impl Terminal {
       let cursor_line = raw_cmd.cursor_line;
       let cursor_column = raw_cmd.cursor_column;
       if let Some(cmd) = self.graphics_parser.parse(&raw_cmd.data) {
-        let response = self.execute_graphics_command(&cmd, cursor_line, cursor_column);
-        if let Some(resp) = response {
-          if cmd.quiet == 0 || (cmd.quiet == 1 && !resp.ok) {
-            responses.push(resp);
-          }
-        }
+        self.execute_graphics_command(&cmd, cursor_line, cursor_column);
       }
     }
-
-    // Send responses back through the PTY.
-    for resp in responses {
-      self.write_to_pty(resp.encode());
-    }
+    // Note: Kitty protocol responses are intentionally NOT sent back.
+    // Our architecture intercepts APC on the read side, so write_to_pty
+    // would send responses to the shell's stdin (appearing as typed text).
+    // Tools like kitten icat use q=2 (suppress all) and handle timeouts.
   }
 
   fn execute_graphics_command(
@@ -228,42 +221,28 @@ impl Terminal {
     cmd: &KittyCommand,
     cursor_line: i32,
     cursor_column: i32,
-  ) -> Option<KittyResponse> {
+  ) {
     match cmd.action {
       KittyAction::Transmit => {
-        match self.image_storage.store(cmd) {
-          Ok(id) => Some(KittyResponse::ok(id)),
-          Err(msg) => Some(KittyResponse::error(cmd.image_id, msg)),
-        }
+        let _ = self.image_storage.store(cmd);
       }
       KittyAction::TransmitAndDisplay => {
-        match self.image_storage.store(cmd) {
-          Ok(id) => {
-            self.place_image(id, cmd, cursor_line, cursor_column);
-            Some(KittyResponse::ok(id))
-          }
-          Err(msg) => Some(KittyResponse::error(cmd.image_id, msg)),
+        if let Ok(id) = self.image_storage.store(cmd) {
+          self.place_image(id, cmd, cursor_line, cursor_column);
         }
       }
       KittyAction::Display => {
         let image_id = cmd.image_id;
         if self.image_storage.get(image_id).is_some() {
           self.place_image(image_id, cmd, cursor_line, cursor_column);
-          Some(KittyResponse::ok_with_placement(
-            image_id,
-            cmd.placement_id,
-          ))
-        } else {
-          Some(KittyResponse::error(image_id, "Image not found"))
         }
       }
       KittyAction::Delete => {
         self.handle_delete(cmd);
-        None
       }
       KittyAction::Query => {
-        // Respond with OK to indicate we support the Kitty graphics protocol.
-        Some(KittyResponse::ok(cmd.image_id))
+        // We support the protocol but can't send responses back
+        // without them leaking to the shell's stdin.
       }
     }
   }
