@@ -123,4 +123,5 @@ pub struct LayoutState {
   minimap_state: Option<MinimapState>,
   minimap_bounds: Option<gpui::Bounds<Pixels>>,
   minimap_cells: Vec<crate::indexed_cell::IndexedCell>,
+  image_placements: Vec<crate::kitty_graphics::VisiblePlacement>,
 }

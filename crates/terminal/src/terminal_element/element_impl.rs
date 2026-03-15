@@ -164,8 +164,10 @@ impl Element for TerminalElement {
           current_search_match_index,
           last_hovered_word,
           history_size,
+          image_placements,
           ..
         } = &self.terminal.read(cx).last_content;
+        let image_placements = image_placements.clone();
 
         let mode = *mode;
         let display_offset = *display_offset;
@@ -322,6 +324,7 @@ impl Element for TerminalElement {
           minimap_state,
           minimap_bounds,
           minimap_cells,
+          image_placements,
         }
       },
     )
@@ -381,6 +384,28 @@ impl Element for TerminalElement {
 
           for rect in &layout.rects {
             rect.paint(origin, &layout.dimensions, window);
+          }
+
+          // Paint Kitty graphics images (behind text, after backgrounds).
+          for placement in &layout.image_placements {
+            let x = origin.x
+              + placement.column as f32 * layout.dimensions.cell_width
+              + gpui::px(placement.x_offset as f32);
+            let y = origin.y
+              + placement.viewport_line as f32 * layout.dimensions.line_height
+              + gpui::px(placement.y_offset as f32);
+            let w = placement.width_cells as f32 * layout.dimensions.cell_width;
+            let h = placement.height_cells as f32 * layout.dimensions.line_height;
+
+            let img_bounds = Bounds::new(Point::new(x, y), gpui::Size { width: w, height: h });
+
+            let _ = window.paint_image(
+              img_bounds,
+              gpui::Corners::default(),
+              placement.render_image.clone(),
+              0,
+              false,
+            );
           }
 
           for (relative_highlighted_range, color) in layout.relative_highlighted_ranges.iter() {

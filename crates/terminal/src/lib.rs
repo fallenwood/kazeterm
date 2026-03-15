@@ -6,6 +6,7 @@ mod highlighted_range_line;
 mod hover_target;
 mod ime_state;
 mod indexed_cell;
+pub mod kitty_graphics;
 mod layout_rect;
 mod mappings;
 pub mod minimap;

@@ -52,21 +52,51 @@ fn new_terminal(
 
   let pty =
     alacritty_terminal::tty::new(&pty_options, TerminalBounds::default().into(), 1).unwrap();
-  let pty_info = PtyProcessInfo::new(&pty);
 
-  let event_loop = EventLoop::new(
-    term.clone(),
-    TerminalEventListener(events_tx),
-    pty,
-    pty_options.drain_on_exit,
-    false,
-  )
-  .unwrap();
+  #[cfg(unix)]
+  let (pty_tx, pty_info, graphics_rx) = {
+    use terminal::kitty_graphics::GraphicsPtyFilter;
 
-  let pty_tx = event_loop.channel();
-  let _io_thread = event_loop.spawn();
+    let (filter, graphics_rx) = GraphicsPtyFilter::new(&pty).unwrap();
+    let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
-  let terminal = terminal::Terminal::new(pty_tx, term, pty_info);
+    let event_loop = EventLoop::new(
+      term.clone(),
+      TerminalEventListener(events_tx),
+      filter,
+      pty_options.drain_on_exit,
+      false,
+    )
+    .unwrap();
+
+    let pty_tx = event_loop.channel();
+    let _io_thread = event_loop.spawn();
+    // Keep original PTY alive — its master fd is shared via dup'd copies.
+    std::mem::forget(pty);
+
+    (pty_tx, pty_info, Some(graphics_rx))
+  };
+
+  #[cfg(not(unix))]
+  let (pty_tx, pty_info, graphics_rx) = {
+    let pty_info = PtyProcessInfo::new(&pty);
+
+    let event_loop = EventLoop::new(
+      term.clone(),
+      TerminalEventListener(events_tx),
+      pty,
+      pty_options.drain_on_exit,
+      false,
+    )
+    .unwrap();
+
+    let pty_tx = event_loop.channel();
+    let _io_thread = event_loop.spawn();
+
+    (pty_tx, pty_info, None)
+  };
+
+  let terminal = terminal::Terminal::new(pty_tx, term, pty_info, graphics_rx);
 
   (terminal, events_rx)
 }

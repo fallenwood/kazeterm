@@ -17,6 +17,9 @@ libc.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 tracing.workspace = true
+image.workspace = true
+base64 = "0.22"
+polling = "3"
 
 config = { path = "../config" }
 themeing = { path = "../themeing" }

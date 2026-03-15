@@ -1,8 +1,15 @@
 use std::{cmp, collections::VecDeque, process::ExitStatus, sync::Arc};
 
 use crate::{
-  TerminalBounds, indexed_cell::IndexedCell, mouse::grid_point_and_side, pty_info::PtyProcessInfo,
-  terminal_content::TerminalContent, terminal_hyperlinks::RegexSearches,
+  TerminalBounds, indexed_cell::IndexedCell,
+  kitty_graphics::{
+    ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
+    KittyResponse, PlacementManager,
+  },
+  mouse::grid_point_and_side,
+  pty_info::PtyProcessInfo,
+  terminal_content::TerminalContent,
+  terminal_hyperlinks::RegexSearches,
 };
 use alacritty_terminal::{
   Term,
@@ -73,6 +80,11 @@ pub struct Terminal {
   /// Tracks the last time the user sent input (keystrokes/paste) to the terminal.
   /// Used to determine if a bell follows a long-running command.
   pub last_input_time: std::time::Instant,
+  /// Kitty graphics protocol state.
+  graphics_rx: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
+  graphics_parser: KittyParser,
+  pub image_storage: KittyImageStorage,
+  pub placement_manager: PlacementManager,
 }
 
 impl Terminal {
@@ -80,6 +92,7 @@ impl Terminal {
     pty_tx: EventLoopSender,
     term: Arc<FairMutex<Term<TerminalEventListener>>>,
     pty_info: PtyProcessInfo,
+    graphics_rx: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
   ) -> Self {
     Self {
       pty_tx: Notifier(pty_tx),
@@ -102,6 +115,10 @@ impl Terminal {
       last_scroll_time: None,
       touch_state: None,
       last_input_time: std::time::Instant::now(),
+      graphics_rx,
+      graphics_parser: KittyParser::new(),
+      image_storage: KittyImageStorage::new(),
+      placement_manager: PlacementManager::new(),
     }
   }
 
@@ -143,12 +160,167 @@ impl Terminal {
   }
 
   pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    // Process Kitty graphics commands from the filter thread.
+    self.process_graphics_commands();
+
     let term = self.term.clone();
     let mut terminal = term.lock_unfair();
     while let Some(e) = self.events.pop_front() {
       self.process_terminal_event(&e, &mut terminal, window, cx)
     }
     self.last_content = Self::make_content(&terminal, &self.last_content);
+
+    // Collect visible image placements for rendering.
+    let history_size = terminal.history_size() as i32;
+    let display_offset = self.last_content.display_offset as i32;
+    let viewport_top = history_size - display_offset;
+    let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
+
+    self.last_content.image_placements = self.placement_manager.visible_placements(
+      &self.image_storage,
+      viewport_top,
+      viewport_lines,
+    );
+  }
+
+  fn process_graphics_commands(&mut self) {
+    // Drain all available graphics commands (non-blocking).
+    let mut raw_commands = Vec::new();
+    if let Some(rx) = &self.graphics_rx {
+      while let Ok(raw_cmd) = rx.try_recv() {
+        raw_commands.push(raw_cmd);
+      }
+    }
+
+    let mut responses = Vec::new();
+    for raw_cmd in raw_commands {
+      if let Some(cmd) = self.graphics_parser.parse(&raw_cmd) {
+        let response = self.execute_graphics_command(&cmd);
+        if let Some(resp) = response {
+          if cmd.quiet == 0 || (cmd.quiet == 1 && !resp.ok) {
+            responses.push(resp);
+          }
+        }
+      }
+    }
+
+    // Send responses back through the PTY.
+    for resp in responses {
+      self.write_to_pty(resp.encode());
+    }
+  }
+
+  fn execute_graphics_command(&mut self, cmd: &KittyCommand) -> Option<KittyResponse> {
+    match cmd.action {
+      KittyAction::Transmit => {
+        match self.image_storage.store(cmd) {
+          Ok(id) => Some(KittyResponse::ok(id)),
+          Err(msg) => Some(KittyResponse::error(cmd.image_id, msg)),
+        }
+      }
+      KittyAction::TransmitAndDisplay => {
+        match self.image_storage.store(cmd) {
+          Ok(id) => {
+            self.place_image(id, cmd);
+            Some(KittyResponse::ok(id))
+          }
+          Err(msg) => Some(KittyResponse::error(cmd.image_id, msg)),
+        }
+      }
+      KittyAction::Display => {
+        let image_id = cmd.image_id;
+        if self.image_storage.get(image_id).is_some() {
+          self.place_image(image_id, cmd);
+          Some(KittyResponse::ok_with_placement(
+            image_id,
+            cmd.placement_id,
+          ))
+        } else {
+          Some(KittyResponse::error(image_id, "Image not found"))
+        }
+      }
+      KittyAction::Delete => {
+        self.handle_delete(cmd);
+        None
+      }
+      KittyAction::Query => {
+        // Respond with OK to indicate we support the Kitty graphics protocol.
+        Some(KittyResponse::ok(cmd.image_id))
+      }
+    }
+  }
+
+  fn place_image(&mut self, image_id: u32, cmd: &KittyCommand) {
+    let term = self.term.lock_unfair();
+    let cursor = term.renderable_content().cursor;
+    let history_size = term.history_size() as i32;
+
+    // Calculate absolute grid line (including scrollback).
+    let line = history_size + cursor.point.line.0;
+    let column = cursor.point.column.0 as i32;
+
+    // Determine display size in cells.
+    let (width_cells, height_cells) = if cmd.display_columns > 0 && cmd.display_rows > 0 {
+      (cmd.display_columns, cmd.display_rows)
+    } else if let Some(img) = self.image_storage.peek(image_id) {
+      // Auto-calculate from image dimensions and cell size.
+      let bounds = &self.last_content.terminal_bounds;
+      let cw = f32::from(bounds.cell_width().max(gpui::px(1.0))) as u32;
+      let lh = f32::from(bounds.line_height().max(gpui::px(1.0))) as u32;
+      let w = (img.width + cw - 1) / cw;
+      let h = (img.height + lh - 1) / lh;
+      (w.max(1), h.max(1))
+    } else {
+      (1, 1)
+    };
+
+    self.placement_manager.add(ImagePlacement {
+      image_id,
+      placement_id: cmd.placement_id,
+      line,
+      column,
+      width_cells,
+      height_cells,
+      crop: (cmd.crop_x, cmd.crop_y, cmd.crop_width, cmd.crop_height),
+      z_index: cmd.z_index,
+      x_offset: cmd.x_offset,
+      y_offset: cmd.y_offset,
+    });
+  }
+
+  fn handle_delete(&mut self, cmd: &KittyCommand) {
+    let delete = cmd.delete.as_ref().cloned().unwrap_or(KittyDelete::All);
+    match delete {
+      KittyDelete::All => {
+        self.placement_manager.clear();
+        self.image_storage.clear();
+      }
+      KittyDelete::ById {
+        image_id: _,
+        placement_id,
+      } => {
+        let id = cmd.image_id;
+        self.placement_manager.remove_by_id(id, placement_id);
+        if placement_id.is_none() {
+          self.image_storage.remove(id);
+        }
+      }
+      KittyDelete::AtCursor => {
+        let term = self.term.lock_unfair();
+        let cursor = term.renderable_content().cursor;
+        let history_size = term.history_size() as i32;
+        let line = history_size + cursor.point.line.0;
+        let col = cursor.point.column.0 as i32;
+        self.placement_manager.remove_at_cursor(line, col);
+      }
+      KittyDelete::ByZIndex(_) | KittyDelete::AtColumn(_) | KittyDelete::AtRow(_) => {
+        // Simplified: just remove all for these advanced cases.
+        self.placement_manager.clear();
+      }
+      KittyDelete::AnimationFrames => {
+        // Not supported in MVP.
+      }
+    }
   }
 
   fn make_content(
@@ -186,6 +358,7 @@ impl Terminal {
       scrolled_to_bottom: content.display_offset == 0,
       search_matches: last_content.search_matches.clone(),
       current_search_match_index: last_content.current_search_match_index,
+      image_placements: Vec::new(),
     }
   }
 
