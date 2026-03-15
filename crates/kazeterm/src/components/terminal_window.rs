@@ -29,6 +29,20 @@ fn new_terminal(
   env.insert("TERM".to_string(), "xterm-256color".to_string());
   env.insert("COLORTERM".to_string(), "truecolor".to_string());
 
+  #[cfg(windows)]
+  let graphics_pipe_name = {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = format!(
+      "\\\\.\\pipe\\kazeterm-graphics-{}-{}",
+      std::process::id(),
+      id
+    );
+    env.insert("KAZETERM_GRAPHICS_PIPE".to_string(), name.clone());
+    name
+  };
+
   let (events_tx, events_rx) = unbounded();
 
   let term = Term::new(
@@ -87,14 +101,51 @@ fn new_terminal(
     (pty_tx, pty_info, Some(graphics_rx), Some(pending_cnl))
   };
 
-  #[cfg(not(unix))]
+  #[cfg(windows)]
   let (pty_tx, pty_info, graphics_rx, pending_cnl) = {
-    let pty_info = PtyProcessInfo::new(&pty);
+    use terminal::kitty_graphics::GraphicsPtyFilter;
+
+    let (graphics_tx, graphics_rx) = std::sync::mpsc::channel();
+    let pending_cnl = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+    // Start named pipe server for graphics (bypasses ConPTY's APC stripping).
+    let term_for_pipe = term.clone();
+    let pipe_cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> =
+      Box::new(move || {
+        let t = term_for_pipe.try_lock_unfair()?;
+        let cursor = t.grid().cursor.point;
+        let hs = t.history_size() as i32;
+        Some((hs + cursor.line.0, cursor.column.0 as i32))
+      });
+    terminal::kitty_graphics::graphics_pipe::start_server(
+      graphics_pipe_name,
+      graphics_tx.clone(),
+      pipe_cursor_fn,
+      pending_cnl.clone(),
+    );
+
+    // Wrap PTY with full APC filter. When ConPTY passes APC through, the
+    // filter intercepts it (accurate cursor position + inline CNL injection).
+    // When ConPTY strips APC, only the pipe provides commands.
+    // Both share the same channel; Terminal deduplicates via from_filter flag.
+    let term_for_filter = term.clone();
+    let filter_cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> =
+      Box::new(move || {
+        let t = term_for_filter.try_lock_unfair()?;
+        let cursor = t.grid().cursor.point;
+        let hs = t.history_size() as i32;
+        Some((hs + cursor.line.0, cursor.column.0 as i32))
+      });
+    let filter =
+      GraphicsPtyFilter::new_shared(pty, filter_cursor_fn, graphics_tx, pending_cnl.clone())
+        .unwrap();
+
+    let pty_info = PtyProcessInfo::from_raw(filter.child_handle(), filter.child_pid());
 
     let event_loop = EventLoop::new(
       term.clone(),
       TerminalEventListener(events_tx),
-      pty,
+      filter,
       pty_options.drain_on_exit,
       false,
     )
@@ -103,7 +154,7 @@ fn new_terminal(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, None, None)
+    (pty_tx, pty_info, Some(graphics_rx), Some(pending_cnl))
   };
 
   let terminal = terminal::Terminal::new(pty_tx, term, pty_info, graphics_rx, pending_cnl);

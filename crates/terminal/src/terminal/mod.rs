@@ -198,16 +198,26 @@ impl Terminal {
       }
     }
 
+    // On Windows both the PTY filter and the graphics pipe may send the same
+    // command. Filter commands have accurate cursor position; pipe commands
+    // are a fallback for when ConPTY strips APC. If any filter command is
+    // present, skip pipe-sourced duplicates.
+    let has_filter_cmd = raw_commands.iter().any(|c| c.from_filter && !c.clear_all);
+
     for raw_cmd in raw_commands {
       if raw_cmd.clear_all {
         self.placement_manager.clear();
         self.image_storage.clear();
         continue;
       }
+      if has_filter_cmd && !raw_cmd.from_filter {
+        continue;
+      }
       let cursor_line = raw_cmd.cursor_line;
       let cursor_column = raw_cmd.cursor_column;
+      let from_filter = raw_cmd.from_filter;
       if let Some(cmd) = self.graphics_parser.parse(&raw_cmd.data) {
-        self.execute_graphics_command(&cmd, cursor_line, cursor_column);
+        self.execute_graphics_command(&cmd, cursor_line, cursor_column, from_filter);
       }
     }
     // Note: Kitty protocol responses are intentionally NOT sent back.
@@ -221,6 +231,7 @@ impl Terminal {
     cmd: &KittyCommand,
     cursor_line: i32,
     cursor_column: i32,
+    from_filter: bool,
   ) {
     match cmd.action {
       KittyAction::Transmit => {
@@ -228,13 +239,13 @@ impl Terminal {
       }
       KittyAction::TransmitAndDisplay => {
         if let Ok(id) = self.image_storage.store(cmd) {
-          self.place_image(id, cmd, cursor_line, cursor_column);
+          self.place_image(id, cmd, cursor_line, cursor_column, from_filter);
         }
       }
       KittyAction::Display => {
         let image_id = cmd.image_id;
         if self.image_storage.get(image_id).is_some() {
-          self.place_image(image_id, cmd, cursor_line, cursor_column);
+          self.place_image(image_id, cmd, cursor_line, cursor_column, from_filter);
         }
       }
       KittyAction::Delete => {
@@ -253,6 +264,7 @@ impl Terminal {
     cmd: &KittyCommand,
     cursor_line: i32,
     cursor_column: i32,
+    from_filter: bool,
   ) {
     // Use cursor position captured at APC intercept time (not current cursor).
     let line = cursor_line;
@@ -299,10 +311,13 @@ impl Terminal {
     });
 
     // Signal the PTY filter to inject cursor advancement on next read.
-    // This is the fallback mechanism for when the filter couldn't compute
-    // the height from APC params alone (e.g., PNG without r=/v=).
-    if let Some(cnl) = &self.pending_cnl {
-      cnl.store(height_cells, std::sync::atomic::Ordering::Release);
+    // Only needed when the command came from the pipe (filter didn't inject
+    // CNL inline). When from_filter, the filter already injected CNL from
+    // its own height estimate.
+    if !from_filter {
+      if let Some(cnl) = &self.pending_cnl {
+        cnl.store(height_cells, std::sync::atomic::Ordering::Release);
+      }
     }
   }
 

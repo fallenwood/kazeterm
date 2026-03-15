@@ -59,6 +59,13 @@ impl ProcessIdGetter {
     }
   }
 
+  pub fn from_raw(handle: isize, child_pid: u32) -> ProcessIdGetter {
+    ProcessIdGetter {
+      handle: handle as i32,
+      fallback_pid: child_pid,
+    }
+  }
+
   fn pid(&self) -> Option<Pid> {
     let pid = unsafe { GetProcessId(HANDLE(self.handle as _)) };
     // the GetProcessId may fail and returns zero, which will lead to a stack overflow issue
@@ -124,6 +131,23 @@ impl PtyProcessInfo {
       system,
       refresh_kind: process_refresh_kind,
       pid_getter: ProcessIdGetter::from_raw(fd, child_pid),
+      current: None,
+    }
+  }
+
+  #[cfg(windows)]
+  pub fn from_raw(handle: isize, child_pid: u32) -> PtyProcessInfo {
+    let process_refresh_kind = ProcessRefreshKind::new()
+      .with_cmd(UpdateKind::Always)
+      .with_cwd(UpdateKind::Always)
+      .with_exe(UpdateKind::Always);
+    let refresh_kind = RefreshKind::new().with_processes(process_refresh_kind);
+    let system = System::new_with_specifics(refresh_kind);
+
+    PtyProcessInfo {
+      system,
+      refresh_kind: process_refresh_kind,
+      pid_getter: ProcessIdGetter::from_raw(handle, child_pid),
       current: None,
     }
   }

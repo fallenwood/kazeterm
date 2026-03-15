@@ -238,6 +238,9 @@ pub struct RawGraphicsCommand {
   pub cursor_column: i32,
   /// When true, signals that all images should be cleared (terminal reset/clear).
   pub clear_all: bool,
+  /// True if this command was intercepted by the PTY filter (accurate cursor
+  /// position). False if it came from the graphics pipe (approximate position).
+  pub from_filter: bool,
 }
 
 /// A placement that's been resolved for the current viewport with its image data.
