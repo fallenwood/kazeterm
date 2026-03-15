@@ -74,9 +74,9 @@ mod unix {
     last_cursor: (i32, i32),
   }
 
-  /// Quick-parse APC params to extract cursor movement policy and display rows.
-  /// Returns (cursor_movement, display_rows, more_chunks, is_display_action).
-  fn quick_parse_apc_params(apc_content: &[u8]) -> (u8, u32, bool, bool) {
+  /// Quick-parse APC params to extract cursor movement and image dimensions.
+  /// Returns (cursor_movement, display_rows, source_height, more_chunks, is_display_action).
+  fn quick_parse_apc_params(apc_content: &[u8]) -> (u8, u32, u32, bool, bool) {
     let params_end = apc_content
       .iter()
       .position(|&b| b == b';')
@@ -84,6 +84,7 @@ mod unix {
     let params = std::str::from_utf8(&apc_content[..params_end]).unwrap_or("");
     let mut cursor_movement = 0u8;
     let mut display_rows = 0u32;
+    let mut source_height = 0u32;
     let mut more_chunks = false;
     // Default action is TransmitAndDisplay which IS a display action.
     let mut is_display = true;
@@ -92,13 +93,14 @@ mod unix {
         match key.trim() {
           "C" => cursor_movement = value.parse().unwrap_or(0),
           "r" => display_rows = value.parse().unwrap_or(0),
+          "v" => source_height = value.parse().unwrap_or(0),
           "m" => more_chunks = value == "1",
           "a" => is_display = matches!(value, "T" | "p"),
           _ => {}
         }
       }
     }
-    (cursor_movement, display_rows, more_chunks, is_display)
+    (cursor_movement, display_rows, source_height, more_chunks, is_display)
   }
 
   impl FilteringReader {
@@ -173,11 +175,22 @@ mod unix {
                 let cmd_data = self.apc_buf[1..].to_vec();
 
                 // Check if we need to inject cursor advancement.
-                let (cm, rows, more, is_display) = quick_parse_apc_params(&cmd_data);
-                if !more && cm == 0 && rows > 0 && is_display {
-                  // Inject Cursor Next Line (CNL) to advance past the image area.
-                  let cnl = format!("\x1b[{}E", rows);
-                  self.pending.extend_from_slice(cnl.as_bytes());
+                let (_cm, rows, src_h, more, is_display) = quick_parse_apc_params(&cmd_data);
+                if !more && is_display {
+                  // Compute effective rows: use explicit r=, or estimate from v= (source height).
+                  let effective_rows = if rows > 0 {
+                    rows
+                  } else if src_h > 0 {
+                    // Estimate ~20 pixels per cell row when r= not provided.
+                    (src_h + 19) / 20
+                  } else {
+                    0
+                  };
+                  if effective_rows > 0 {
+                    // Inject Cursor Next Line (CNL) to advance past the image area.
+                    let cnl = format!("\x1b[{}E", effective_rows);
+                    self.pending.extend_from_slice(cnl.as_bytes());
+                  }
                 }
 
                 let _ = self.graphics_tx.send(RawGraphicsCommand {
