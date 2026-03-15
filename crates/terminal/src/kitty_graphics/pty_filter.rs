@@ -184,7 +184,8 @@ mod unix {
     /// Inject CNL escape into the pending buffer to advance cursor past image.
     fn inject_cnl(&mut self, rows: u32) {
       if rows > 0 {
-        let cnl = format!("\x1b[{}E", rows);
+        // Add 2 lines of padding below the image before the next prompt.
+        let cnl = format!("\x1b[{}E", rows + 2);
         self.pending.extend_from_slice(cnl.as_bytes());
         self.cnl_injected = true;
       }
@@ -196,7 +197,7 @@ mod unix {
       // Check for terminal-computed CNL feedback (from place_image).
       let feedback_rows = self.pending_cnl.swap(0, Ordering::AcqRel);
       if feedback_rows > 0 && !self.cnl_injected {
-        let cnl = format!("\x1b[{}E", feedback_rows);
+        let cnl = format!("\x1b[{}E", feedback_rows + 2);
         // Prepend to any existing pending data.
         let mut new_pending = Vec::with_capacity(cnl.len() + self.pending.len());
         new_pending.extend_from_slice(cnl.as_bytes());
