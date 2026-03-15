@@ -263,13 +263,25 @@ impl Terminal {
     let (width_cells, height_cells) = if cmd.display_columns > 0 && cmd.display_rows > 0 {
       (cmd.display_columns, cmd.display_rows)
     } else if let Some(img) = self.image_storage.peek(image_id) {
-      // Auto-calculate from image dimensions and cell size.
+      // Scale to fit terminal width, preserving aspect ratio.
       let bounds = &self.last_content.terminal_bounds;
       let cw = f32::from(bounds.cell_width().max(gpui::px(1.0))) as u32;
       let lh = f32::from(bounds.line_height().max(gpui::px(1.0))) as u32;
-      let w = (img.width + cw - 1) / cw;
-      let h = (img.height + lh - 1) / lh;
-      (w.max(1), h.max(1))
+      let terminal_cols = bounds.num_columns() as u32;
+      let terminal_width_px = terminal_cols.saturating_mul(cw).max(1);
+
+      if img.width > terminal_width_px {
+        // Image wider than terminal — scale down to fit.
+        let h_px =
+          ((img.height as u64 * terminal_width_px as u64) / img.width.max(1) as u64) as u32;
+        let h_cells = (h_px + lh - 1) / lh;
+        (terminal_cols.max(1), h_cells.max(1))
+      } else {
+        // Image fits — use native pixel size.
+        let w = (img.width + cw - 1) / cw;
+        let h = (img.height + lh - 1) / lh;
+        (w.max(1), h.max(1))
+      }
     } else {
       (1, 1)
     };
