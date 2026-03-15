@@ -30,6 +30,9 @@ mod unix {
   use std::io::{self, Read};
   use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
   use std::sync::atomic::{AtomicU32, Ordering};
+
+  /// Extra blank lines inserted below an image before the next prompt.
+  const IMAGE_BOTTOM_PADDING: u32 = 2;
   use std::sync::mpsc;
   use std::sync::Arc;
 
@@ -185,7 +188,7 @@ mod unix {
     fn inject_cnl(&mut self, rows: u32) {
       if rows > 0 {
         // Add 2 lines of padding below the image before the next prompt.
-        let cnl = format!("\x1b[{}E", rows + 2);
+        let cnl = format!("\x1b[{}E", rows + IMAGE_BOTTOM_PADDING);
         self.pending.extend_from_slice(cnl.as_bytes());
         self.cnl_injected = true;
       }
@@ -197,7 +200,7 @@ mod unix {
       // Check for terminal-computed CNL feedback (from place_image).
       let feedback_rows = self.pending_cnl.swap(0, Ordering::AcqRel);
       if feedback_rows > 0 && !self.cnl_injected {
-        let cnl = format!("\x1b[{}E", feedback_rows + 2);
+        let cnl = format!("\x1b[{}E", feedback_rows + IMAGE_BOTTOM_PADDING);
         // Prepend to any existing pending data.
         let mut new_pending = Vec::with_capacity(cnl.len() + self.pending.len());
         new_pending.extend_from_slice(cnl.as_bytes());
