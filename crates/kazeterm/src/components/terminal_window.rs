@@ -57,7 +57,7 @@ fn new_terminal(
   let (pty_tx, pty_info, graphics_rx) = {
     use terminal::kitty_graphics::GraphicsPtyFilter;
 
-    let (filter, graphics_rx) = GraphicsPtyFilter::new(&pty).unwrap();
+    let (filter, graphics_rx) = GraphicsPtyFilter::new(pty).unwrap();
     let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
     let event_loop = EventLoop::new(
@@ -71,9 +71,6 @@ fn new_terminal(
 
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
-    // Drop original Pty — dup'd fds keep the PTY master alive.
-    // This also deregisters the SIGCHLD handler installed by alacritty.
-    drop(pty);
 
     (pty_tx, pty_info, Some(graphics_rx))
   };
