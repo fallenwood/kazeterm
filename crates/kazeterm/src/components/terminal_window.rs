@@ -1,6 +1,8 @@
 use std::{path::PathBuf, sync::Arc};
 
-use alacritty_terminal::{Term, event_loop::EventLoop, sync::FairMutex, term::Config};
+use alacritty_terminal::{
+  Term, event_loop::EventLoop, grid::Dimensions, sync::FairMutex, term::Config,
+};
 use futures::{FutureExt, StreamExt as _, channel::mpsc::unbounded};
 use gpui::{AppContext, Context, Entity};
 
@@ -57,7 +59,16 @@ fn new_terminal(
   let (pty_tx, pty_info, graphics_rx) = {
     use terminal::kitty_graphics::GraphicsPtyFilter;
 
-    let (filter, graphics_rx) = GraphicsPtyFilter::new(pty).unwrap();
+    let term_for_cursor = term.clone();
+    let cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> =
+      Box::new(move || {
+        let t = term_for_cursor.try_lock_unfair()?;
+        let cursor = t.grid().cursor.point;
+        let hs = t.history_size() as i32;
+        Some((hs + cursor.line.0, cursor.column.0 as i32))
+      });
+
+    let (filter, graphics_rx) = GraphicsPtyFilter::new(pty, cursor_fn).unwrap();
     let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
     let event_loop = EventLoop::new(

@@ -4,7 +4,7 @@ use crate::{
   TerminalBounds, indexed_cell::IndexedCell,
   kitty_graphics::{
     ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
-    KittyResponse, PlacementManager,
+    KittyResponse, PlacementManager, RawGraphicsCommand,
   },
   mouse::grid_point_and_side,
   pty_info::PtyProcessInfo,
@@ -81,7 +81,7 @@ pub struct Terminal {
   /// Used to determine if a bell follows a long-running command.
   pub last_input_time: std::time::Instant,
   /// Kitty graphics protocol state.
-  graphics_rx: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
+  graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
   graphics_parser: KittyParser,
   pub image_storage: KittyImageStorage,
   pub placement_manager: PlacementManager,
@@ -92,7 +92,7 @@ impl Terminal {
     pty_tx: EventLoopSender,
     term: Arc<FairMutex<Term<TerminalEventListener>>>,
     pty_info: PtyProcessInfo,
-    graphics_rx: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
+    graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
   ) -> Self {
     Self {
       pty_tx: Notifier(pty_tx),
@@ -160,9 +160,6 @@ impl Terminal {
   }
 
   pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    // Process Kitty graphics commands from the filter thread.
-    self.process_graphics_commands();
-
     let term = self.term.clone();
     let mut terminal = term.lock_unfair();
     while let Some(e) = self.events.pop_front() {
@@ -170,9 +167,14 @@ impl Terminal {
     }
     self.last_content = Self::make_content(&terminal, &self.last_content);
 
-    // Collect visible image placements for rendering.
     let history_size = terminal.history_size() as i32;
     let display_offset = self.last_content.display_offset as i32;
+    drop(terminal);
+
+    // Process graphics commands AFTER terminal events so terminal_bounds is up to date.
+    self.process_graphics_commands();
+
+    // Collect visible image placements for rendering.
     let viewport_top = history_size - display_offset;
     let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
 
@@ -185,7 +187,7 @@ impl Terminal {
 
   fn process_graphics_commands(&mut self) {
     // Drain all available graphics commands (non-blocking).
-    let mut raw_commands = Vec::new();
+    let mut raw_commands: Vec<RawGraphicsCommand> = Vec::new();
     if let Some(rx) = &self.graphics_rx {
       while let Ok(raw_cmd) = rx.try_recv() {
         raw_commands.push(raw_cmd);
@@ -194,8 +196,10 @@ impl Terminal {
 
     let mut responses = Vec::new();
     for raw_cmd in raw_commands {
-      if let Some(cmd) = self.graphics_parser.parse(&raw_cmd) {
-        let response = self.execute_graphics_command(&cmd);
+      let cursor_line = raw_cmd.cursor_line;
+      let cursor_column = raw_cmd.cursor_column;
+      if let Some(cmd) = self.graphics_parser.parse(&raw_cmd.data) {
+        let response = self.execute_graphics_command(&cmd, cursor_line, cursor_column);
         if let Some(resp) = response {
           if cmd.quiet == 0 || (cmd.quiet == 1 && !resp.ok) {
             responses.push(resp);
@@ -210,7 +214,12 @@ impl Terminal {
     }
   }
 
-  fn execute_graphics_command(&mut self, cmd: &KittyCommand) -> Option<KittyResponse> {
+  fn execute_graphics_command(
+    &mut self,
+    cmd: &KittyCommand,
+    cursor_line: i32,
+    cursor_column: i32,
+  ) -> Option<KittyResponse> {
     match cmd.action {
       KittyAction::Transmit => {
         match self.image_storage.store(cmd) {
@@ -221,7 +230,7 @@ impl Terminal {
       KittyAction::TransmitAndDisplay => {
         match self.image_storage.store(cmd) {
           Ok(id) => {
-            self.place_image(id, cmd);
+            self.place_image(id, cmd, cursor_line, cursor_column);
             Some(KittyResponse::ok(id))
           }
           Err(msg) => Some(KittyResponse::error(cmd.image_id, msg)),
@@ -230,7 +239,7 @@ impl Terminal {
       KittyAction::Display => {
         let image_id = cmd.image_id;
         if self.image_storage.get(image_id).is_some() {
-          self.place_image(image_id, cmd);
+          self.place_image(image_id, cmd, cursor_line, cursor_column);
           Some(KittyResponse::ok_with_placement(
             image_id,
             cmd.placement_id,
@@ -250,14 +259,16 @@ impl Terminal {
     }
   }
 
-  fn place_image(&mut self, image_id: u32, cmd: &KittyCommand) {
-    let term = self.term.lock_unfair();
-    let cursor = term.renderable_content().cursor;
-    let history_size = term.history_size() as i32;
-
-    // Calculate absolute grid line (including scrollback).
-    let line = history_size + cursor.point.line.0;
-    let column = cursor.point.column.0 as i32;
+  fn place_image(
+    &mut self,
+    image_id: u32,
+    cmd: &KittyCommand,
+    cursor_line: i32,
+    cursor_column: i32,
+  ) {
+    // Use cursor position captured at APC intercept time (not current cursor).
+    let line = cursor_line;
+    let column = cursor_column;
 
     // Determine display size in cells.
     let (width_cells, height_cells) = if cmd.display_columns > 0 && cmd.display_rows > 0 {

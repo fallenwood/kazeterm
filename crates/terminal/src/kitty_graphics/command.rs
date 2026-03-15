@@ -228,6 +228,16 @@ pub struct ImagePlacement {
   pub y_offset: u32,
 }
 
+/// Raw graphics command with cursor position captured at intercept time.
+pub struct RawGraphicsCommand {
+  /// The raw APC content (everything after 'G' prefix).
+  pub data: Vec<u8>,
+  /// Absolute line number in the grid when APC was intercepted.
+  pub cursor_line: i32,
+  /// Column number when APC was intercepted.
+  pub cursor_column: i32,
+}
+
 /// A placement that's been resolved for the current viewport with its image data.
 #[derive(Clone)]
 pub struct VisiblePlacement {

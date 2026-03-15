@@ -136,10 +136,12 @@ impl KittyImageStorage {
   }
 }
 
-/// Decode raw image data from a Kitty command payload into RGBA pixels.
+/// Decode raw image data from a Kitty command payload into BGRA pixels.
+///
+/// GPUI's `paint_image` expects BGRA format, so all decode paths convert to BGRA.
 fn decode_image_data(cmd: &KittyCommand) -> Result<(u32, u32, Vec<u8>), String> {
-  match cmd.format {
-    KittyFormat::Png => decode_png(&cmd.payload),
+  let (w, h, mut data) = match cmd.format {
+    KittyFormat::Png => decode_png(&cmd.payload)?,
     KittyFormat::Rgba => {
       let w = cmd.source_width;
       let h = cmd.source_height;
@@ -154,7 +156,7 @@ fn decode_image_data(cmd: &KittyCommand) -> Result<(u32, u32, Vec<u8>), String> 
           cmd.payload.len()
         ));
       }
-      Ok((w, h, cmd.payload.clone()))
+      (w, h, cmd.payload.clone())
     }
     KittyFormat::Rgb => {
       let w = cmd.source_width;
@@ -178,9 +180,16 @@ fn decode_image_data(cmd: &KittyCommand) -> Result<(u32, u32, Vec<u8>), String> 
         rgba.push(chunk[2]);
         rgba.push(255);
       }
-      Ok((w, h, rgba))
+      (w, h, rgba)
     }
+  };
+
+  // Convert RGBA to BGRA (swap R and B channels) for GPUI rendering.
+  for chunk in data.chunks_exact_mut(4) {
+    chunk.swap(0, 2);
   }
+
+  Ok((w, h, data))
 }
 
 fn decode_png(data: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {

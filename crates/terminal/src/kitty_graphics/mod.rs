@@ -6,7 +6,7 @@ pub mod storage;
 
 pub use command::{
   ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyFormat, KittyResponse,
-  KittyTransmission, StoredImage, VisiblePlacement,
+  KittyTransmission, RawGraphicsCommand, StoredImage, VisiblePlacement,
 };
 pub use parser::KittyParser;
 pub use placement::PlacementManager;

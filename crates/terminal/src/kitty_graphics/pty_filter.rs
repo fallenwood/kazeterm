@@ -36,8 +36,11 @@ mod unix {
   use alacritty_terminal::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
   use polling::{Event, PollMode, Poller};
 
-  /// Raw bytes of a complete APC graphics sequence (content between \x1b_G and \x1b\\).
-  pub type RawGraphicsCommand = Vec<u8>;
+  use super::super::command::RawGraphicsCommand;
+
+  /// Callback that tries to get the cursor position from the terminal.
+  /// Returns `Some((absolute_line, column))` on success, `None` if lock unavailable.
+  pub type CursorFn = Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
 
   /// APC filter state machine states.
   #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,6 +68,47 @@ mod unix {
     pending: Vec<u8>,
     pending_pos: usize,
     graphics_tx: mpsc::Sender<RawGraphicsCommand>,
+    /// Callback to try-lock the terminal and get cursor position.
+    cursor_fn: CursorFn,
+    /// Cached cursor position from last successful try-lock.
+    last_cursor: (i32, i32),
+  }
+
+  /// Quick-parse APC params to extract cursor movement policy and display rows.
+  /// Returns (cursor_movement, display_rows, more_chunks, is_display_action).
+  fn quick_parse_apc_params(apc_content: &[u8]) -> (u8, u32, bool, bool) {
+    let params_end = apc_content
+      .iter()
+      .position(|&b| b == b';')
+      .unwrap_or(apc_content.len());
+    let params = std::str::from_utf8(&apc_content[..params_end]).unwrap_or("");
+    let mut cursor_movement = 0u8;
+    let mut display_rows = 0u32;
+    let mut more_chunks = false;
+    // Default action is TransmitAndDisplay which IS a display action.
+    let mut is_display = true;
+    for pair in params.split(',') {
+      if let Some((key, value)) = pair.split_once('=') {
+        match key.trim() {
+          "C" => cursor_movement = value.parse().unwrap_or(0),
+          "r" => display_rows = value.parse().unwrap_or(0),
+          "m" => more_chunks = value == "1",
+          "a" => is_display = matches!(value, "T" | "p"),
+          _ => {}
+        }
+      }
+    }
+    (cursor_movement, display_rows, more_chunks, is_display)
+  }
+
+  impl FilteringReader {
+    /// Try to capture cursor position. Updates cache on success.
+    fn capture_cursor(&mut self) -> (i32, i32) {
+      if let Some(pos) = (self.cursor_fn)() {
+        self.last_cursor = pos;
+      }
+      self.last_cursor
+    }
   }
 
   impl Read for FilteringReader {
@@ -124,8 +168,23 @@ mod unix {
             if byte == b'\\' {
               // Complete APC sequence. Check for Kitty graphics prefix 'G'.
               if self.apc_buf.first() == Some(&b'G') {
+                // Capture cursor position at intercept time.
+                let (cursor_line, cursor_column) = self.capture_cursor();
                 let cmd_data = self.apc_buf[1..].to_vec();
-                let _ = self.graphics_tx.send(cmd_data);
+
+                // Check if we need to inject cursor advancement.
+                let (cm, rows, more, is_display) = quick_parse_apc_params(&cmd_data);
+                if !more && cm == 0 && rows > 0 && is_display {
+                  // Inject Cursor Next Line (CNL) to advance past the image area.
+                  let cnl = format!("\x1b[{}E", rows);
+                  self.pending.extend_from_slice(cnl.as_bytes());
+                }
+
+                let _ = self.graphics_tx.send(RawGraphicsCommand {
+                  data: cmd_data,
+                  cursor_line,
+                  cursor_column,
+                });
               }
               self.apc_buf.clear();
               self.state = FilterState::Normal;
@@ -168,9 +227,15 @@ mod unix {
   impl GraphicsPtyFilter {
     /// Create a graphics-filtering PTY wrapper that takes ownership of a `Pty`.
     ///
-    /// Returns `(filter, graphics_rx)` where `graphics_rx` receives raw
-    /// Kitty graphics command bytes extracted from the PTY stream.
-    pub fn new(pty: Pty) -> io::Result<(Self, mpsc::Receiver<RawGraphicsCommand>)> {
+    /// `cursor_fn` is called (via try-lock) to capture the cursor position
+    /// when an APC graphics sequence is intercepted.
+    ///
+    /// Returns `(filter, graphics_rx)` where `graphics_rx` receives
+    /// Kitty graphics commands with captured cursor positions.
+    pub fn new(
+      pty: Pty,
+      cursor_fn: CursorFn,
+    ) -> io::Result<(Self, mpsc::Receiver<RawGraphicsCommand>)> {
       // Dup the master fd so the FilteringReader has its own fd for reading.
       // The original fd stays in the Pty for poll registration and writing.
       let master_fd = pty.file().as_raw_fd();
@@ -189,6 +254,8 @@ mod unix {
         pending: Vec::with_capacity(8192),
         pending_pos: 0,
         graphics_tx,
+        cursor_fn,
+        last_cursor: (0, 0),
       };
 
       Ok((GraphicsPtyFilter { reader, pty }, graphics_rx))
