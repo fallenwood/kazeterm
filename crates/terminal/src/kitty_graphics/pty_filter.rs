@@ -47,7 +47,6 @@ mod unix {
     child_event_file: File,
     child_pid: u32,
     _filter_handle: JoinHandle<()>,
-    pty_master_fd: RawFd,
   }
 
   impl GraphicsPtyFilter {
@@ -118,6 +117,12 @@ mod unix {
         })
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
+      // Set the pipe read end to non-blocking (required by alacritty's EventLoop polling).
+      unsafe {
+        let flags = libc::fcntl(pipe_read_fd, libc::F_GETFL);
+        libc::fcntl(pipe_read_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+      }
+
       let read_file = unsafe { File::from_raw_fd(pipe_read_fd) };
       let write_file = unsafe { File::from_raw_fd(write_dup) };
       let child_event_file = unsafe { File::from_raw_fd(child_event_read_fd) };
@@ -129,7 +134,6 @@ mod unix {
           child_event_file,
           child_pid,
           _filter_handle: filter_handle,
-          pty_master_fd: write_dup,
         },
         graphics_rx,
       ))
@@ -137,7 +141,7 @@ mod unix {
 
     /// Get the raw fd usable for tcgetpgrp (for PtyProcessInfo).
     pub fn pty_fd(&self) -> RawFd {
-      self.pty_master_fd
+      self.write_file.as_raw_fd()
     }
 
     /// Get the child process PID.
@@ -234,7 +238,11 @@ mod unix {
         ws_ypixel: window_size.cell_height * window_size.num_lines,
       };
       unsafe {
-        libc::ioctl(self.pty_master_fd, libc::TIOCSWINSZ, &win as *const _);
+        libc::ioctl(
+          self.write_file.as_raw_fd(),
+          libc::TIOCSWINSZ,
+          &win as *const _,
+        );
       }
     }
   }
