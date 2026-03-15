@@ -56,7 +56,7 @@ fn new_terminal(
     alacritty_terminal::tty::new(&pty_options, TerminalBounds::default().into(), 1).unwrap();
 
   #[cfg(unix)]
-  let (pty_tx, pty_info, graphics_rx) = {
+  let (pty_tx, pty_info, graphics_rx, pending_cnl) = {
     use terminal::kitty_graphics::GraphicsPtyFilter;
 
     let term_for_cursor = term.clone();
@@ -68,7 +68,8 @@ fn new_terminal(
         Some((hs + cursor.line.0, cursor.column.0 as i32))
       });
 
-    let (filter, graphics_rx) = GraphicsPtyFilter::new(pty, cursor_fn).unwrap();
+    let (filter, pending_cnl, graphics_rx) =
+      GraphicsPtyFilter::new(pty, cursor_fn).unwrap();
     let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
     let event_loop = EventLoop::new(
@@ -83,11 +84,11 @@ fn new_terminal(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, Some(graphics_rx))
+    (pty_tx, pty_info, Some(graphics_rx), Some(pending_cnl))
   };
 
   #[cfg(not(unix))]
-  let (pty_tx, pty_info, graphics_rx) = {
+  let (pty_tx, pty_info, graphics_rx, pending_cnl) = {
     let pty_info = PtyProcessInfo::new(&pty);
 
     let event_loop = EventLoop::new(
@@ -102,10 +103,10 @@ fn new_terminal(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, None)
+    (pty_tx, pty_info, None, None)
   };
 
-  let terminal = terminal::Terminal::new(pty_tx, term, pty_info, graphics_rx);
+  let terminal = terminal::Terminal::new(pty_tx, term, pty_info, graphics_rx, pending_cnl);
 
   (terminal, events_rx)
 }

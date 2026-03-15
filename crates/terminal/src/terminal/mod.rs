@@ -85,6 +85,8 @@ pub struct Terminal {
   graphics_parser: KittyParser,
   pub image_storage: KittyImageStorage,
   pub placement_manager: PlacementManager,
+  /// Shared atomic for signaling cursor advancement to the PTY filter.
+  pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
 }
 
 impl Terminal {
@@ -93,6 +95,7 @@ impl Terminal {
     term: Arc<FairMutex<Term<TerminalEventListener>>>,
     pty_info: PtyProcessInfo,
     graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
+    pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
   ) -> Self {
     Self {
       pty_tx: Notifier(pty_tx),
@@ -119,6 +122,7 @@ impl Terminal {
       graphics_parser: KittyParser::new(),
       image_storage: KittyImageStorage::new(),
       placement_manager: PlacementManager::new(),
+      pending_cnl,
     }
   }
 
@@ -314,6 +318,13 @@ impl Terminal {
       x_offset: cmd.x_offset,
       y_offset: cmd.y_offset,
     });
+
+    // Signal the PTY filter to inject cursor advancement on next read.
+    // This is the fallback mechanism for when the filter couldn't compute
+    // the height from APC params alone (e.g., PNG without r=/v=).
+    if let Some(cnl) = &self.pending_cnl {
+      cnl.store(height_cells, std::sync::atomic::Ordering::Release);
+    }
   }
 
   fn handle_delete(&mut self, cmd: &KittyCommand) {
