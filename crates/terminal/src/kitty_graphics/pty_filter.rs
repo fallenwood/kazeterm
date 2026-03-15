@@ -72,6 +72,10 @@ mod unix {
     cursor_fn: CursorFn,
     /// Cached cursor position from last successful try-lock.
     last_cursor: (i32, i32),
+    /// Display rows carried over from first chunk of multi-chunk transmission.
+    multi_chunk_rows: u32,
+    /// Source height carried over from first chunk of multi-chunk transmission.
+    multi_chunk_src_height: u32,
   }
 
   /// Quick-parse APC params to extract cursor movement and image dimensions.
@@ -176,21 +180,31 @@ mod unix {
 
                 // Check if we need to inject cursor advancement.
                 let (_cm, rows, src_h, more, is_display) = quick_parse_apc_params(&cmd_data);
-                if !more && is_display {
-                  // Compute effective rows: use explicit r=, or estimate from v= (source height).
-                  let effective_rows = if rows > 0 {
-                    rows
-                  } else if src_h > 0 {
-                    // Estimate ~20 pixels per cell row when r= not provided.
-                    (src_h + 19) / 20
+                if more {
+                  // Intermediate chunk — remember display params for final chunk.
+                  if rows > 0 {
+                    self.multi_chunk_rows = rows;
+                  }
+                  if src_h > 0 {
+                    self.multi_chunk_src_height = src_h;
+                  }
+                } else if is_display {
+                  // Final chunk — use current params or fall back to carried-over values.
+                  let eff_rows = if rows > 0 { rows } else { self.multi_chunk_rows };
+                  let eff_src_h = if src_h > 0 { src_h } else { self.multi_chunk_src_height };
+                  let effective_rows = if eff_rows > 0 {
+                    eff_rows
+                  } else if eff_src_h > 0 {
+                    (eff_src_h + 19) / 20
                   } else {
                     0
                   };
                   if effective_rows > 0 {
-                    // Inject Cursor Next Line (CNL) to advance past the image area.
                     let cnl = format!("\x1b[{}E", effective_rows);
                     self.pending.extend_from_slice(cnl.as_bytes());
                   }
+                  self.multi_chunk_rows = 0;
+                  self.multi_chunk_src_height = 0;
                 }
 
                 let _ = self.graphics_tx.send(RawGraphicsCommand {
@@ -286,6 +300,8 @@ mod unix {
         graphics_tx,
         cursor_fn,
         last_cursor: (0, 0),
+        multi_chunk_rows: 0,
+        multi_chunk_src_height: 0,
       };
 
       Ok((GraphicsPtyFilter { reader, pty }, graphics_rx))
