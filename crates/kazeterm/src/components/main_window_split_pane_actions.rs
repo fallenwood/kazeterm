@@ -20,13 +20,17 @@ impl MainWindow {
 
     let working_directory = self.active_terminal_working_directory(cx);
 
+    // Use the same shell as the source tab, not the default shell.
+    let shell = self
+      .active_tab_item_mut()
+      .map(|item| item.shell_path.clone())
+      .unwrap_or_else(|| cx.global::<::config::Config>().get_shell().clone());
+
     // Create a new terminal with the same shell
     let index = self
       .tab_index
       .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-    let config = cx.global::<::config::Config>();
-    let shell = config.get_shell().clone();
     let working_directory_path = get_working_directory_pathbuf(working_directory);
 
     let new_terminal = crate::components::terminal_window::new_terminal_window_with_shell(

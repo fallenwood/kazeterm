@@ -9,7 +9,9 @@ use crate::components::split_pane::SplitContainer;
 
 impl MainWindow {
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    self.insert_new_tab_with_profile(None, None, window, cx);
+    // Inherit CWD from active terminal so new tabs open in the same directory.
+    let working_directory = self.active_terminal_working_directory(cx);
+    self.insert_new_tab_with_profile(None, working_directory, window, cx);
   }
 
   /// Duplicates a tab by creating a new tab with the same shell and working directory
@@ -165,14 +167,9 @@ impl MainWindow {
     terminal: &gpui::Entity<TerminalView>,
     cx: &mut Context<Self>,
   ) -> Option<String> {
-    terminal
-      .read(cx)
-      .terminal()
-      .read(cx)
-      .pty_info
-      .current
-      .as_ref()
-      .map(|info| info.cwd.to_string_lossy().to_string())
+    // Use update() to get mutable access so we can force a fresh OS refresh.
+    let terminal_entity = terminal.read(cx).terminal().clone();
+    terminal_entity.update(cx, |term, _cx| term.current_working_directory())
   }
 
   pub(crate) fn subscribe_terminal_view_event(
@@ -553,11 +550,13 @@ impl MainWindow {
 }
 
 pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -> Option<PathBuf> {
+  tracing::debug!("get_working_directory_pathbuf: input={:?}", working_directory);
   if let Some(working_directory) = working_directory {
     let path = std::path::Path::new(&working_directory);
     if path.exists() && path.is_dir() {
       Some(path.to_path_buf())
     } else {
+      tracing::debug!("path does not exist or is not a dir, falling back to $HOME");
       std::env::home_dir()
     }
   } else {

@@ -41,6 +41,7 @@ mod unix {
   use polling::{Event, PollMode, Poller};
 
   use super::super::command::RawGraphicsCommand;
+  use crate::osc7;
 
   /// Callback that tries to get the cursor position from the terminal.
   /// Returns `Some((absolute_line, column))` on success, `None` if lock unavailable.
@@ -72,6 +73,7 @@ mod unix {
     pending: Vec<u8>,
     pending_pos: usize,
     graphics_tx: mpsc::Sender<RawGraphicsCommand>,
+    osc7_tx: mpsc::Sender<std::path::PathBuf>,
     /// Callback to try-lock the terminal and get cursor position.
     cursor_fn: CursorFn,
     /// Cached cursor position from last successful try-lock.
@@ -335,6 +337,11 @@ mod unix {
         return Err(io::Error::from(io::ErrorKind::WouldBlock));
       }
 
+      // Scan passthrough bytes for OSC 7 CWD sequences.
+      if let Some(cwd) = osc7::extract_osc7_path(&self.pending) {
+        let _ = self.osc7_tx.send(cwd);
+      }
+
       let n = self.pending.len().min(buf.len());
       buf[..n].copy_from_slice(&self.pending[..n]);
       self.pending_pos = n;
@@ -362,13 +369,19 @@ mod unix {
     /// `cursor_fn` is called (via try-lock) to capture the cursor position
     /// when an APC graphics sequence is intercepted.
     ///
-    /// Returns `(filter, pending_cnl, graphics_rx)`:
+    /// Returns `(filter, pending_cnl, graphics_rx, osc7_rx)`:
     /// - `pending_cnl`: shared atomic for terminal to request cursor advancement
     /// - `graphics_rx`: receives Kitty graphics commands with cursor positions
+    /// - `osc7_rx`: receives CWD paths extracted from OSC 7 sequences
     pub fn new(
       pty: Pty,
       cursor_fn: CursorFn,
-    ) -> io::Result<(Self, Arc<AtomicU32>, mpsc::Receiver<RawGraphicsCommand>)> {
+    ) -> io::Result<(
+      Self,
+      Arc<AtomicU32>,
+      mpsc::Receiver<RawGraphicsCommand>,
+      mpsc::Receiver<std::path::PathBuf>,
+    )> {
       // Dup the master fd so the FilteringReader has its own fd for reading.
       // The original fd stays in the Pty for poll registration and writing.
       let master_fd = pty.file().as_raw_fd();
@@ -379,6 +392,7 @@ mod unix {
       let read_file = unsafe { File::from_raw_fd(read_fd) };
 
       let (graphics_tx, graphics_rx) = mpsc::channel();
+      let (osc7_tx, osc7_rx) = mpsc::channel();
       let pending_cnl = Arc::new(AtomicU32::new(0));
 
       let reader = FilteringReader {
@@ -388,13 +402,14 @@ mod unix {
         pending: Vec::with_capacity(8192),
         pending_pos: 0,
         graphics_tx,
+        osc7_tx,
         cursor_fn,
         last_cursor: (0, 0),
         cnl_injected: false,
         pending_cnl: Arc::clone(&pending_cnl),
       };
 
-      Ok((GraphicsPtyFilter { reader, pty }, pending_cnl, graphics_rx))
+      Ok((GraphicsPtyFilter { reader, pty }, pending_cnl, graphics_rx, osc7_rx))
     }
 
     /// Get the raw PTY master fd (for tcgetpgrp / PtyProcessInfo).

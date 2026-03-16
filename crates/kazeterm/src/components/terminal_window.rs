@@ -29,6 +29,78 @@ fn new_terminal(
   env.insert("TERM".to_string(), "xterm-256color".to_string());
   env.insert("COLORTERM".to_string(), "truecolor".to_string());
 
+  // Create a temp file for CWD communication (cross-platform, works on Windows).
+  // The shell writes its CWD to this file on each prompt.
+  let cwd_file = std::env::temp_dir().join(format!(
+    "kazeterm-cwd-{}-{}",
+    std::process::id(),
+    std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .map(|d| d.as_nanos())
+      .unwrap_or(0)
+  ));
+  env.insert(
+    "KAZETERM_CWD_FILE".to_string(),
+    cwd_file.to_string_lossy().to_string(),
+  );
+
+  // Shell integration: inject hooks so shells report their CWD.
+  let shell_name = std::path::Path::new(&program)
+    .file_stem()
+    .and_then(|s| s.to_str())
+    .unwrap_or("")
+    .to_lowercase();
+
+  // Bash/Zsh CWD hook: emit OSC 7 AND write to cwd_file.
+  let cwd_file_str = cwd_file.to_string_lossy();
+  let bash_hook = format!(
+    r#"printf '\e]7;file://%s%s\e\\' "$(hostname)" "$PWD"; printf '%s' "$PWD" > "{}""#,
+    cwd_file_str,
+  );
+  env.insert("__KAZETERM_OSC7".to_string(), bash_hook.clone());
+
+  if shell_name == "bash" || shell_name == "sh" {
+    let existing = std::env::var("PROMPT_COMMAND").unwrap_or_default();
+    let prompt_cmd = if existing.is_empty() {
+      bash_hook
+    } else {
+      format!("{bash_hook};{existing}")
+    };
+    env.insert("PROMPT_COMMAND".to_string(), prompt_cmd);
+  } else if shell_name == "zsh" {
+    env.insert("PROMPT_COMMAND".to_string(), bash_hook);
+  }
+
+  // PowerShell: auto-inject the prompt hook via -Command.
+  // Writes CWD to temp file (reliable on Windows) and also emits OSC 7 (for Unix).
+  let pwsh_init = format!(
+    concat!(
+      r#"$__kazeterm_orig_prompt = $function:prompt; "#,
+      r#"function prompt {{ "#,
+      r#"$cwd = (Get-Location).Path; "#,
+      r#"[System.IO.File]::WriteAllText('{}', $cwd); "#,
+      r#"$esc = [char]27; "#,
+      r#"$host_name = [System.Net.Dns]::GetHostName(); "#,
+      r#"[Console]::Write("${{esc}}]7;file://${{host_name}}${{cwd}}${{esc}}\"); "#,
+      r#"if ($__kazeterm_orig_prompt) {{ & $__kazeterm_orig_prompt }} "#,
+      r#"else {{ "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }} "#,
+      r#"}}"#,
+    ),
+    cwd_file_str,
+  );
+  env.insert("KAZETERM_PWSH_OSC7_INIT".to_string(), pwsh_init.clone());
+
+  let mut args = args;
+  if shell_name == "pwsh" || shell_name == "powershell" {
+    if args.is_empty() {
+      args = vec![
+        "-NoExit".to_string(),
+        "-Command".to_string(),
+        pwsh_init,
+      ];
+    }
+  }
+
   let (events_tx, events_rx) = unbounded();
 
   let term = Term::new(
@@ -56,7 +128,7 @@ fn new_terminal(
     alacritty_terminal::tty::new(&pty_options, TerminalBounds::default().into(), 1).unwrap();
 
   #[cfg(unix)]
-  let (pty_tx, pty_info, graphics_rx, pending_cnl) = {
+  let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
     use terminal::kitty_graphics::GraphicsPtyFilter;
 
     let term_for_cursor = term.clone();
@@ -68,7 +140,7 @@ fn new_terminal(
         Some((hs + cursor.line.0, cursor.column.0 as i32))
       });
 
-    let (filter, pending_cnl, graphics_rx) =
+    let (filter, pending_cnl, graphics_rx, osc7_rx) =
       GraphicsPtyFilter::new(pty, cursor_fn).unwrap();
     let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
@@ -84,11 +156,11 @@ fn new_terminal(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, Some(graphics_rx), Some(pending_cnl))
+    (pty_tx, pty_info, Some(graphics_rx), Some(pending_cnl), Some(osc7_rx))
   };
 
   #[cfg(not(unix))]
-  let (pty_tx, pty_info, graphics_rx, pending_cnl) = {
+  let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
     let pty_info = PtyProcessInfo::new(&pty);
 
     let event_loop = EventLoop::new(
@@ -103,10 +175,12 @@ fn new_terminal(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, None, None)
+    (pty_tx, pty_info, None, None, None)
   };
 
-  let terminal = terminal::Terminal::new(pty_tx, term, pty_info, graphics_rx, pending_cnl);
+  let terminal = terminal::Terminal::new(
+    pty_tx, term, pty_info, graphics_rx, pending_cnl, osc7_rx, Some(cwd_file),
+  );
 
   (terminal, events_rx)
 }

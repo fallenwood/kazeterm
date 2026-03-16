@@ -11,6 +11,7 @@ mod layout_rect;
 mod mappings;
 pub mod minimap;
 mod mouse;
+pub mod osc7;
 mod pty_info;
 pub mod scrollbar;
 mod terminal;

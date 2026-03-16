@@ -87,6 +87,12 @@ pub struct Terminal {
   pub placement_manager: PlacementManager,
   /// Shared atomic for signaling cursor advancement to the PTY filter.
   pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
+  /// Receives CWD paths extracted from OSC 7 sequences in PTY output.
+  osc7_rx: Option<std::sync::mpsc::Receiver<std::path::PathBuf>>,
+  /// Last CWD reported via OSC 7 (takes priority over sysinfo).
+  pub osc7_cwd: Option<std::path::PathBuf>,
+  /// Path to a temp file where the shell writes its CWD on each prompt.
+  cwd_file: Option<std::path::PathBuf>,
 }
 
 impl Terminal {
@@ -96,6 +102,8 @@ impl Terminal {
     pty_info: PtyProcessInfo,
     graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
     pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
+    osc7_rx: Option<std::sync::mpsc::Receiver<std::path::PathBuf>>,
+    cwd_file: Option<std::path::PathBuf>,
   ) -> Self {
     Self {
       pty_tx: Notifier(pty_tx),
@@ -123,7 +131,67 @@ impl Terminal {
       image_storage: KittyImageStorage::new(),
       placement_manager: PlacementManager::new(),
       pending_cnl,
+      osc7_rx,
+      osc7_cwd: None,
+      cwd_file,
     }
+  }
+
+  /// Force-refresh and return the current working directory of the foreground process.
+  pub fn current_working_directory(&mut self) -> Option<String> {
+    // Prefer OSC 7 (shell-reported, most reliable on Unix).
+    if let Some(osc7) = &self.osc7_cwd {
+      tracing::debug!("CWD from OSC 7: {:?}", osc7);
+      return Some(osc7.to_string_lossy().to_string());
+    }
+
+    // Try direct /proc/<pid>/cwd readlink (bypasses sysinfo, most reliable on Linux).
+    #[cfg(target_os = "linux")]
+    if let Some(pid) = self.pty_info.pid() {
+      let proc_path = format!("/proc/{}/cwd", pid.as_u32());
+      match std::fs::read_link(&proc_path) {
+        Ok(cwd) if cwd.is_dir() => {
+          tracing::debug!("CWD from /proc readlink: {:?}, pid: {}", cwd, pid);
+          return Some(cwd.to_string_lossy().to_string());
+        }
+        Ok(cwd) => {
+          tracing::debug!("CWD from /proc readlink not a dir: {:?}", cwd);
+        }
+        Err(e) => {
+          tracing::debug!("Failed to readlink {}: {}", proc_path, e);
+        }
+      }
+    }
+
+    // Read CWD from the shell-written temp file (cross-platform, works on Windows).
+    if let Some(cwd_file) = &self.cwd_file {
+      match std::fs::read_to_string(cwd_file) {
+        Ok(contents) => {
+          let cwd = contents.trim().to_string();
+          if !cwd.is_empty() && std::path::Path::new(&cwd).is_dir() {
+            tracing::debug!("CWD from cwd_file: {:?}", cwd);
+            return Some(cwd);
+          }
+        }
+        Err(e) => {
+          tracing::debug!("Failed to read cwd_file {:?}: {}", cwd_file, e);
+        }
+      }
+    }
+
+    // Fallback: sysinfo refresh.
+    self.pty_info.has_changed();
+    let cwd = self
+      .pty_info
+      .current
+      .as_ref()
+      .map(|info| info.cwd.to_string_lossy().to_string());
+    tracing::debug!(
+      "CWD from sysinfo: {:?}, pid: {:?}",
+      cwd,
+      self.pty_info.pid()
+    );
+    cwd
   }
 
   pub fn last_content(&self) -> &TerminalContent {
@@ -178,6 +246,9 @@ impl Terminal {
     // Process graphics commands AFTER terminal events so terminal_bounds is up to date.
     self.process_graphics_commands();
 
+    // Drain OSC 7 CWD updates (non-blocking). Last one wins.
+    self.process_osc7_cwd(cx);
+
     // Collect visible image placements for rendering.
     let viewport_top = history_size - display_offset;
     let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
@@ -214,6 +285,29 @@ impl Terminal {
     // Our architecture intercepts APC on the read side, so write_to_pty
     // would send responses to the shell's stdin (appearing as typed text).
     // Tools like kitten icat use q=2 (suppress all) and handle timeouts.
+  }
+
+  /// Drain OSC 7 CWD updates from the PTY filter channel.
+  /// Updates `osc7_cwd` and `pty_info.current.cwd` when a new path arrives.
+  fn process_osc7_cwd(&mut self, cx: &mut Context<Self>) {
+    let Some(rx) = &self.osc7_rx else { return };
+
+    let mut new_cwd = None;
+    while let Ok(path) = rx.try_recv() {
+      new_cwd = Some(path);
+    }
+
+    if let Some(cwd) = new_cwd {
+      let changed = self.osc7_cwd.as_ref() != Some(&cwd);
+      if changed {
+        // Update pty_info so existing CWD consumers (tab duplication, etc.) get the OSC 7 value.
+        if let Some(info) = &mut self.pty_info.current {
+          info.cwd = cwd.clone();
+        }
+        self.osc7_cwd = Some(cwd);
+        cx.emit(Event::TitleChanged);
+      }
+    }
   }
 
   fn execute_graphics_command(
