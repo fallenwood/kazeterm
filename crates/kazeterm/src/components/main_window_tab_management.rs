@@ -469,6 +469,7 @@ impl MainWindow {
       if self.items.is_empty() {
         let config = cx.global::<::config::Config>();
         if config.close_on_last_tab {
+          self.save_session(cx);
           window.remove_window();
         } else {
           self.insert_new_tab(window, cx);

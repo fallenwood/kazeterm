@@ -3,7 +3,11 @@ use gpui::{AppContext, Context, Entity, Window};
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
+use crate::components::session_restore_error_dialog::{
+  SessionRestoreErrorDialog, SessionRestoreErrorEvent,
+};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
+use crate::session_state::{SessionState, TabState};
 
 impl MainWindow {
   /// Show rename dialog for a tab
@@ -83,7 +87,8 @@ impl MainWindow {
   ) {
     match event {
       CloseConfirmEvent::Confirm => {
-        // User confirmed, close the window
+        // Save session before closing (if restore is enabled)
+        self.save_session(cx);
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
         window.remove_window();
@@ -139,5 +144,96 @@ impl MainWindow {
   /// Helper to refocus the active terminal after closing dialogs
   pub fn refocus_active_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.focus_active_terminal(window, cx);
+  }
+
+  /// Save current session state to disk (if restore_session is enabled).
+  pub fn save_session(&self, cx: &mut Context<Self>) {
+    let config = cx.global::<::config::Config>();
+    if !config.restore_session {
+      return;
+    }
+
+    let tabs: Vec<TabState> = self
+      .items
+      .iter()
+      .map(|item| {
+        // Get working directory from the first terminal in the split container
+        let working_directory = item
+          .split_container
+          .get_active_terminal()
+          .and_then(|terminal| {
+            let terminal_entity = terminal.read(cx).terminal().clone();
+            terminal_entity.read(cx).current_working_directory_cached()
+          });
+
+        TabState {
+          profile_name: Some(item.shell_path.clone()),
+          shell_path: item.shell_path.clone(),
+          working_directory,
+          custom_title: item.custom_title.clone(),
+        }
+      })
+      .collect();
+
+    let active_tab_index = self.active_tab_ix.unwrap_or(0);
+
+    let state = SessionState {
+      tabs,
+      active_tab_index,
+    };
+
+    if let Err(e) = state.save() {
+      tracing::error!("Failed to save session state: {}", e);
+    }
+  }
+
+  /// Show the session restore error dialog
+  pub fn show_session_restore_error_dialog(
+    &mut self,
+    error_message: String,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let dialog =
+      cx.new(|cx| SessionRestoreErrorDialog::new(error_message, window, cx));
+    let subscription =
+      cx.subscribe_in(&dialog, window, Self::on_session_restore_error_event);
+
+    self.session_restore_error_dialog = Some(dialog);
+    self._session_restore_error_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  pub(crate) fn on_session_restore_error_event(
+    &mut self,
+    _dialog: &Entity<SessionRestoreErrorDialog>,
+    event: &SessionRestoreErrorEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    match event {
+      SessionRestoreErrorEvent::StartNew => {
+        self.session_restore_error_dialog = None;
+        self._session_restore_error_subscription = None;
+
+        // Create a fresh tab if there are none
+        if self.items.is_empty() {
+          self.insert_new_tab(window, cx);
+        }
+
+        self.refocus_active_terminal(window, cx);
+        cx.notify();
+      }
+      SessionRestoreErrorEvent::Quit => {
+        self.session_restore_error_dialog = None;
+        self._session_restore_error_subscription = None;
+        window.remove_window();
+      }
+    }
+  }
+
+  /// Check if session restore error dialog is currently showing
+  pub fn is_session_restore_error_visible(&self) -> bool {
+    self.session_restore_error_dialog.is_some()
   }
 }

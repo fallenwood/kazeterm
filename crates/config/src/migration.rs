@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260306.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260316.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -39,6 +39,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260303.1",
       to_version: "20260306.1",
       migrate: migrate_v20260303_1_to_20260306_1,
+    },
+    Migration {
+      from_version: "20260306.1",
+      to_version: "20260316.1",
+      migrate: migrate_v20260306_1_to_20260316_1,
     },
   ]
 }
@@ -85,6 +90,19 @@ fn migrate_v20260303_1_to_20260306_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260306.1".to_string()),
+    );
+  }
+}
+
+/// Add restore_session configuration support.
+fn migrate_v20260306_1_to_20260316_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("restore_session") {
+      table.insert("restore_session".to_string(), Value::Boolean(false));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260316.1".to_string()),
     );
   }
 }
@@ -258,6 +276,32 @@ font_size = 18.0
         .as_float()
         .unwrap(),
       1.0
+    );
+  }
+
+  #[test]
+  fn migrate_20260306_adds_restore_session() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260306.1"
+theme = "one"
+font_size = 18.0
+"#,
+    )
+    .unwrap();
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config
+        .get("restore_session")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
+      false
     );
   }
 

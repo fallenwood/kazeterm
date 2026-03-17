@@ -6,6 +6,7 @@ use gpui_component::Size;
 use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
 use crate::components::search_bar::SearchBar;
+use crate::components::session_restore_error_dialog::SessionRestoreErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
 
@@ -45,6 +46,9 @@ pub struct MainWindow {
   /// About dialog state
   pub(crate) about_dialog: Option<Entity<AboutDialog>>,
   pub(crate) _about_dialog_subscription: Option<gpui::Subscription>,
+  /// Session restore error dialog state
+  pub(crate) session_restore_error_dialog: Option<Entity<SessionRestoreErrorDialog>>,
+  pub(crate) _session_restore_error_subscription: Option<gpui::Subscription>,
   /// Tracks the last time an OS notification was sent, for throttling.
   pub(crate) last_notification_time: Option<std::time::Instant>,
 }
@@ -104,10 +108,66 @@ impl MainWindow {
       _close_confirm_subscription: None,
       about_dialog: None,
       _about_dialog_subscription: None,
+      session_restore_error_dialog: None,
+      _session_restore_error_subscription: None,
       last_notification_time: None,
     };
-    main_window.insert_new_tab(window, cx);
+
+    // Try to restore session if enabled, otherwise create a new tab
+    let config = cx.global::<::config::Config>();
+    if config.restore_session {
+      match crate::session_state::SessionState::load() {
+        Ok(state) => {
+          main_window.restore_tabs_from_state(state, window, cx);
+          crate::session_state::SessionState::clear();
+        }
+        Err(crate::session_state::SessionStateError::NotFound) => {
+          // No saved session, just create a new tab
+          main_window.insert_new_tab(window, cx);
+        }
+        Err(e) => {
+          tracing::error!("Failed to restore session: {}", e);
+          let error_msg = e.to_string();
+          // Create a blank tab so the window isn't empty behind the dialog
+          main_window.insert_new_tab(window, cx);
+          main_window.show_session_restore_error_dialog(error_msg, window, cx);
+        }
+      }
+    } else {
+      main_window.insert_new_tab(window, cx);
+    }
+
     main_window
+  }
+
+  /// Restore tabs from a saved session state.
+  fn restore_tabs_from_state(
+    &mut self,
+    state: crate::session_state::SessionState,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    for tab_state in &state.tabs {
+      self.insert_new_tab_with_profile(
+        Some(&tab_state.shell_path),
+        tab_state.working_directory.clone(),
+        window,
+        cx,
+      );
+
+      // Apply custom title if present
+      if let Some(custom_title) = &tab_state.custom_title {
+        if let Some(item) = self.items.last_mut() {
+          item.custom_title = Some(custom_title.clone());
+        }
+      }
+    }
+
+    // Set the active tab
+    let active_ix = state.active_tab_index.min(self.items.len().saturating_sub(1));
+    if !self.items.is_empty() {
+      self.set_active_tab(active_ix, window, cx);
+    }
   }
 }
 

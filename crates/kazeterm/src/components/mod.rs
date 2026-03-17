@@ -11,6 +11,7 @@ mod main_window_tab_management;
 mod main_window_tab_switcher_logic;
 mod menu_builder;
 mod search_bar;
+pub(crate) mod session_restore_error_dialog;
 mod shell_icon;
 mod split_pane;
 mod tab_button;

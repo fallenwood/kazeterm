@@ -77,6 +77,10 @@ pub struct Config {
   /// Prevents notification spam when many bells fire in quick succession.
   /// Set to 0 to allow every notification. Default is 5 seconds.
   pub notification_interval_secs: u64,
+  /// Restore terminal tabs from the previous session on startup.
+  /// When enabled, tab working directories and profiles are saved on close
+  /// and restored the next time Kazeterm starts.
+  pub restore_session: bool,
 }
 
 impl Default for Config {
@@ -106,6 +110,7 @@ impl Default for Config {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 5,
+      restore_session: false,
     }
   }
 }
@@ -401,6 +406,13 @@ impl Config {
     let path = Self::get_config_file_path_impl();
     if path.exists() { Some(path) } else { None }
   }
+
+  /// Get the session state file path
+  /// On Windows: ~/AppData/Roaming/kazeterm/session.json
+  /// On other platforms: ~/.config/kazeterm/session.json
+  pub fn get_session_file_path() -> PathBuf {
+    Self::get_config_path_impl().join("session.json")
+  }
 }
 
 impl gpui::Global for Config {}
@@ -477,6 +489,7 @@ mod tests {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 5,
+      restore_session: false,
     };
 
     // get_profile

@@ -194,6 +194,29 @@ impl Terminal {
     cwd
   }
 
+  /// Return the last-known working directory without refreshing.
+  /// Prefers OSC 7, then the CWD temp file, then sysinfo cache.
+  pub fn current_working_directory_cached(&self) -> Option<String> {
+    if let Some(osc7) = &self.osc7_cwd {
+      return Some(osc7.to_string_lossy().to_string());
+    }
+
+    if let Some(cwd_file) = &self.cwd_file {
+      if let Ok(contents) = std::fs::read_to_string(cwd_file) {
+        let cwd = contents.trim().to_string();
+        if !cwd.is_empty() && std::path::Path::new(&cwd).is_dir() {
+          return Some(cwd);
+        }
+      }
+    }
+
+    self
+      .pty_info
+      .current
+      .as_ref()
+      .map(|info| info.cwd.to_string_lossy().to_string())
+  }
+
   pub fn last_content(&self) -> &TerminalContent {
     &self.last_content
   }

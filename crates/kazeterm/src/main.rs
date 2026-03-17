@@ -23,6 +23,7 @@ mod components;
 mod config;
 mod config_watcher;
 pub mod event_system;
+mod session_state;
 
 /// Command-line arguments for Kazeterm
 #[derive(Parser, Debug)]
