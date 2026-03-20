@@ -78,7 +78,7 @@ jobs:
 
       - name: Bundle macOS DMG
         if: runner.os == 'macOS'
-        run: cargo bundle --profile=release-fast --format=dmg -p kazeterm
+        run: cargo bundle --profile=release-fast --format=osx -p kazeterm
 
       - name: Pack
         if: runner.os == 'macOS'
