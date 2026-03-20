@@ -59,3 +59,7 @@ winresource = "0.1"
 icon = ["../../assets/icons/kazeterm.png"]
 identifier = "net.fallenwood.kazeterm"
 name = "Kazeterm"
+category = "public.app-category.developer-tools"
+short_description = "A terminal emulator"
+copyright = "Copyright (c) fallenwood"
+osx_minimum_system_version = "10.15"

@@ -72,6 +72,14 @@ jobs:
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           tar --zstd -cf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.zstd -C ./target/release-fast kazeterm
 
+      - name: Install cargo-bundle
+        if: runner.os == 'macOS'
+        run: cargo install cargo-bundle --locked
+
+      - name: Bundle macOS DMG
+        if: runner.os == 'macOS'
+        run: cargo bundle --profile=release-fast --format=dmg -p kazeterm
+
       - name: Pack
         if: runner.os == 'macOS'
         shell: pwsh
@@ -79,6 +87,7 @@ jobs:
           mkdir -p ./dists
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           tar -czf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.gz -C ./target/release-fast kazeterm
+          Copy-Item ./target/release-fast/bundle/dmg/*.dmg ./dists/kazeterm-$variant-${{ github.ref_name }}.dmg
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
