@@ -87,7 +87,7 @@ jobs:
           mkdir -p ./dists
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           tar -czf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.gz -C ./target/release-fast kazeterm
-          Copy-Item ./target/release-fast/bundle/dmg/*.dmg ./dists/kazeterm-$variant-${{ github.ref_name }}.dmg
+          tar -czf ./dists/kazeterm-$variant-${{ github.ref_name }}-dmg.tar.gz -C ./target/release-fast/bundle/osx Kazeterm.app
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
