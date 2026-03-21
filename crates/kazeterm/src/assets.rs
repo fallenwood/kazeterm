@@ -9,6 +9,7 @@ use std::borrow::Cow;
 #[include = "icons/**/*.svg"]
 #[include = "icons/kazeterm.png"]
 #[include = "fonts/*.ttf"]
+#[include = "fonts/*.otf"]
 #[include = "themes/*.toml"]
 pub struct Assets;
 
@@ -59,14 +60,17 @@ impl Assets {
   pub fn load_fonts(&self, cx: &App) -> anyhow::Result<()> {
     let font_paths = self.list("fonts")?;
     let mut embedded_fonts = Vec::new();
-    for font_path in font_paths {
-      if font_path.ends_with(".ttf") {
-        let font_bytes = cx
-          .asset_source()
-          .load(&font_path)?
-          .expect("Assets should never return None");
-        embedded_fonts.push(font_bytes);
-      }
+    // Load TTF fonts first so they take priority over OTF when both exist
+    for font_path in font_paths
+      .iter()
+      .filter(|p| p.ends_with(".ttf"))
+      .chain(font_paths.iter().filter(|p| p.ends_with(".otf")))
+    {
+      let font_bytes = cx
+        .asset_source()
+        .load(font_path)?
+        .expect("Assets should never return None");
+      embedded_fonts.push(font_bytes);
     }
 
     cx.text_system().add_fonts(embedded_fonts)
