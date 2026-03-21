@@ -25,6 +25,8 @@ pub use migration::CURRENT_CONFIG_VERSION;
 mod keybinding;
 pub use keybinding::{KeybindingConfig, ParsedKeybinding};
 
+pub mod alacritty_import;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
   pub name: String,

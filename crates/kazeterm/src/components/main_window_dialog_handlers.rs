@@ -3,6 +3,7 @@ use gpui::{AppContext, Context, Entity, Window};
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
+use crate::components::import_alacritty_dialog::{ImportAlacrittyDialog, ImportAlacrittyEvent};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
 
 impl MainWindow {
@@ -132,6 +133,81 @@ impl MainWindow {
     self._about_dialog_subscription = None;
 
     // Refocus the terminal
+    self.refocus_active_terminal(window, cx);
+    cx.notify();
+  }
+
+  /// Show import Alacritty config dialog
+  pub fn show_import_alacritty_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if self.import_alacritty_dialog.is_some() {
+      return;
+    }
+
+    let dialog = cx.new(|cx| ImportAlacrittyDialog::new(window, cx));
+    let subscription = cx.subscribe_in(&dialog, window, Self::on_import_alacritty_event);
+
+    dialog.update(cx, |dialog, cx| {
+      dialog.focus(window, cx);
+    });
+
+    self.import_alacritty_dialog = Some(dialog);
+    self._import_alacritty_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  pub(crate) fn on_import_alacritty_event(
+    &mut self,
+    _dialog: &Entity<ImportAlacrittyDialog>,
+    event: &ImportAlacrittyEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    if let ImportAlacrittyEvent::Import(path_str) = event {
+      let path = std::path::Path::new(path_str);
+      match config::alacritty_import::import_alacritty_config(path) {
+        Ok(result) => {
+          // Save theme if present
+          if let Some(ref theme) = result.theme {
+            match config::alacritty_import::save_imported_theme(theme) {
+              Ok(dest) => tracing::info!("Saved imported theme to {}", dest.display()),
+              Err(e) => tracing::error!("Failed to save imported theme: {e}"),
+            }
+          }
+
+          // Apply to running config
+          let config = cx.global_mut::<::config::Config>();
+          config::alacritty_import::apply_import(config, result);
+
+          // Persist to disk
+          if let Some(config_path) = ::config::Config::get_config_file_path() {
+            // Backup current config before overwriting
+            let backup_path = config_path.with_extension("toml.bak");
+            match std::fs::copy(&config_path, &backup_path) {
+              Ok(_) => tracing::info!("Backed up config to {}", backup_path.display()),
+              Err(e) => tracing::warn!("Failed to backup config before import: {e}"),
+            }
+
+            let cfg = cx.global::<::config::Config>().clone();
+            let config_str = toml::to_string_pretty(&cfg).unwrap_or_default();
+            let content = format!(
+              "# Kazeterm Configuration\n# Generated automatically\n\n{}",
+              config_str
+            );
+            if let Err(e) = std::fs::write(&config_path, content) {
+              tracing::error!("Failed to save config after import: {e}");
+            } else {
+              tracing::info!("Saved imported config to {}", config_path.display());
+            }
+          }
+        }
+        Err(e) => {
+          tracing::error!("Alacritty config import failed: {e}");
+        }
+      }
+    }
+
+    self.import_alacritty_dialog = None;
+    self._import_alacritty_subscription = None;
     self.refocus_active_terminal(window, cx);
     cx.notify();
   }

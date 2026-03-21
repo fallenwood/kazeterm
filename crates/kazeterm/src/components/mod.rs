@@ -1,6 +1,7 @@
 mod about_dialog;
 mod close_confirm_dialog;
 mod dragged_tab;
+mod import_alacritty_dialog;
 mod main_window;
 mod main_window_dialog_handlers;
 mod main_window_render;

@@ -288,6 +288,32 @@ pub(super) fn build_new_tab_menu(
   );
 
   menu = menu.separator();
+  let view_import = view.clone();
+  menu = menu.item(
+    PopupMenuItem::element(|_window, _cx| {
+      h_flex()
+        .gap_2()
+        .items_center()
+        .child(
+          div()
+            .w(px(16.0))
+            .h(px(16.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(Icon::new(IconName::Folder).size_4()),
+        )
+        .child("Import Alacritty Config")
+        .into_any_element()
+    })
+    .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+      view_import.update(cx, |this, cx| {
+        this.show_import_alacritty_dialog(window, cx);
+      });
+    }),
+  );
+
+  menu = menu.separator();
   let view_about = view.clone();
   menu = menu.item(
     PopupMenuItem::element(|_window, _cx| {

@@ -519,6 +519,13 @@ impl Render for MainWindow {
             } else {
               this
             }
+          })
+          .when(self.import_alacritty_dialog.is_some(), |this| {
+            if let Some(import_dialog) = &self.import_alacritty_dialog {
+              this.child(import_dialog.clone())
+            } else {
+              this
+            }
           });
 
         if vertical_tabs {

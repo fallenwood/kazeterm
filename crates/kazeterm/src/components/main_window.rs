@@ -5,6 +5,7 @@ use gpui_component::Size;
 
 use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
+use crate::components::import_alacritty_dialog::ImportAlacrittyDialog;
 use crate::components::search_bar::SearchBar;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
@@ -45,6 +46,9 @@ pub struct MainWindow {
   /// About dialog state
   pub(crate) about_dialog: Option<Entity<AboutDialog>>,
   pub(crate) _about_dialog_subscription: Option<gpui::Subscription>,
+  /// Import Alacritty config dialog state
+  pub(crate) import_alacritty_dialog: Option<Entity<ImportAlacrittyDialog>>,
+  pub(crate) _import_alacritty_subscription: Option<gpui::Subscription>,
   /// Tracks the last time an OS notification was sent, for throttling.
   pub(crate) last_notification_time: Option<std::time::Instant>,
 }
@@ -104,6 +108,8 @@ impl MainWindow {
       _close_confirm_subscription: None,
       about_dialog: None,
       _about_dialog_subscription: None,
+      import_alacritty_dialog: None,
+      _import_alacritty_subscription: None,
       last_notification_time: None,
     };
     main_window.insert_new_tab(window, cx);
