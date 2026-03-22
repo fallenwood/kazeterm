@@ -36,6 +36,8 @@ pub enum TerminalEvent {
   UpdateTab,
   Wakeup,
   CloseTerminal(usize),
+  /// A long-running command may have finished (shell prompt returned).
+  CommandFinished,
 }
 
 pub struct TerminalView {
@@ -586,6 +588,9 @@ fn subscribe_for_terminal_events(
       }
       crate::terminal::Event::BlinkChanged(_) => {}
       crate::terminal::Event::SelectionsChanged => {}
+      crate::terminal::Event::PromptReturned => {
+        cx.emit(TerminalEvent::CommandFinished);
+      }
       crate::terminal::Event::Open(url) => {
         cx.open_url(url);
         cx.notify();

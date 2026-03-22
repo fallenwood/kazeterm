@@ -55,6 +55,9 @@ pub enum Event {
   SelectionsChanged,
   NewNavigationTarget(Option<String>),
   Open(String),
+  /// Emitted when the shell prompt returns (detected via OSC 7 or cwd_file change).
+  /// Used to trigger notifications for long-running command completion.
+  PromptReturned,
 }
 
 pub struct Terminal {
@@ -78,7 +81,7 @@ pub struct Terminal {
   pub last_scroll_time: Option<std::time::Instant>,
   pub touch_state: Option<TouchState>,
   /// Tracks the last time the user sent input (keystrokes/paste) to the terminal.
-  /// Used to determine if a bell follows a long-running command.
+  /// Used to determine if a command ran long enough to warrant a notification.
   pub last_input_time: std::time::Instant,
   /// Kitty graphics protocol state.
   graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
@@ -93,6 +96,10 @@ pub struct Terminal {
   pub osc7_cwd: Option<std::path::PathBuf>,
   /// Path to a temp file where the shell writes its CWD on each prompt.
   cwd_file: Option<std::path::PathBuf>,
+  /// Last known modification time of `cwd_file`, used to detect prompt returns on Windows.
+  cwd_file_mtime: Option<std::time::SystemTime>,
+  /// Throttle for cwd_file polling (only check every ~500ms).
+  last_cwd_file_check: Option<std::time::Instant>,
 }
 
 impl Terminal {
@@ -134,6 +141,8 @@ impl Terminal {
       osc7_rx,
       osc7_cwd: None,
       cwd_file,
+      cwd_file_mtime: None,
+      last_cwd_file_check: None,
     }
   }
 
@@ -246,8 +255,8 @@ impl Terminal {
     // Process graphics commands AFTER terminal events so terminal_bounds is up to date.
     self.process_graphics_commands();
 
-    // Drain OSC 7 CWD updates (non-blocking). Last one wins.
-    self.process_osc7_cwd(cx);
+    // Detect shell prompt returns and update CWD (non-blocking).
+    self.process_prompt_detection(cx);
 
     // Collect visible image placements for rendering.
     let viewport_top = history_size - display_offset;
@@ -287,26 +296,65 @@ impl Terminal {
     // Tools like kitten icat use q=2 (suppress all) and handle timeouts.
   }
 
-  /// Drain OSC 7 CWD updates from the PTY filter channel.
-  /// Updates `osc7_cwd` and `pty_info.current.cwd` when a new path arrives.
-  fn process_osc7_cwd(&mut self, cx: &mut Context<Self>) {
-    let Some(rx) = &self.osc7_rx else { return };
+  /// Detect shell prompt returns and update CWD.
+  ///
+  /// On Unix, the PTY filter extracts OSC 7 sequences and sends them via `osc7_rx`.
+  /// On Windows (where the PTY filter is not used), we poll the `cwd_file` modification
+  /// time to detect when the shell writes a new CWD on prompt display.
+  ///
+  /// Emits `Event::PromptReturned` whenever a prompt is detected, which is used
+  /// to trigger notifications for long-running command completion.
+  fn process_prompt_detection(&mut self, cx: &mut Context<Self>) {
+    let mut prompt_returned = false;
 
-    let mut new_cwd = None;
-    while let Ok(path) = rx.try_recv() {
-      new_cwd = Some(path);
+    // OSC 7 channel (Unix: extracted by PTY filter)
+    if let Some(rx) = &self.osc7_rx {
+      let mut new_cwd = None;
+      while let Ok(path) = rx.try_recv() {
+        new_cwd = Some(path);
+        prompt_returned = true;
+      }
+      if let Some(cwd) = new_cwd {
+        self.update_cwd(cwd, cx);
+      }
+    } else if let Some(cwd_file) = self.cwd_file.clone() {
+      // Fallback: poll cwd_file modification time (Windows, or when PTY filter is not used).
+      // Throttled to every ~500ms to avoid excessive stat() calls.
+      let should_check = self
+        .last_cwd_file_check
+        .map_or(true, |t| t.elapsed() >= std::time::Duration::from_millis(500));
+      if should_check {
+        self.last_cwd_file_check = Some(std::time::Instant::now());
+        if let Ok(mtime) = std::fs::metadata(&cwd_file).and_then(|m| m.modified()) {
+          // Only treat as prompt return if mtime changed (not the initial read).
+          if self.cwd_file_mtime.is_some_and(|prev| prev < mtime) {
+            prompt_returned = true;
+            if let Ok(contents) = std::fs::read_to_string(&cwd_file) {
+              let cwd_str = contents.trim().to_string();
+              if !cwd_str.is_empty() {
+                self.update_cwd(std::path::PathBuf::from(&cwd_str), cx);
+              }
+            }
+          }
+          self.cwd_file_mtime = Some(mtime);
+        }
+      }
     }
 
-    if let Some(cwd) = new_cwd {
-      let changed = self.osc7_cwd.as_ref() != Some(&cwd);
-      if changed {
-        // Update pty_info so existing CWD consumers (tab duplication, etc.) get the OSC 7 value.
-        if let Some(info) = &mut self.pty_info.current {
-          info.cwd = cwd.clone();
-        }
-        self.osc7_cwd = Some(cwd);
-        cx.emit(Event::TitleChanged);
+    if prompt_returned {
+      cx.emit(Event::PromptReturned);
+    }
+  }
+
+  /// Update the tracked CWD if it changed.
+  fn update_cwd(&mut self, cwd: std::path::PathBuf, cx: &mut Context<Self>) {
+    let changed = self.osc7_cwd.as_ref() != Some(&cwd);
+    if changed {
+      if let Some(info) = &mut self.pty_info.current {
+        info.cwd = cwd.clone();
       }
+      self.osc7_cwd = Some(cwd);
+      cx.emit(Event::TitleChanged);
     }
   }
 

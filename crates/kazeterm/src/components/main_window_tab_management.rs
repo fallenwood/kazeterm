@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use gpui::{Context, Focusable, Window};
+use gpui::{Context, Entity, Focusable, Window};
 use terminal::TerminalView;
 
 use super::main_window::MainWindow;
@@ -216,44 +216,18 @@ impl MainWindow {
         }
       }
       terminal::TerminalEvent::Wakeup => {
-        // Check if any terminal has bell and play sound
         let has_bell = terminal_view.read(cx).has_bell();
         if has_bell {
           this.play_bell_sound();
-
-          let threshold_secs =
-            cx.global::<config::Config>().long_running_threshold_secs;
-          let idle_duration = terminal_view
-            .read(cx)
-            .terminal()
-            .read(cx)
-            .last_input_time
-            .elapsed();
-
-          let interval_secs =
-            cx.global::<config::Config>().notification_interval_secs;
-          let interval_ok = match this.last_notification_time {
-            Some(last) => last.elapsed() >= std::time::Duration::from_secs(interval_secs),
-            None => true,
-          };
-
-          if idle_duration >= std::time::Duration::from_secs(threshold_secs) && interval_ok {
-            let tab_title = this
-              .items
-              .iter()
-              .find(|item| {
-                item
-                  .split_container
-                  .all_terminals()
-                  .iter()
-                  .any(|(_pos, t)| t.entity_id() == terminal_view.entity_id())
-              })
-              .map(|item| item.display_title().to_string());
-            Self::send_bell_notification(tab_title);
-            this.last_notification_time = Some(std::time::Instant::now());
-          }
+          // Bell also serves as a supplementary notification trigger
+          // (catches subtask completions in interactive programs like Copilot CLI).
+          this.maybe_send_notification(&terminal_view, cx);
         }
         cx.notify();
+      }
+      terminal::TerminalEvent::CommandFinished => {
+        // Prompt returned: notify when a long-running command finishes.
+        this.maybe_send_notification(&terminal_view, cx);
       }
       terminal::TerminalEvent::UpdateTab => {
         // Update tab title only if no custom title is set
@@ -284,7 +258,44 @@ impl MainWindow {
     }
   }
 
-  fn send_bell_notification(tab_title: Option<String>) {
+  /// Check idle duration and notification throttle, then send an OS notification if warranted.
+  fn maybe_send_notification(
+    &mut self,
+    terminal_view: &Entity<terminal::TerminalView>,
+    cx: &mut Context<Self>,
+  ) {
+    let threshold_secs = cx.global::<config::Config>().long_running_threshold_secs;
+    let idle_duration = terminal_view
+      .read(cx)
+      .terminal()
+      .read(cx)
+      .last_input_time
+      .elapsed();
+
+    let interval_secs = cx.global::<config::Config>().notification_interval_secs;
+    let interval_ok = match self.last_notification_time {
+      Some(last) => last.elapsed() >= std::time::Duration::from_secs(interval_secs),
+      None => true,
+    };
+
+    if idle_duration >= std::time::Duration::from_secs(threshold_secs) && interval_ok {
+      let tab_title = self
+        .items
+        .iter()
+        .find(|item| {
+          item
+            .split_container
+            .all_terminals()
+            .iter()
+            .any(|(_pos, t)| t.entity_id() == terminal_view.entity_id())
+        })
+        .map(|item| item.display_title().to_string());
+      Self::send_notification(tab_title);
+      self.last_notification_time = Some(std::time::Instant::now());
+    }
+  }
+
+  fn send_notification(tab_title: Option<String>) {
     std::thread::spawn(move || {
       let body = tab_title.as_deref().unwrap_or("Terminal");
       #[cfg(target_os = "macos")]
