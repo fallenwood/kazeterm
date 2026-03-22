@@ -26,6 +26,9 @@ pub(super) fn build_tab_context_menu(
   let view_split_h = view.clone();
   let view_split_v = view.clone();
   let view_close_pane = view.clone();
+  let view_focus_next = view.clone();
+  let view_focus_prev = view.clone();
+  let view_swap_panes = view.clone();
   let view_move_left = view.clone();
   let view_move_right = view.clone();
   let view_close_others = view.clone();
@@ -76,6 +79,33 @@ pub(super) fn build_tab_context_menu(
         .on_click(move |_, window, cx| {
           view_close_pane.update(cx, |this, cx| {
             this.close_active_pane(window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Focus Next Pane")
+        .icon(IconName::ArrowRight)
+        .on_click(move |_, window, cx| {
+          view_focus_next.update(cx, |this, cx| {
+            this.focus_next_pane(window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Focus Previous Pane")
+        .icon(IconName::ArrowLeft)
+        .on_click(move |_, window, cx| {
+          view_focus_prev.update(cx, |this, cx| {
+            this.focus_prev_pane(window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new("Swap Panes")
+        .icon(Icon::empty().path("icons/arrow-left-right.svg"))
+        .on_click(move |_, window, cx| {
+          view_swap_panes.update(cx, |this, cx| {
+            this.swap_split_panes(window, cx);
           });
         }),
     )
