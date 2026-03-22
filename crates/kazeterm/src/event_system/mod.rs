@@ -98,6 +98,15 @@ pub enum AppEvent {
   /// Close the active pane (within a split)
   CloseActivePane,
 
+  /// Focus the next pane in the active tab's split container
+  FocusNextPane,
+
+  /// Focus the previous pane in the active tab's split container
+  FocusPreviousPane,
+
+  /// Swap the two halves of the split containing the active pane
+  SwapSplitPanes,
+
   /// Toggle search bar visibility
   ToggleSearch,
 
@@ -131,6 +140,9 @@ impl AppEvent {
       AppEvent::SplitHorizontal => "SplitHorizontal",
       AppEvent::SplitVertical => "SplitVertical",
       AppEvent::CloseActivePane => "CloseActivePane",
+      AppEvent::FocusNextPane => "FocusNextPane",
+      AppEvent::FocusPreviousPane => "FocusPreviousPane",
+      AppEvent::SwapSplitPanes => "SwapSplitPanes",
       AppEvent::ToggleSearch => "ToggleSearch",
       AppEvent::ShowAboutDialog => "ShowAboutDialog",
       AppEvent::ReloadConfig => "ReloadConfig",
@@ -285,6 +297,18 @@ pub fn build_default_event_bus() -> EventBus {
 
   bus.subscribe("CloseActivePane", |mw, _event, window, cx| {
     mw.close_active_pane(window, cx);
+  });
+
+  bus.subscribe("FocusNextPane", |mw, _event, window, cx| {
+    mw.focus_next_pane(window, cx);
+  });
+
+  bus.subscribe("FocusPreviousPane", |mw, _event, window, cx| {
+    mw.focus_prev_pane(window, cx);
+  });
+
+  bus.subscribe("SwapSplitPanes", |mw, _event, window, cx| {
+    mw.swap_split_panes(window, cx);
   });
 
   bus.subscribe("ToggleSearch", |mw, _event, window, cx| {
@@ -583,6 +607,9 @@ mod tests {
       "SplitHorizontal",
       "SplitVertical",
       "CloseActivePane",
+      "FocusNextPane",
+      "FocusPreviousPane",
+      "SwapSplitPanes",
       "ToggleSearch",
       "ShowAboutDialog",
       "ReloadConfig",
