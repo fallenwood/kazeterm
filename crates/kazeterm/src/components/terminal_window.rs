@@ -54,7 +54,7 @@ fn new_terminal(
   // Bash/Zsh CWD hook: emit OSC 7 AND write to cwd_file.
   let cwd_file_str = cwd_file.to_string_lossy();
   let bash_hook = format!(
-    r#"printf '\e]7;file://%s%s\e\\' "$(hostname)" "$PWD"; printf '%s' "$PWD" > "{}""#,
+    r#"printf '\e]7;file://%s%s\e\\' "$(hostname)" "$PWD"; printf '%s' "$PWD" >| "{}""#,
     cwd_file_str,
   );
   env.insert("__KAZETERM_OSC7".to_string(), bash_hook.clone());
