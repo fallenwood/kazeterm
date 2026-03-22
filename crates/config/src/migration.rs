@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260306.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260321.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -39,6 +39,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260303.1",
       to_version: "20260306.1",
       migrate: migrate_v20260303_1_to_20260306_1,
+    },
+    Migration {
+      from_version: "20260306.1",
+      to_version: "20260321.1",
+      migrate: migrate_v20260306_1_to_20260321_1,
     },
   ]
 }
@@ -85,6 +90,46 @@ fn migrate_v20260303_1_to_20260306_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260306.1".to_string()),
+    );
+  }
+}
+
+/// Add terminal configuration options: scrollback, cursor, osc52, copy_on_select, env, working_directory.
+fn migrate_v20260306_1_to_20260321_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("scrollback_lines") {
+      table.insert(
+        "scrollback_lines".to_string(),
+        Value::Integer(10_000),
+      );
+    }
+    if !table.contains_key("cursor_shape") {
+      table.insert(
+        "cursor_shape".to_string(),
+        Value::String("block".to_string()),
+      );
+    }
+    if !table.contains_key("cursor_blink") {
+      table.insert("cursor_blink".to_string(), Value::Boolean(true));
+    }
+    if !table.contains_key("cursor_blink_interval") {
+      table.insert(
+        "cursor_blink_interval".to_string(),
+        Value::Integer(750),
+      );
+    }
+    if !table.contains_key("osc52") {
+      table.insert(
+        "osc52".to_string(),
+        Value::String("copy_only".to_string()),
+      );
+    }
+    if !table.contains_key("copy_on_select") {
+      table.insert("copy_on_select".to_string(), Value::Boolean(false));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260321.1".to_string()),
     );
   }
 }
@@ -258,6 +303,47 @@ font_size = 18.0
         .as_float()
         .unwrap(),
       1.0
+    );
+  }
+
+  #[test]
+  fn migrate_20260306_adds_terminal_options() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260306.1"
+theme = "one"
+font_size = 18.0
+background_opacity = 0.9
+"#,
+    )
+    .unwrap();
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config.get("scrollback_lines").unwrap().as_integer().unwrap(),
+      10_000
+    );
+    assert_eq!(
+      config.get("cursor_shape").unwrap().as_str().unwrap(),
+      "block"
+    );
+    assert_eq!(config.get("cursor_blink").unwrap().as_bool().unwrap(), true);
+    assert_eq!(
+      config
+        .get("cursor_blink_interval")
+        .unwrap()
+        .as_integer()
+        .unwrap(),
+      750
+    );
+    assert_eq!(config.get("osc52").unwrap().as_str().unwrap(), "copy_only");
+    assert_eq!(
+      config.get("copy_on_select").unwrap().as_bool().unwrap(),
+      false
     );
   }
 
