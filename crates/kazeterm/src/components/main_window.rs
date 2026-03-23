@@ -51,6 +51,8 @@ pub struct MainWindow {
   pub(crate) _import_alacritty_subscription: Option<gpui::Subscription>,
   /// Tracks the last time an OS notification was sent, for throttling.
   pub(crate) last_notification_time: Option<std::time::Instant>,
+  /// Whether the tab bar is currently visible
+  pub(crate) tab_bar_visible: bool,
 }
 
 impl MainWindow {
@@ -111,6 +113,7 @@ impl MainWindow {
       import_alacritty_dialog: None,
       _import_alacritty_subscription: None,
       last_notification_time: None,
+      tab_bar_visible: true,
     };
     main_window.insert_new_tab(window, cx);
     main_window

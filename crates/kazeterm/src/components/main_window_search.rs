@@ -38,4 +38,9 @@ impl MainWindow {
 
     cx.notify();
   }
+
+  pub(crate) fn toggle_tab_bar(&mut self, cx: &mut Context<Self>) {
+    self.tab_bar_visible = !self.tab_bar_visible;
+    cx.notify();
+  }
 }

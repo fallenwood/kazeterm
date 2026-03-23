@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260323.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260323.2";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -49,6 +49,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260322.1",
       to_version: "20260323.1",
       migrate: migrate_v20260322_1_to_20260323_1,
+    },
+    Migration {
+      from_version: "20260323.1",
+      to_version: "20260323.2",
+      migrate: migrate_v20260323_1_to_20260323_2,
     },
   ]
 }
@@ -146,6 +151,16 @@ fn migrate_v20260322_1_to_20260323_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260323.1".to_string()),
+    );
+  }
+}
+
+/// Add toggle_tab_bar keybinding (serde defaults handle the new field).
+fn migrate_v20260323_1_to_20260323_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    table.insert(
+      "version".to_string(),
+      Value::String("20260323.2".to_string()),
     );
   }
 }
