@@ -163,11 +163,7 @@ impl Render for MainWindow {
         } else if kb_swap_panes.matches(mods.control, mods.shift, mods.alt, key) {
           this.swap_split_panes(window, cx);
         } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
-          if cfg!(target_os = "macos") {
-            window.zoom_window();
-          } else {
-            window.toggle_fullscreen();
-          }
+          window.toggle_fullscreen();
         } else if kb_toggle_tab_bar.matches(mods.control, mods.shift, mods.alt, key) {
           this.toggle_tab_bar(cx);
         }
@@ -474,7 +470,7 @@ impl Render for MainWindow {
                   ),
               );
 
-        if window.is_fullscreen() && !cfg!(target_os = "macos") {
+        if window.is_fullscreen() {
           div()
             .flex_shrink_0()
             .id("title-bar")

@@ -9,7 +9,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use gpui::{
-  App, AppContext, Application, Point, Size, WindowBackgroundAppearance, WindowOptions, px,
+  App, AppContext, Application, MenuItem, Point, Size, WindowBackgroundAppearance, WindowOptions,
+  actions, px,
 };
 use themeing::SettingsStore;
 
@@ -23,6 +24,8 @@ mod components;
 mod config;
 mod config_watcher;
 pub mod event_system;
+
+actions!(kazeterm, [NewWindow]);
 
 /// Command-line arguments for Kazeterm
 #[derive(Parser, Debug)]
@@ -164,6 +167,71 @@ fn detect_system_dark_mode() -> bool {
   }
 }
 
+/// Open a new Kazeterm window using the current global config.
+fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
+  let config = cx.global::<Config>().clone();
+  let window_width = config.window_width;
+  let window_height = config.window_height;
+  let background_opacity = config.get_background_opacity();
+
+  cx.spawn(async move |cx| {
+    let window_background = if background_opacity < 1.0 {
+      WindowBackgroundAppearance::Transparent
+    } else {
+      WindowBackgroundAppearance::Opaque
+    };
+
+    let options = WindowOptions {
+      window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
+        origin: Point {
+          x: px(100f32),
+          y: px(100f32),
+        },
+        size: Size {
+          width: px(window_width),
+          height: px(window_height),
+        },
+      })),
+      titlebar: Some(gpui::TitlebarOptions {
+        title: Some("Kazeterm".into()),
+        appears_transparent: true,
+        traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
+      }),
+      window_decorations: Some(gpui::WindowDecorations::Client),
+      window_background,
+      app_id: Some("kazeterm".into()),
+      ..Default::default()
+    };
+
+    let event_config = event_source_config;
+    cx.open_window(options, |window, cx| {
+      let view = crate::components::MainWindow::view(window, cx);
+      let window_handle = window.window_handle();
+
+      // Set X11 window icon from embedded PNG
+      #[cfg(target_os = "linux")]
+      app_icon::set_x11_window_icon(window);
+
+      // Initialize the event system with a weak reference to the main window
+      let main_window_weak = view.downgrade();
+      let event_config_clone = event_config.clone();
+      cx.defer(move |cx| {
+        crate::event_system::start_event_system(
+          main_window_weak,
+          window_handle,
+          event_config_clone,
+          cx,
+        );
+      });
+
+      cx.new(|cx| gpui_component::Root::new(view, window, cx))
+    })?;
+
+    Ok::<_, anyhow::Error>(())
+  })
+  .detach();
+}
+
 fn main() {
   // Parse command-line arguments
   let args = Args::parse();
@@ -208,97 +276,18 @@ fn main() {
     #[cfg(target_os = "linux")]
     app_icon::install_linux_desktop_icon();
 
-    let window_width = config.window_width;
-    let window_height = config.window_height;
-    let background_opacity = config.get_background_opacity();
-    let event_config = event_source_config.clone();
+    // Register global dock menu actions
+    {
+      let event_config = event_source_config.clone();
+      cx.on_action(move |_: &NewWindow, cx: &mut App| {
+        open_kazeterm_window(event_config.clone(), cx);
+      });
+    }
 
-    cx.spawn(async move |cx| {
-      let window_background = if background_opacity < 1.0 {
-        WindowBackgroundAppearance::Transparent
-      } else {
-        WindowBackgroundAppearance::Opaque
-      };
+    // Set macOS dock menu (long-press on dock icon)
+    #[cfg(target_os = "macos")]
+    cx.set_dock_menu(vec![MenuItem::action("New Window", NewWindow)]);
 
-      let options = WindowOptions {
-        window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
-          origin: Point {
-            x: px(100f32),
-            y: px(100f32),
-          },
-          size: Size {
-            width: px(window_width),
-            height: px(window_height),
-          },
-        })),
-        titlebar: Some(gpui::TitlebarOptions {
-          title: Some("Kazeterm".into()),
-          appears_transparent: true,
-          traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
-        }),
-        window_decorations: Some(gpui::WindowDecorations::Client),
-        window_background,
-        app_id: Some("kazeterm".into()),
-        ..Default::default()
-      };
-
-      cx.open_window(options, |window, cx| {
-        let view = crate::components::MainWindow::view(window, cx);
-        let window_handle = window.window_handle();
-
-        // On macOS, disable fullscreen so the green button zooms instead,
-        // keeping native traffic lights visible.
-        #[cfg(target_os = "macos")]
-        {
-          use raw_window_handle::HasWindowHandle;
-          if let Ok(handle) =
-            <gpui::Window as HasWindowHandle>::window_handle(window)
-          {
-            if let raw_window_handle::RawWindowHandle::AppKit(appkit) =
-              handle.as_raw()
-            {
-              let ns_view =
-                appkit.ns_view.as_ptr() as *mut objc::runtime::Object;
-              unsafe {
-                let ns_window: *mut objc::runtime::Object =
-                  objc::msg_send![ns_view, window];
-                if !ns_window.is_null() {
-                  let current: u64 =
-                    objc::msg_send![ns_window, collectionBehavior];
-                  // Remove FullScreenPrimary (1 << 7), add FullScreenNone (1 << 9)
-                  let new_behavior =
-                    (current & !(1u64 << 7)) | (1u64 << 9);
-                  let _: () = objc::msg_send![
-                    ns_window,
-                    setCollectionBehavior: new_behavior
-                  ];
-                }
-              }
-            }
-          }
-        }
-
-        // Set X11 window icon from embedded PNG
-        #[cfg(target_os = "linux")]
-        app_icon::set_x11_window_icon(window);
-
-        // Initialize the event system with a weak reference to the main window
-        let main_window_weak = view.downgrade();
-        let event_config_clone = event_config.clone();
-        cx.defer(move |cx| {
-          crate::event_system::start_event_system(
-            main_window_weak,
-            window_handle,
-            event_config_clone,
-            cx,
-          );
-        });
-
-        cx.new(|cx| gpui_component::Root::new(view, window, cx))
-      })?;
-
-      Ok::<_, anyhow::Error>(())
-    })
-    .detach();
+    open_kazeterm_window(event_source_config.clone(), cx);
   });
 }
