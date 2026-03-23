@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use alacritty_terminal::{
-  Term, event_loop::EventLoop, sync::FairMutex, term::Config,
+  Term, event_loop::EventLoop, grid::Dimensions, sync::FairMutex, term::Config,
 };
 use alacritty_terminal::term::Osc52;
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle as AlacCursorStyle};
