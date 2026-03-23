@@ -110,6 +110,9 @@ pub enum AppEvent {
   /// Toggle search bar visibility
   ToggleSearch,
 
+  /// Toggle tab bar visibility
+  ToggleTabBar,
+
   /// Show the about dialog
   ShowAboutDialog,
 
@@ -144,6 +147,7 @@ impl AppEvent {
       AppEvent::FocusPreviousPane => "FocusPreviousPane",
       AppEvent::SwapSplitPanes => "SwapSplitPanes",
       AppEvent::ToggleSearch => "ToggleSearch",
+      AppEvent::ToggleTabBar => "ToggleTabBar",
       AppEvent::ShowAboutDialog => "ShowAboutDialog",
       AppEvent::ReloadConfig => "ReloadConfig",
       AppEvent::FocusActiveTerminal => "FocusActiveTerminal",
@@ -313,6 +317,10 @@ pub fn build_default_event_bus() -> EventBus {
 
   bus.subscribe("ToggleSearch", |mw, _event, window, cx| {
     mw.toggle_search(window, cx);
+  });
+
+  bus.subscribe("ToggleTabBar", |mw, _event, _window, cx| {
+    mw.toggle_tab_bar(cx);
   });
 
   bus.subscribe("ShowAboutDialog", |mw, _event, window, cx| {
@@ -611,6 +619,7 @@ mod tests {
       "FocusPreviousPane",
       "SwapSplitPanes",
       "ToggleSearch",
+      "ToggleTabBar",
       "ShowAboutDialog",
       "ReloadConfig",
       "FocusActiveTerminal",

@@ -39,6 +39,8 @@ pub struct KeybindingConfig {
   pub swap_split_panes: String,
   /// Toggle fullscreen mode
   pub toggle_fullscreen: String,
+  /// Toggle tab bar visibility
+  pub toggle_tab_bar: String,
 }
 
 impl Default for KeybindingConfig {
@@ -63,6 +65,7 @@ impl Default for KeybindingConfig {
       } else {
         "f11".to_string()
       },
+      toggle_tab_bar: "ctrl-shift-b".to_string(),
     }
   }
 }

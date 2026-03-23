@@ -35,6 +35,7 @@ impl Render for MainWindow {
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
     let vertical_tabs = config.vertical_tabs;
+    let tab_bar_visible = self.tab_bar_visible;
     let setting_store = cx.global::<SettingsStore>();
     let local_profiles = config.get_local_profiles_with_shells();
     let container_profiles = config.get_container_profiles_with_shells();
@@ -122,6 +123,7 @@ impl Render for MainWindow {
         let kb_focus_prev_pane = ParsedKeybinding::parse(&keybindings.focus_previous_pane);
         let kb_swap_panes = ParsedKeybinding::parse(&keybindings.swap_split_panes);
         let kb_fullscreen = ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
+        let kb_toggle_tab_bar = ParsedKeybinding::parse(&keybindings.toggle_tab_bar);
         let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
 
         if kb_next.matches(mods.control, mods.shift, mods.alt, key) {
@@ -166,6 +168,8 @@ impl Render for MainWindow {
           } else {
             window.toggle_fullscreen();
           }
+        } else if kb_toggle_tab_bar.matches(mods.control, mods.shift, mods.alt, key) {
+          this.toggle_tab_bar(cx);
         }
       }))
       .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, _cx| {
@@ -205,7 +209,7 @@ impl Render for MainWindow {
               .flex_basis(px(0.0))
               .min_w_0()
               .overflow_x_hidden()
-              .when(!vertical_tabs, |this| {
+              .when(!vertical_tabs && tab_bar_visible, |this| {
                 this.child(
                   TerminalTabBar::new("tabs")
                     .track_scroll(&self.tab_scroll_handle)
@@ -421,6 +425,22 @@ impl Render for MainWindow {
                   .gap_0()
                   .pl_1()
                   .child(
+                    Button::new("toggle-tab-bar")
+                      .ghost()
+                      .small()
+                      .icon(if tab_bar_visible {
+                        IconName::PanelLeftClose
+                      } else {
+                        IconName::PanelLeftOpen
+                      })
+                      .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                        cx.stop_propagation();
+                      })
+                      .on_click(cx.listener(|this, _e, _window, cx| {
+                        this.toggle_tab_bar(cx);
+                      })),
+                  )
+                  .child(
                     Button::new("new")
                       .ghost()
                       .small()
@@ -541,235 +561,238 @@ impl Render for MainWindow {
           h_flex()
             .flex_1()
             .size_full()
-            .child(
-              div()
-                .h_full()
-                .flex_shrink_0()
-                .w(self.vertical_tabbar_width)
-                .bg(colors.title_bar_background)
-                .p_1()
+            .when(tab_bar_visible, |this| {
+              this
                 .child(
-                  TerminalTabBar::new("tabs-vertical")
-                    .vertical(true)
-                    .track_scroll(&self.tab_scroll_handle)
-                    .children(
-                      self
-                        .items
-                        .iter()
-                        .enumerate()
-                        .map(|(tab_ix, item)| {
-                          let shell_icon = ShellIcon::new(&item.shell_path);
-                          let tab_index = item.index;
-                          let tab_title = item.display_title().to_string();
-                          let total_tabs = self.items.len();
-                          let is_first = tab_ix == 0;
-                          let is_last = tab_ix == total_tabs - 1;
-                          let is_selected = self.active_tab_ix == Some(tab_ix);
-                          let has_bell = item
-                            .split_container
-                            .all_terminals()
+                  div()
+                    .h_full()
+                    .flex_shrink_0()
+                    .w(self.vertical_tabbar_width)
+                    .bg(colors.title_bar_background)
+                    .p_1()
+                    .child(
+                      TerminalTabBar::new("tabs-vertical")
+                        .vertical(true)
+                        .track_scroll(&self.tab_scroll_handle)
+                        .children(
+                          self
+                            .items
                             .iter()
-                            .any(|(_, t)| t.read(cx).has_bell());
-                          let view = cx.entity();
-                          let view_for_click = view.clone();
-                          let all_terminals = item.split_container.all_terminals();
-                          let selected_bg: gpui::Hsla = colors.tab_active_background;
-                          let normal_bg = colors.tab_inactive_background;
-                          let hover_bg = colors.element_hover;
-                          let text_color = colors.text;
-                          let text_muted = colors.text_muted;
-                          let accent_color = colors.text_accent;
-                          let warning_color = colors.terminal_ansi_yellow;
+                            .enumerate()
+                            .map(|(tab_ix, item)| {
+                              let shell_icon = ShellIcon::new(&item.shell_path);
+                              let tab_index = item.index;
+                              let tab_title = item.display_title().to_string();
+                              let total_tabs = self.items.len();
+                              let is_first = tab_ix == 0;
+                              let is_last = tab_ix == total_tabs - 1;
+                              let is_selected = self.active_tab_ix == Some(tab_ix);
+                              let has_bell = item
+                                .split_container
+                                .all_terminals()
+                                .iter()
+                                .any(|(_, t)| t.read(cx).has_bell());
+                              let view = cx.entity();
+                              let view_for_click = view.clone();
+                              let all_terminals = item.split_container.all_terminals();
+                              let selected_bg: gpui::Hsla = colors.tab_active_background;
+                              let normal_bg = colors.tab_inactive_background;
+                              let hover_bg = colors.element_hover;
+                              let text_color = colors.text;
+                              let text_muted = colors.text_muted;
+                              let accent_color = colors.text_accent;
+                              let warning_color = colors.terminal_ansi_yellow;
 
-                          TerminalTab::new()
-                            .selected(is_selected)
-                            .fill_height(false)
-                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                              view_for_click.update(cx, |this, cx| {
-                                this.set_active_tab(tab_ix, window, cx);
-                              });
-                              for (_, terminal) in &all_terminals {
-                                terminal.update(cx, |terminal_view, cx| {
-                                  terminal_view.clear_bell(cx);
-                                });
-                              }
-                              cx.stop_propagation();
-                            })
-                            .child(
-                              div()
-                                .id(ElementId::NamedInteger(
-                                  "tab-container".into(),
-                                  tab_ix as u64,
-                                ))
-                                .group("tab-item")
-                                .w_full()
+                              TerminalTab::new()
+                                .selected(is_selected)
+                                .fill_height(false)
+                                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                                  view_for_click.update(cx, |this, cx| {
+                                    this.set_active_tab(tab_ix, window, cx);
+                                  });
+                                  for (_, terminal) in &all_terminals {
+                                    terminal.update(cx, |terminal_view, cx| {
+                                      terminal_view.clear_bell(cx);
+                                    });
+                                  }
+                                  cx.stop_propagation();
+                                })
                                 .child(
                                   div()
-                                    .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
-                                    .w_full()
-                                    .cursor(CursorStyle::OpenHand)
-                                    .on_drag(
-                                      DraggedTab {
-                                        from_ix: tab_ix,
-                                        title: tab_title.clone(),
-                                        shell_path: item.shell_path.clone(),
-                                      },
-                                      |dragged: &DraggedTab, _offset, _window, cx| {
-                                        cx.new(|_cx| {
-                                          DraggedTabView::new(
-                                            dragged.title.clone(),
-                                            dragged.shell_path.clone(),
-                                          )
-                                        })
-                                      },
-                                    )
-                                    .drag_over::<DraggedTab>(
-                                      move |style, _dragged, _window, _cx| {
-                                        style
-                                          .bg(accent_color.opacity(0.15))
-                                          .border_l_2()
-                                          .border_color(accent_color)
-                                      },
-                                    )
-                                    .on_drop(cx.listener(
-                                      move |this, dragged: &DraggedTab, _window, cx| {
-                                        let from_ix = dragged.from_ix;
-                                        let to_ix = tab_ix;
-                                        if from_ix != to_ix {
-                                          let item = this.items.remove(from_ix);
-                                          this.items.insert(to_ix, item);
-                                          if let Some(active) = this.active_tab_ix {
-                                            if active == from_ix {
-                                              this.active_tab_ix = Some(to_ix);
-                                            } else if from_ix < active && active <= to_ix {
-                                              this.active_tab_ix = Some(active - 1);
-                                            } else if to_ix <= active && active < from_ix {
-                                              this.active_tab_ix = Some(active + 1);
-                                            }
-                                          }
-                                          cx.notify();
-                                        }
-                                      },
+                                    .id(ElementId::NamedInteger(
+                                      "tab-container".into(),
+                                      tab_ix as u64,
                                     ))
+                                    .group("tab-item")
+                                    .w_full()
                                     .child(
-                                      h_flex()
+                                      div()
+                                        .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
                                         .w_full()
-                                        .gap_1p5()
-                                        .pl_2p5()
-                                        .pr_1()
-                                        .py_1()
-                                        .items_center()
-                                        .when(is_selected, |this| {
-                                          this
-                                            .bg(selected_bg)
-                                            .border_l_2()
-                                            .border_color(accent_color)
-                                        })
-                                        .when(!is_selected, |this| {
-                                          this.bg(normal_bg).hover(|style| style.bg(hover_bg))
-                                        })
-                                        .rounded_md()
-                                        .child(
-                                          div()
-                                            .flex_shrink_0()
-                                            .child(shell_icon.into_element(px(14.0))),
+                                        .cursor(CursorStyle::OpenHand)
+                                        .on_drag(
+                                          DraggedTab {
+                                            from_ix: tab_ix,
+                                            title: tab_title.clone(),
+                                            shell_path: item.shell_path.clone(),
+                                          },
+                                          |dragged: &DraggedTab, _offset, _window, cx| {
+                                            cx.new(|_cx| {
+                                              DraggedTabView::new(
+                                                dragged.title.clone(),
+                                                dragged.shell_path.clone(),
+                                              )
+                                            })
+                                          },
                                         )
-                                        .when(has_bell, |this| {
-                                          this.child(
-                                            div().flex_shrink_0().child(
-                                              Icon::new(IconName::Bell)
-                                                .size_3()
-                                                .text_color(warning_color),
-                                            ),
-                                          )
-                                        })
-                                        .child(
-                                          div().flex_1().min_w_0().overflow_x_hidden().child(
-                                            Label::new(tab_title.clone())
-                                              .text_color(if is_selected {
-                                                text_color
-                                              } else {
-                                                text_muted
-                                              })
-                                              .whitespace_nowrap(),
-                                          ),
+                                        .drag_over::<DraggedTab>(
+                                          move |style, _dragged, _window, _cx| {
+                                            style
+                                              .bg(accent_color.opacity(0.15))
+                                              .border_l_2()
+                                              .border_color(accent_color)
+                                          },
                                         )
-                                        .child({
-                                          let close_visible = is_selected;
-                                          div()
-                                            .flex_shrink_0()
-                                            .when(!close_visible, |this| {
+                                        .on_drop(cx.listener(
+                                          move |this, dragged: &DraggedTab, _window, cx| {
+                                            let from_ix = dragged.from_ix;
+                                            let to_ix = tab_ix;
+                                            if from_ix != to_ix {
+                                              let item = this.items.remove(from_ix);
+                                              this.items.insert(to_ix, item);
+                                              if let Some(active) = this.active_tab_ix {
+                                                if active == from_ix {
+                                                  this.active_tab_ix = Some(to_ix);
+                                                } else if from_ix < active && active <= to_ix {
+                                                  this.active_tab_ix = Some(active - 1);
+                                                } else if to_ix <= active && active < from_ix {
+                                                  this.active_tab_ix = Some(active + 1);
+                                                }
+                                              }
+                                              cx.notify();
+                                            }
+                                          },
+                                        ))
+                                        .child(
+                                          h_flex()
+                                            .w_full()
+                                            .gap_1p5()
+                                            .pl_2p5()
+                                            .pr_1()
+                                            .py_1()
+                                            .items_center()
+                                            .when(is_selected, |this| {
                                               this
-                                                .invisible()
-                                                .group_hover("tab-item", |style| style.visible())
+                                                .bg(selected_bg)
+                                                .border_l_2()
+                                                .border_color(accent_color)
+                                            })
+                                            .when(!is_selected, |this| {
+                                              this.bg(normal_bg).hover(|style| style.bg(hover_bg))
+                                            })
+                                            .rounded_md()
+                                            .child(
+                                              div()
+                                                .flex_shrink_0()
+                                                .child(shell_icon.into_element(px(14.0))),
+                                            )
+                                            .when(has_bell, |this| {
+                                              this.child(
+                                                div().flex_shrink_0().child(
+                                                  Icon::new(IconName::Bell)
+                                                    .size_3()
+                                                    .text_color(warning_color),
+                                                ),
+                                              )
                                             })
                                             .child(
-                                              TabButton::new("close-vertical", tab_index)
-                                                .visible(true)
-                                                .on_click(cx.listener(
-                                                  |this, e: &TabButtonClickEvent, window, cx| {
-                                                    this.remove_tab_by(e.index, window, cx);
-                                                  },
-                                                )),
+                                              div().flex_1().min_w_0().overflow_x_hidden().child(
+                                                Label::new(tab_title.clone())
+                                                  .text_color(if is_selected {
+                                                    text_color
+                                                  } else {
+                                                    text_muted
+                                                  })
+                                                  .whitespace_nowrap(),
+                                              ),
                                             )
-                                        })
-                                        .on_mouse_down(MouseButton::Right, |_, _, cx| {
-                                          cx.stop_propagation();
-                                        })
-                                        .context_menu({
-                                          let view = view.clone();
-                                          move |menu, _window, _cx| {
-                                            build_tab_context_menu(
-                                              menu,
-                                              view.clone(),
-                                              tab_index,
-                                              tab_ix,
-                                              is_first,
-                                              is_last,
-                                              total_tabs,
-                                              "Move Up",
-                                              IconName::ArrowUp,
-                                              "Move Down",
-                                              IconName::ArrowDown,
-                                            )
-                                          }
-                                        }),
+                                            .child({
+                                              let close_visible = is_selected;
+                                              div()
+                                                .flex_shrink_0()
+                                                .when(!close_visible, |this| {
+                                                  this
+                                                    .invisible()
+                                                    .group_hover("tab-item", |style| style.visible())
+                                                })
+                                                .child(
+                                                  TabButton::new("close-vertical", tab_index)
+                                                    .visible(true)
+                                                    .on_click(cx.listener(
+                                                      |this, e: &TabButtonClickEvent, window, cx| {
+                                                        this.remove_tab_by(e.index, window, cx);
+                                                      },
+                                                    )),
+                                                )
+                                            })
+                                            .on_mouse_down(MouseButton::Right, |_, _, cx| {
+                                              cx.stop_propagation();
+                                            })
+                                            .context_menu({
+                                              let view = view.clone();
+                                              move |menu, _window, _cx| {
+                                                build_tab_context_menu(
+                                                  menu,
+                                                  view.clone(),
+                                                  tab_index,
+                                                  tab_ix,
+                                                  is_first,
+                                                  is_last,
+                                                  total_tabs,
+                                                  "Move Up",
+                                                  IconName::ArrowUp,
+                                                  "Move Down",
+                                                  IconName::ArrowDown,
+                                                )
+                                              }
+                                            }),
+                                        ),
                                     ),
-                                ),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                        ),
                     ),
-                ),
-            )
-            .child(
-              div()
-                .id("vertical-tabbar-resize-handle")
-                .h_full()
-                .w(px(6.0))
-                .cursor(CursorStyle::ResizeLeftRight)
-                .on_drag_move(cx.listener(
-                  |this, e: &DragMoveEvent<ResizeVerticalTabbar>, window, cx| {
-                    let ResizeVerticalTabbar(entity_id) = e.drag(cx);
-                    if cx.entity_id() != *entity_id {
-                      return;
-                    }
+                )
+                .child(
+                  div()
+                    .id("vertical-tabbar-resize-handle")
+                    .h_full()
+                    .w(px(6.0))
+                    .cursor(CursorStyle::ResizeLeftRight)
+                    .on_drag_move(cx.listener(
+                      |this, e: &DragMoveEvent<ResizeVerticalTabbar>, window, cx| {
+                        let ResizeVerticalTabbar(entity_id) = e.drag(cx);
+                        if cx.entity_id() != *entity_id {
+                          return;
+                        }
 
-                    let min_width = px(VERTICAL_TABBAR_MIN_WIDTH);
-                    let max_width = (window.bounds().size.width - px(160.0)).max(min_width);
-                    let next_width = e.event.position.x.max(min_width).min(max_width);
-                    if this.vertical_tabbar_width != next_width {
-                      this.vertical_tabbar_width = next_width;
-                      cx.notify();
-                    }
-                  },
-                ))
-                .on_drag(ResizeVerticalTabbar(cx.entity_id()), |drag, _, _, cx| {
-                  cx.stop_propagation();
-                  cx.new(|_| drag.clone())
-                })
-                .bg(colors.border),
-            )
+                        let min_width = px(VERTICAL_TABBAR_MIN_WIDTH);
+                        let max_width = (window.bounds().size.width - px(160.0)).max(min_width);
+                        let next_width = e.event.position.x.max(min_width).min(max_width);
+                        if this.vertical_tabbar_width != next_width {
+                          this.vertical_tabbar_width = next_width;
+                          cx.notify();
+                        }
+                      },
+                    ))
+                    .on_drag(ResizeVerticalTabbar(cx.entity_id()), |drag, _, _, cx| {
+                      cx.stop_propagation();
+                      cx.new(|_| drag.clone())
+                    })
+                    .bg(colors.border),
+                )
+            })
             .child(content)
             .into_any_element()
         } else {
