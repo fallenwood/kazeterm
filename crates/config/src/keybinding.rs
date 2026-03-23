@@ -31,6 +31,12 @@ pub struct KeybindingConfig {
   pub split_vertical: String,
   /// Close active pane
   pub close_pane: String,
+  /// Focus next split pane
+  pub focus_next_pane: String,
+  /// Focus previous split pane
+  pub focus_previous_pane: String,
+  /// Swap the two halves of the current split
+  pub swap_split_panes: String,
   /// Toggle fullscreen mode
   pub toggle_fullscreen: String,
 }
@@ -49,6 +55,9 @@ impl Default for KeybindingConfig {
       split_horizontal: "ctrl-shift-d".to_string(),
       split_vertical: "ctrl-shift-e".to_string(),
       close_pane: "ctrl-shift-w".to_string(),
+      focus_next_pane: "ctrl-shift-]".to_string(),
+      focus_previous_pane: "ctrl-shift-[".to_string(),
+      swap_split_panes: "ctrl-shift-x".to_string(),
       toggle_fullscreen: if cfg!(target_os = "macos") {
         "f12".to_string()
       } else {

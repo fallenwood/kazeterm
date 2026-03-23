@@ -133,14 +133,11 @@ impl SplitPane {
         if first_result.closed {
           if let Some(new_first) = first_result.replacement {
             **first = new_first;
-            return ClosePaneResult {
-              replacement: None,
-              closed: true,
-            };
           }
-
+          // Whether replacement was Some (child collapsed) or None (deeper
+          // restructure already applied), the current Split is still valid.
           return ClosePaneResult {
-            replacement: Some(*second.clone()),
+            replacement: None,
             closed: true,
           };
         }
@@ -150,14 +147,9 @@ impl SplitPane {
         if second_result.closed {
           if let Some(new_second) = second_result.replacement {
             **second = new_second;
-            return ClosePaneResult {
-              replacement: None,
-              closed: true,
-            };
           }
-
           return ClosePaneResult {
-            replacement: Some(*first.clone()),
+            replacement: None,
             closed: true,
           };
         }
@@ -219,6 +211,49 @@ impl SplitPane {
     match self {
       SplitPane::Terminal { .. } => 1,
       SplitPane::Split { first, second, .. } => first.count_panes() + second.count_panes(),
+    }
+  }
+
+  #[allow(dead_code)]
+  pub fn contains_pane(&self, pane_id: PaneId) -> bool {
+    match self {
+      SplitPane::Terminal { id, .. } => *id == pane_id,
+      SplitPane::Split { first, second, .. } => {
+        first.contains_pane(pane_id) || second.contains_pane(pane_id)
+      }
+    }
+  }
+
+  /// Swap the children of the innermost split that directly contains the active pane.
+  pub fn swap_at_active(&mut self, active_id: PaneId) -> bool {
+    match self {
+      SplitPane::Terminal { .. } => false,
+      SplitPane::Split {
+        first,
+        second,
+        ratio,
+        ..
+      } => {
+        // Check if either immediate child is (or contains) the active terminal.
+        // Prefer recursing deeper first so we swap at the innermost level.
+        if first.swap_at_active(active_id) || second.swap_at_active(active_id) {
+          return true;
+        }
+
+        // If the active pane is a direct child terminal, swap the two halves.
+        let first_is_active =
+          matches!(first.as_ref(), SplitPane::Terminal { id, .. } if *id == active_id);
+        let second_is_active =
+          matches!(second.as_ref(), SplitPane::Terminal { id, .. } if *id == active_id);
+
+        if first_is_active || second_is_active {
+          std::mem::swap(first, second);
+          *ratio = 1.0 - *ratio;
+          return true;
+        }
+
+        false
+      }
     }
   }
 
@@ -480,6 +515,54 @@ impl SplitContainer {
   pub fn set_active_pane(&mut self, pane_id: PaneId) {
     if self.root.find_terminal(pane_id).is_some() {
       self.active_pane_id = Some(pane_id);
+    }
+  }
+
+  /// Swap the two halves of the split containing the active pane.
+  pub fn swap_panes(&mut self) -> bool {
+    if let Some(active_id) = self.active_pane_id {
+      self.root.swap_at_active(active_id)
+    } else {
+      false
+    }
+  }
+
+  /// Move focus to the next pane (cycles through terminals in tree order).
+  pub fn focus_next_pane(&mut self) -> Option<Entity<TerminalView>> {
+    let terminals = self.root.all_terminals();
+    if terminals.len() <= 1 {
+      return None;
+    }
+    if let Some(active_id) = self.active_pane_id {
+      let current_ix = terminals.iter().position(|(id, _)| *id == active_id);
+      let next_ix = match current_ix {
+        Some(ix) => (ix + 1) % terminals.len(),
+        None => 0,
+      };
+      self.active_pane_id = Some(terminals[next_ix].0);
+      Some(terminals[next_ix].1.clone())
+    } else {
+      None
+    }
+  }
+
+  /// Move focus to the previous pane (cycles through terminals in tree order).
+  pub fn focus_prev_pane(&mut self) -> Option<Entity<TerminalView>> {
+    let terminals = self.root.all_terminals();
+    if terminals.len() <= 1 {
+      return None;
+    }
+    if let Some(active_id) = self.active_pane_id {
+      let current_ix = terminals.iter().position(|(id, _)| *id == active_id);
+      let prev_ix = match current_ix {
+        Some(0) => terminals.len() - 1,
+        Some(ix) => ix - 1,
+        None => 0,
+      };
+      self.active_pane_id = Some(terminals[prev_ix].0);
+      Some(terminals[prev_ix].1.clone())
+    } else {
+      None
     }
   }
 

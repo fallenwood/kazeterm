@@ -72,4 +72,30 @@ impl MainWindow {
       cx.notify();
     }
   }
+
+  pub fn focus_next_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(item) = self.active_tab_item_mut() {
+      if let Some(terminal) = item.split_container.focus_next_pane() {
+        Self::focus_terminal(window, &terminal, cx);
+        cx.notify();
+      }
+    }
+  }
+
+  pub fn focus_prev_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(item) = self.active_tab_item_mut() {
+      if let Some(terminal) = item.split_container.focus_prev_pane() {
+        Self::focus_terminal(window, &terminal, cx);
+        cx.notify();
+      }
+    }
+  }
+
+  pub fn swap_split_panes(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(item) = self.active_tab_item_mut() {
+      if item.split_container.swap_panes() {
+        cx.notify();
+      }
+    }
+  }
 }

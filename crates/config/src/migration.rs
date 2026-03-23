@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260321.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260322.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -42,8 +42,13 @@ fn migrations() -> &'static [Migration] {
     },
     Migration {
       from_version: "20260306.1",
-      to_version: "20260321.1",
-      migrate: migrate_v20260306_1_to_20260321_1,
+      to_version: "20260322.1",
+      migrate: migrate_v20260306_1_to_20260322_1,
+    },
+    Migration {
+      from_version: "20260322.1",
+      to_version: "20260323.1",
+      migrate: migrate_v20260322_1_to_20260323_1,
     },
   ]
 }
@@ -94,8 +99,19 @@ fn migrate_v20260303_1_to_20260306_1(value: &mut Value) {
   }
 }
 
+/// Add split pane navigation keybindings (focus_next_pane, focus_previous_pane, swap_split_panes).
+fn migrate_v20260306_1_to_20260322_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    // New keybinding defaults are handled by serde defaults, no explicit insertion needed.
+    table.insert(
+      "version".to_string(),
+      Value::String("20260322.1".to_string()),
+    );
+  }
+}
+
 /// Add terminal configuration options: scrollback, cursor, osc52, copy_on_select, env, working_directory.
-fn migrate_v20260306_1_to_20260321_1(value: &mut Value) {
+fn migrate_v20260322_1_to_20260323_1(value: &mut Value) {
   if let Value::Table(table) = value {
     if !table.contains_key("scrollback_lines") {
       table.insert(
@@ -129,7 +145,7 @@ fn migrate_v20260306_1_to_20260321_1(value: &mut Value) {
     }
     table.insert(
       "version".to_string(),
-      Value::String("20260321.1".to_string()),
+      Value::String("20260323.1".to_string()),
     );
   }
 }

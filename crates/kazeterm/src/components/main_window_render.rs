@@ -118,6 +118,9 @@ impl Render for MainWindow {
         let kb_split_h = ParsedKeybinding::parse(&keybindings.split_horizontal);
         let kb_split_v = ParsedKeybinding::parse(&keybindings.split_vertical);
         let kb_close_pane = ParsedKeybinding::parse(&keybindings.close_pane);
+        let kb_focus_next_pane = ParsedKeybinding::parse(&keybindings.focus_next_pane);
+        let kb_focus_prev_pane = ParsedKeybinding::parse(&keybindings.focus_previous_pane);
+        let kb_swap_panes = ParsedKeybinding::parse(&keybindings.swap_split_panes);
         let kb_fullscreen = ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
         let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
 
@@ -151,6 +154,12 @@ impl Render for MainWindow {
           this.split_pane_vertical(window, cx);
         } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, key) {
           this.close_active_pane(window, cx);
+        } else if kb_focus_next_pane.matches(mods.control, mods.shift, mods.alt, key) {
+          this.focus_next_pane(window, cx);
+        } else if kb_focus_prev_pane.matches(mods.control, mods.shift, mods.alt, key) {
+          this.focus_prev_pane(window, cx);
+        } else if kb_swap_panes.matches(mods.control, mods.shift, mods.alt, key) {
+          this.swap_split_panes(window, cx);
         } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
           if cfg!(target_os = "macos") {
             window.zoom_window();

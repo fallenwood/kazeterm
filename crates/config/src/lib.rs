@@ -73,11 +73,11 @@ pub struct Config {
   pub background_opacity: f32,
   /// Custom keyboard shortcuts
   pub keybindings: KeybindingConfig,
-  /// Minimum idle time (in seconds) since last input before a bell triggers
-  /// a native OS notification. Set to 0 to notify on every bell.
+  /// Minimum idle time (in seconds) since last input before a command completion
+  /// triggers a native OS notification. Set to 0 to notify on every prompt return.
   pub long_running_threshold_secs: u64,
   /// Minimum interval (in seconds) between consecutive OS notifications.
-  /// Prevents notification spam when many bells fire in quick succession.
+  /// Prevents notification spam from rapid command completions.
   /// Set to 0 to allow every notification. Default is 5 seconds.
   pub notification_interval_secs: u64,
   /// Maximum number of lines in the scrollback buffer.
@@ -127,7 +127,7 @@ impl Default for Config {
       background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
-      notification_interval_secs: 5,
+      notification_interval_secs: 0,
       scrollback_lines: 10_000,
       cursor_shape: "block".to_string(),
       cursor_blink: true,
@@ -516,7 +516,7 @@ mod tests {
       background_opacity: 1.0,
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
-      notification_interval_secs: 5,
+      notification_interval_secs: 0,
       scrollback_lines: 10_000,
       cursor_shape: "block".into(),
       cursor_blink: true,
