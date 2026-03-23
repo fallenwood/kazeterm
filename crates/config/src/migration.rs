@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260322.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260323.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
