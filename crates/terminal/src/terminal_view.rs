@@ -29,7 +29,21 @@ actions!(
 use super::terminal::Terminal;
 use super::terminal_element::TerminalElement;
 
-const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
+const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(750);
+
+/// Returns the cursor blink interval from config, or the default constant.
+fn cursor_blink_interval(cx: &gpui::App) -> Duration {
+  cx.try_global::<config::Config>()
+    .map(|c| c.get_cursor_blink_interval())
+    .unwrap_or(CURSOR_BLINK_INTERVAL)
+}
+
+/// Returns whether cursor blinking is enabled from config.
+fn cursor_blink_enabled(cx: &gpui::App) -> bool {
+  cx.try_global::<config::Config>()
+    .map(|c| c.cursor_blink)
+    .unwrap_or(true)
+}
 
 #[derive(Clone, Debug)]
 pub enum TerminalEvent {
@@ -318,6 +332,11 @@ impl TerminalView {
   }
 
   pub fn should_show_cursor(&self, focused: bool, cx: &mut Context<Self>) -> bool {
+    // If blinking is disabled in config, always show cursor
+    if !cursor_blink_enabled(cx) {
+      return true;
+    }
+
     if !focused
       || self.blinking_paused
       || self
@@ -339,8 +358,9 @@ impl TerminalView {
       cx.notify();
 
       let epoch = self.next_blink_epoch();
+      let interval = cursor_blink_interval(cx);
       cx.spawn_in(window, async move |this, cx| {
-        Timer::after(CURSOR_BLINK_INTERVAL).await;
+        Timer::after(interval).await;
         this
           .update_in(cx, |this, window, cx| this.blink_cursors(epoch, window, cx))
           .ok();
@@ -354,8 +374,9 @@ impl TerminalView {
     cx.notify();
 
     let epoch = self.next_blink_epoch();
+    let interval = cursor_blink_interval(cx);
     cx.spawn_in(window, async move |this, cx| {
-      Timer::after(CURSOR_BLINK_INTERVAL).await;
+      Timer::after(interval).await;
       this
         .update_in(cx, |this, window, cx| {
           this.resume_cursor_blinking(epoch, window, cx)

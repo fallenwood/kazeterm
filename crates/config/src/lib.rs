@@ -1,5 +1,6 @@
 use gpui::Rgba;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub mod palette;
@@ -79,6 +80,25 @@ pub struct Config {
   /// Prevents notification spam from rapid command completions.
   /// Set to 0 to allow every notification. Default is 5 seconds.
   pub notification_interval_secs: u64,
+  /// Maximum number of lines in the scrollback buffer.
+  /// Higher values use more memory. Default is 10000.
+  pub scrollback_lines: u32,
+  /// Default cursor shape: "block", "underline", or "beam"
+  pub cursor_shape: String,
+  /// Whether the cursor blinks
+  pub cursor_blink: bool,
+  /// Cursor blink interval in milliseconds
+  pub cursor_blink_interval: u64,
+  /// OSC 52 clipboard access mode: "disabled", "copy_only", "paste_only", "copy_paste"
+  pub osc52: String,
+  /// Automatically copy selected text to the clipboard
+  pub copy_on_select: bool,
+  /// Additional environment variables to set for the terminal shell
+  #[serde(default)]
+  pub env: HashMap<String, String>,
+  /// Default working directory for new terminals.
+  /// Per-profile working_directory takes priority over this setting.
+  pub working_directory: Option<String>,
 }
 
 impl Default for Config {
@@ -108,6 +128,14 @@ impl Default for Config {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 0,
+      scrollback_lines: 10_000,
+      cursor_shape: "block".to_string(),
+      cursor_blink: true,
+      cursor_blink_interval: 750,
+      osc52: "copy_only".to_string(),
+      copy_on_select: false,
+      env: HashMap::new(),
+      working_directory: None,
     }
   }
 }
@@ -176,6 +204,16 @@ impl Config {
     {
       (self.background_opacity / 2.0).clamp(0.0, 1.0)
     }
+  }
+
+  /// Get scrollback lines clamped to [0, 100_000]
+  pub fn get_scrollback_lines(&self) -> usize {
+    (self.scrollback_lines as usize).min(100_000)
+  }
+
+  /// Get cursor blink interval as Duration, clamped to [10, 10000] ms
+  pub fn get_cursor_blink_interval(&self) -> std::time::Duration {
+    std::time::Duration::from_millis(self.cursor_blink_interval.clamp(10, 10_000))
   }
 
   pub fn load() -> Self {
@@ -479,6 +517,14 @@ mod tests {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 0,
+      scrollback_lines: 10_000,
+      cursor_shape: "block".into(),
+      cursor_blink: true,
+      cursor_blink_interval: 750,
+      osc52: "copy_only".into(),
+      copy_on_select: false,
+      env: HashMap::new(),
+      working_directory: None,
     };
 
     // get_profile

@@ -3,6 +3,7 @@
 //! Parses `alacritty.toml` and converts relevant settings into
 //! Kazeterm's `Config` and `ThemeFile` structures.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -20,6 +21,12 @@ struct AlacrittyConfig {
     window: AlacrittyWindow,
     colors: AlacrittyColors,
     terminal: AlacrittyTerminal,
+    scrolling: AlacrittyScrolling,
+    cursor: AlaccrityCursor,
+    selection: AlacrittySelection,
+    #[serde(default)]
+    env: HashMap<String, String>,
+    general: AlacrittyGeneral,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -80,6 +87,7 @@ struct AlaccrityCursorColors {
 #[serde(default)]
 struct AlacrittyTerminal {
     shell: Option<AlacrittyShell>,
+    osc52: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -95,6 +103,42 @@ struct AlacrittyShellDetailed {
     program: Option<String>,
     #[serde(default)]
     args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct AlacrittyScrolling {
+    history: Option<u32>,
+    multiplier: Option<u8>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct AlaccrityCursor {
+    style: AlaccrityCursorStyle,
+    blink_interval: Option<u64>,
+    unfocused_hollow: Option<bool>,
+    thickness: Option<f32>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct AlaccrityCursorStyle {
+    shape: Option<String>,
+    blinking: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct AlacrittySelection {
+    save_to_clipboard: Option<bool>,
+    semantic_escape_chars: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct AlacrittyGeneral {
+    working_directory: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +159,14 @@ pub struct AlacrittyConfigPatch {
     pub font_size: Option<f32>,
     pub background_opacity: Option<f32>,
     pub shell_profile: Option<Profile>,
+    pub scrollback_lines: Option<u32>,
+    pub cursor_shape: Option<String>,
+    pub cursor_blink: Option<bool>,
+    pub cursor_blink_interval: Option<u64>,
+    pub osc52: Option<String>,
+    pub copy_on_select: Option<bool>,
+    pub env: HashMap<String, String>,
+    pub working_directory: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +231,30 @@ pub fn apply_import(config: &mut Config, result: AlacrittyImportResult) {
             config.profiles.push(profile);
         }
     }
+    if let Some(v) = patch.scrollback_lines {
+        config.scrollback_lines = v;
+    }
+    if let Some(v) = patch.cursor_shape {
+        config.cursor_shape = v;
+    }
+    if let Some(v) = patch.cursor_blink {
+        config.cursor_blink = v;
+    }
+    if let Some(v) = patch.cursor_blink_interval {
+        config.cursor_blink_interval = v;
+    }
+    if let Some(v) = patch.osc52 {
+        config.osc52 = v;
+    }
+    if let Some(v) = patch.copy_on_select {
+        config.copy_on_select = v;
+    }
+    if !patch.env.is_empty() {
+        config.env = patch.env;
+    }
+    if let Some(v) = patch.working_directory {
+        config.working_directory = Some(v);
+    }
     if let Some(ref theme_file) = result.theme {
         config.theme = theme_name_to_id(&theme_file.name);
     }
@@ -229,11 +305,56 @@ fn build_config_patch(alacritty: &AlacrittyConfig) -> AlacrittyConfigPatch {
         },
     });
 
+    // Map Alacritty cursor shape to Kazeterm's lowercase format
+    let cursor_shape = alacritty.cursor.style.shape.as_ref().map(|s| {
+        match s.to_lowercase().as_str() {
+            "block" => "block",
+            "underline" => "underline",
+            "beam" => "beam",
+            _ => "block",
+        }
+        .to_string()
+    });
+
+    // Map Alacritty blinking mode to a boolean
+    let cursor_blink = alacritty.cursor.style.blinking.as_ref().map(|s| {
+        match s.to_lowercase().as_str() {
+            "always" | "on" => true,
+            "never" | "off" => false,
+            _ => true,
+        }
+    });
+
+    // Map Alacritty osc52 mode to Kazeterm's format
+    let osc52 = alacritty.terminal.osc52.as_ref().map(|s| {
+        match s.to_lowercase().as_str() {
+            "disabled" => "disabled",
+            "onlycopy" | "copy_only" => "copy_only",
+            "onlypaste" | "paste_only" => "paste_only",
+            "copypaste" | "copy_paste" => "copy_paste",
+            _ => "copy_only",
+        }
+        .to_string()
+    });
+
+    // Filter out "None" working directory (Alacritty uses "None" string)
+    let working_directory = alacritty.general.working_directory.clone().filter(|wd| {
+        !wd.eq_ignore_ascii_case("none") && !wd.is_empty()
+    });
+
     AlacrittyConfigPatch {
         font_family: alacritty.font.normal.family.clone(),
         font_size: alacritty.font.size,
         background_opacity: alacritty.window.opacity,
         shell_profile,
+        scrollback_lines: alacritty.scrolling.history,
+        cursor_shape,
+        cursor_blink,
+        cursor_blink_interval: alacritty.cursor.blink_interval,
+        osc52,
+        copy_on_select: alacritty.selection.save_to_clipboard,
+        env: alacritty.env.clone(),
+        working_directory,
     }
 }
 
@@ -422,5 +543,135 @@ foreground = "#ffffff"
         let result = import_alacritty_config_str(toml).unwrap();
         assert!(result.config_patch.font_family.is_none());
         assert!(result.theme.is_none());
+    }
+
+    #[test]
+    fn parse_scrolling_history() {
+        let toml = r##"
+[scrolling]
+history = 5000
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert_eq!(result.config_patch.scrollback_lines, Some(5000));
+    }
+
+    #[test]
+    fn parse_cursor_config() {
+        let toml = r##"
+[cursor.style]
+shape = "Beam"
+blinking = "Always"
+
+[cursor]
+blink_interval = 600
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert_eq!(result.config_patch.cursor_shape.as_deref(), Some("beam"));
+        assert_eq!(result.config_patch.cursor_blink, Some(true));
+        assert_eq!(result.config_patch.cursor_blink_interval, Some(600));
+    }
+
+    #[test]
+    fn parse_cursor_blinking_off() {
+        let toml = r##"
+[cursor.style]
+blinking = "Off"
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert_eq!(result.config_patch.cursor_blink, Some(false));
+    }
+
+    #[test]
+    fn parse_selection_save_to_clipboard() {
+        let toml = r##"
+[selection]
+save_to_clipboard = true
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert_eq!(result.config_patch.copy_on_select, Some(true));
+    }
+
+    #[test]
+    fn parse_osc52() {
+        let toml = r##"
+[terminal]
+osc52 = "CopyPaste"
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert_eq!(result.config_patch.osc52.as_deref(), Some("copy_paste"));
+    }
+
+    #[test]
+    fn parse_env_vars() {
+        let toml = r##"
+[env]
+TERM = "xterm-256color"
+MY_VAR = "hello"
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert_eq!(result.config_patch.env.get("TERM").map(|s| s.as_str()), Some("xterm-256color"));
+        assert_eq!(result.config_patch.env.get("MY_VAR").map(|s| s.as_str()), Some("hello"));
+    }
+
+    #[test]
+    fn parse_working_directory() {
+        let toml = r##"
+[general]
+working_directory = "/home/user"
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert_eq!(
+            result.config_patch.working_directory.as_deref(),
+            Some("/home/user")
+        );
+    }
+
+    #[test]
+    fn parse_working_directory_none() {
+        let toml = r##"
+[general]
+working_directory = "None"
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        assert!(result.config_patch.working_directory.is_none());
+    }
+
+    #[test]
+    fn apply_import_with_new_fields() {
+        let toml = r##"
+[scrolling]
+history = 5000
+
+[cursor.style]
+shape = "Underline"
+blinking = "Never"
+
+[cursor]
+blink_interval = 600
+
+[terminal]
+osc52 = "CopyPaste"
+
+[selection]
+save_to_clipboard = true
+
+[env]
+MY_VAR = "test"
+
+[general]
+working_directory = "/tmp"
+"##;
+        let result = import_alacritty_config_str(toml).unwrap();
+        let mut config = Config::default();
+        apply_import(&mut config, result);
+
+        assert_eq!(config.scrollback_lines, 5000);
+        assert_eq!(config.cursor_shape, "underline");
+        assert_eq!(config.cursor_blink, false);
+        assert_eq!(config.cursor_blink_interval, 600);
+        assert_eq!(config.osc52, "copy_paste");
+        assert_eq!(config.copy_on_select, true);
+        assert_eq!(config.env.get("MY_VAR").map(|s| s.as_str()), Some("test"));
+        assert_eq!(config.working_directory.as_deref(), Some("/tmp"));
     }
 }

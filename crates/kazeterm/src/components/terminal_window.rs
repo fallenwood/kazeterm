@@ -3,6 +3,8 @@ use std::{path::PathBuf, sync::Arc};
 use alacritty_terminal::{
   Term, event_loop::EventLoop, grid::Dimensions, sync::FairMutex, term::Config,
 };
+use alacritty_terminal::term::Osc52;
+use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle as AlacCursorStyle};
 use futures::{FutureExt, StreamExt as _, channel::mpsc::unbounded};
 use gpui::{AppContext, Context, Entity};
 
@@ -10,10 +12,32 @@ use terminal::{PtyProcessInfo, TerminalBounds, TerminalEventListener, TerminalVi
 
 use crate::components::MainWindow;
 
+fn parse_cursor_style(config: &config::Config) -> AlacCursorStyle {
+  let shape = match config.cursor_shape.as_str() {
+    "underline" => CursorShape::Underline,
+    "beam" => CursorShape::Beam,
+    _ => CursorShape::Block,
+  };
+  AlacCursorStyle {
+    shape,
+    blinking: config.cursor_blink,
+  }
+}
+
+fn parse_osc52(mode: &str) -> Osc52 {
+  match mode {
+    "disabled" => Osc52::Disabled,
+    "paste_only" => Osc52::OnlyPaste,
+    "copy_paste" => Osc52::CopyPaste,
+    _ => Osc52::OnlyCopy,
+  }
+}
+
 fn new_terminal(
   program: String,
   args: Vec<String>,
   working_directory: Option<PathBuf>,
+  app_config: &config::Config,
 ) -> (
   terminal::Terminal,
   futures::channel::mpsc::UnboundedReceiver<alacritty_terminal::event::Event>,
@@ -28,6 +52,11 @@ fn new_terminal(
   env.insert("TERM_PROGRAM".to_string(), "kazeterm".to_string());
   env.insert("TERM".to_string(), "xterm-256color".to_string());
   env.insert("COLORTERM".to_string(), "truecolor".to_string());
+
+  // Merge user-specified env vars (these can override defaults above)
+  for (key, value) in &app_config.env {
+    env.insert(key.clone(), value.clone());
+  }
 
   // Create a temp file for CWD communication (cross-platform, works on Windows).
   // The shell writes its CWD to this file on each prompt.
@@ -104,7 +133,12 @@ fn new_terminal(
   let (events_tx, events_rx) = unbounded();
 
   let term = Term::new(
-    Config::default(),
+    Config {
+      scrolling_history: app_config.get_scrollback_lines(),
+      default_cursor_style: parse_cursor_style(app_config),
+      osc52: parse_osc52(&app_config.osc52),
+      ..Config::default()
+    },
     &TerminalBounds::default(),
     TerminalEventListener(events_tx.clone()),
   );
@@ -193,7 +227,16 @@ pub fn new_terminal_window_with_shell(
   working_directory: Option<PathBuf>,
   cx: &mut Context<MainWindow>,
 ) -> Entity<TerminalView> {
-  let (terminal, events_rx) = new_terminal(program.to_string(), args, working_directory);
+  let app_config = cx.global::<config::Config>().clone();
+  // Use global working_directory as fallback if no per-profile working directory
+  let working_directory = working_directory.or_else(|| {
+    app_config
+      .working_directory
+      .as_ref()
+      .map(|wd| PathBuf::from(wd))
+  });
+  let (terminal, events_rx) =
+    new_terminal(program.to_string(), args, working_directory, &app_config);
   let mut events_rx = events_rx;
   let terminal = cx.new(|_| terminal);
   let weak_terminal = terminal.downgrade();
