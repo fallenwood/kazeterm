@@ -43,6 +43,8 @@ pub enum InternalEvent {
     bool,
   ),
   Copy(Option<bool>),
+  /// Auto-copy selection to clipboard (triggered by copy_on_select config)
+  CopySelectionToClipboard,
 }
 
 #[derive(Clone, Debug)]
@@ -663,6 +665,11 @@ impl Terminal {
         }
       }
       InternalEvent::Copy(_keep_selection) => {}
+      InternalEvent::CopySelectionToClipboard => {
+        if let Some(txt) = term.selection_to_string() {
+          cx.write_to_clipboard(gpui::ClipboardItem::new_string(txt));
+        }
+      }
       InternalEvent::ScrollToAlacPoint(point) => {
         term.scroll_to_point(*point);
       }
