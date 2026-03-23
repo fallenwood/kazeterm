@@ -203,6 +203,16 @@ impl Terminal {
 
     self.selection_phase = SelectionPhase::Ended;
     self.last_mouse = None;
+
+    // copy_on_select: auto-copy selection to clipboard when mouse is released
+    if cx
+      .try_global::<config::Config>()
+      .is_some_and(|c| c.copy_on_select)
+    {
+      self
+        .events
+        .push_back(InternalEvent::CopySelectionToClipboard);
+    }
   }
 
   fn determine_scroll_lines(
