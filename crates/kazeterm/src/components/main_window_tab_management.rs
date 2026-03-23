@@ -7,6 +7,11 @@ use super::main_window::MainWindow;
 use super::main_window_tab_item::TabItem;
 use crate::components::split_pane::SplitContainer;
 
+enum NotificationReason {
+  CommandFinished,
+  Bell,
+}
+
 impl MainWindow {
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     // Inherit CWD from active terminal so new tabs open in the same directory.
@@ -221,13 +226,13 @@ impl MainWindow {
           this.play_bell_sound();
           // Bell also serves as a supplementary notification trigger
           // (catches subtask completions in interactive programs like Copilot CLI).
-          this.maybe_send_notification(&terminal_view, cx);
+          this.maybe_send_notification(&terminal_view, NotificationReason::Bell, cx);
         }
         cx.notify();
       }
       terminal::TerminalEvent::CommandFinished => {
         // Prompt returned: notify when a long-running command finishes.
-        this.maybe_send_notification(&terminal_view, cx);
+        this.maybe_send_notification(&terminal_view, NotificationReason::CommandFinished, cx);
       }
       terminal::TerminalEvent::UpdateTab => {
         // Update tab title only if no custom title is set
@@ -262,6 +267,7 @@ impl MainWindow {
   fn maybe_send_notification(
     &mut self,
     terminal_view: &Entity<terminal::TerminalView>,
+    reason: NotificationReason,
     cx: &mut Context<Self>,
   ) {
     let threshold_secs = cx.global::<config::Config>().long_running_threshold_secs;
@@ -279,6 +285,25 @@ impl MainWindow {
     };
 
     if idle_duration >= std::time::Duration::from_secs(threshold_secs) && interval_ok {
+      let body = {
+        let terminal = terminal_view.read(cx).terminal().read(cx);
+        match reason {
+          NotificationReason::CommandFinished => {
+            // Show the process that just finished (the title before prompt returned).
+            let prev = &terminal.previous_title_text;
+            if prev.is_empty() {
+              terminal.title_text.clone()
+            } else {
+              prev.clone()
+            }
+          }
+          NotificationReason::Bell => {
+            // Show the process that sent the bell.
+            terminal.title_text.clone()
+          }
+        }
+      };
+
       let tab_title = self
         .items
         .iter()
@@ -290,21 +315,27 @@ impl MainWindow {
             .any(|(_pos, t)| t.entity_id() == terminal_view.entity_id())
         })
         .map(|item| item.display_title().to_string());
-      Self::send_notification(tab_title);
+      Self::send_notification(tab_title, body);
       self.last_notification_time = Some(std::time::Instant::now());
     }
   }
 
-  fn send_notification(tab_title: Option<String>) {
+  fn send_notification(tab_title: Option<String>, body: String) {
     std::thread::spawn(move || {
-      let body = tab_title.as_deref().unwrap_or("Terminal");
+      let body = if body.is_empty() {
+        tab_title.as_deref().unwrap_or("Terminal").to_string()
+      } else if let Some(tab) = &tab_title {
+        format!("{tab} — {body}")
+      } else {
+        body
+      };
       #[cfg(target_os = "macos")]
       {
         // Bypass notify-rust on macOS to avoid the "select application" dialog
         // caused by mac-notification-sys. Use NSUserNotificationCenter via objc,
         // falling back to osascript if the (deprecated) class is unavailable.
-        if !Self::send_notification_native(body) {
-          Self::send_notification_osascript(body);
+        if !Self::send_notification_native(&body) {
+          Self::send_notification_osascript(&body);
         }
       }
       #[cfg(target_os = "linux")]
@@ -316,7 +347,7 @@ impl MainWindow {
       }
       #[cfg(target_os = "windows")]
       {
-        Self::send_notification_windows(body);
+        Self::send_notification_windows(&body);
       }
     });
   }

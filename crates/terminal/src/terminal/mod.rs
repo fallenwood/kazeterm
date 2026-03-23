@@ -75,6 +75,9 @@ pub struct Terminal {
   pub child_exited: Option<ExitStatus>,
   pub scroll_px: Pixels,
   pub title_text: String,
+  /// The title before the most recent title change.
+  /// Used to show which process just finished in notifications.
+  pub previous_title_text: String,
   pub next_link_id: usize,
   pub process_changed_at: Option<std::time::Instant>,
   pub scroll_velocity: f32,
@@ -127,6 +130,7 @@ impl Terminal {
       child_exited: None,
       scroll_px: px(0.),
       title_text: "".to_string(),
+      previous_title_text: "".to_string(),
       next_link_id: 0,
       process_changed_at: None,
       scroll_velocity: 0.0,
@@ -535,16 +539,16 @@ impl Terminal {
 
         if title.is_empty() {
           if let Some(name) = self.pty_info.current_process_name() {
-            self.title_text = name;
+            self.previous_title_text = std::mem::replace(&mut self.title_text, name);
           }
         } else {
-          self.title_text = title;
+          self.previous_title_text = std::mem::replace(&mut self.title_text, title);
         }
         cx.emit(Event::TitleChanged);
       }
       AlacTermEvent::ResetTitle => {
         if let Some(name) = self.pty_info.current_process_name() {
-          self.title_text = name;
+          self.previous_title_text = std::mem::replace(&mut self.title_text, name);
         }
         cx.emit(Event::TitleChanged);
       }
