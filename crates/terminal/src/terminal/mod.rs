@@ -29,6 +29,52 @@ mod mouse_scroll;
 
 pub use events::TerminalEventListener;
 
+/// Active search parameters stored in Terminal so the search can be
+/// automatically re-executed whenever terminal content changes.
+pub struct SearchState {
+  pub query: String,
+  pub match_case: bool,
+  pub match_whole: bool,
+  pub use_regex: bool,
+  /// Pre-compiled regex (only set when `use_regex` is true and the pattern is valid).
+  compiled_regex: Option<regex::Regex>,
+}
+
+impl SearchState {
+  pub fn new(query: String, match_case: bool, match_whole: bool, use_regex: bool) -> Option<Self> {
+    if query.is_empty() {
+      return None;
+    }
+
+    let compiled_regex = if use_regex {
+      let pattern = if match_whole {
+        format!(r"\b{}\b", query)
+      } else {
+        query.clone()
+      };
+      let result = if match_case {
+        regex::Regex::new(&pattern)
+      } else {
+        regex::Regex::new(&format!("(?i){}", pattern))
+      };
+      match result {
+        Ok(re) => Some(re),
+        Err(_) => return None, // invalid regex
+      }
+    } else {
+      None
+    };
+
+    Some(Self {
+      query,
+      match_case,
+      match_whole,
+      use_regex,
+      compiled_regex,
+    })
+  }
+}
+
 #[derive(Clone)]
 pub enum InternalEvent {
   Resize(TerminalBounds),
@@ -105,6 +151,8 @@ pub struct Terminal {
   cwd_file_mtime: Option<std::time::SystemTime>,
   /// Throttle for cwd_file polling (only check every ~500ms).
   last_cwd_file_check: Option<std::time::Instant>,
+  /// Active search state. When set, search is re-run every sync to keep matches current.
+  pub search_state: Option<SearchState>,
 }
 
 impl Terminal {
@@ -149,6 +197,7 @@ impl Terminal {
       cwd_file,
       cwd_file_mtime: None,
       last_cwd_file_check: None,
+      search_state: None,
     }
   }
 
@@ -253,6 +302,22 @@ impl Terminal {
       self.process_terminal_event(&e, &mut terminal, window, cx)
     }
     self.last_content = Self::make_content(&terminal, &self.last_content);
+
+    // Re-run search if there's an active search query.
+    // This keeps matches current as content changes (new output, clear, etc.).
+    if let Some(search_state) = &self.search_state {
+      let old_count = self.last_content.search_matches.len();
+      self.last_content.search_matches = Self::execute_search(&terminal, search_state);
+      let new_count = self.last_content.search_matches.len();
+      // Clamp current match index if matches were removed.
+      if self.last_content.current_search_match_index > new_count {
+        self.last_content.current_search_match_index = if new_count > 0 { new_count } else { 0 };
+      }
+      // If match count changed from 0 to >0 (or vice versa), and no match was selected, select first.
+      if old_count == 0 && new_count > 0 && self.last_content.current_search_match_index == 0 {
+        self.last_content.current_search_match_index = 1;
+      }
+    }
 
     let history_size = terminal.history_size() as i32;
     let display_offset = self.last_content.display_offset as i32;
@@ -513,32 +578,6 @@ impl Terminal {
     // When new output pushes content into scrollback, history_size increases
     // and all grid coordinates shift by the delta.
     let current_history_size = term.history_size();
-    let history_delta = current_history_size as i32 - last_content.search_history_size as i32;
-    let (search_matches, search_history_size) =
-      if history_delta != 0 && !last_content.search_matches.is_empty() {
-        let topmost = term.topmost_line();
-        let adjusted = last_content
-          .search_matches
-          .iter()
-          .filter_map(|range| {
-            let start =
-              AlacPoint::new(range.start().line - history_delta, range.start().column);
-            let end = AlacPoint::new(range.end().line - history_delta, range.end().column);
-            // Discard matches that have scrolled out of the buffer
-            if end.line >= topmost {
-              Some(start..=end)
-            } else {
-              None
-            }
-          })
-          .collect();
-        (adjusted, current_history_size)
-      } else {
-        (
-          last_content.search_matches.clone(),
-          last_content.search_history_size,
-        )
-      };
 
     TerminalContent {
       cells,
@@ -553,9 +592,10 @@ impl Terminal {
       history_size: current_history_size,
       scrolled_to_top: content.display_offset == current_history_size,
       scrolled_to_bottom: content.display_offset == 0,
-      search_matches,
+      // Search matches are preserved from last_content; they will be
+      // re-computed in sync() if there is an active search query.
+      search_matches: last_content.search_matches.clone(),
       current_search_match_index: last_content.current_search_match_index,
-      search_history_size,
       image_placements: Vec::new(),
     }
   }
