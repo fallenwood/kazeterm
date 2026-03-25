@@ -14,9 +14,7 @@ enum NotificationReason {
 
 impl MainWindow {
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    // Inherit CWD from active terminal so new tabs open in the same directory.
-    let working_directory = self.active_terminal_working_directory(cx);
-    self.insert_new_tab_with_profile(None, working_directory, window, cx);
+    self.insert_new_tab_with_profile(None, None, window, cx);
   }
 
   /// Duplicates a tab by creating a new tab with the same shell and working directory
