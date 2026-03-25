@@ -108,6 +108,7 @@ impl Terminal {
         self.search_state = Some(state);
         // Run the search immediately so results are available this frame.
         let term = self.term.lock_unfair();
+        self.search_fingerprint = (term.history_size(), self.last_content.cursor.point);
         self.last_content.search_matches =
           Self::execute_search(&term, self.search_state.as_ref().unwrap());
         let match_count = self.last_content.search_matches.len();

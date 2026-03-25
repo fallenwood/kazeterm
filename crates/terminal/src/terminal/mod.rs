@@ -151,8 +151,11 @@ pub struct Terminal {
   cwd_file_mtime: Option<std::time::SystemTime>,
   /// Throttle for cwd_file polling (only check every ~500ms).
   last_cwd_file_check: Option<std::time::Instant>,
-  /// Active search state. When set, search is re-run every sync to keep matches current.
+  /// Active search state. When set, search is re-run on content changes.
   pub search_state: Option<SearchState>,
+  /// Fingerprint of terminal content at last search execution.
+  /// Used to skip re-running the search when nothing changed.
+  search_fingerprint: (usize, AlacPoint),
 }
 
 impl Terminal {
@@ -198,6 +201,7 @@ impl Terminal {
       cwd_file_mtime: None,
       last_cwd_file_check: None,
       search_state: None,
+      search_fingerprint: (0, AlacPoint::new(AlacLine(0), AlacColumn(0))),
     }
   }
 
@@ -303,19 +307,23 @@ impl Terminal {
     }
     self.last_content = Self::make_content(&terminal, &self.last_content);
 
-    // Re-run search if there's an active search query.
-    // This keeps matches current as content changes (new output, clear, etc.).
+    // Re-run search only when content has actually changed.
     if let Some(search_state) = &self.search_state {
-      let old_count = self.last_content.search_matches.len();
-      self.last_content.search_matches = Self::execute_search(&terminal, search_state);
-      let new_count = self.last_content.search_matches.len();
-      // Clamp current match index if matches were removed.
-      if self.last_content.current_search_match_index > new_count {
-        self.last_content.current_search_match_index = if new_count > 0 { new_count } else { 0 };
-      }
-      // If match count changed from 0 to >0 (or vice versa), and no match was selected, select first.
-      if old_count == 0 && new_count > 0 && self.last_content.current_search_match_index == 0 {
-        self.last_content.current_search_match_index = 1;
+      let fingerprint = (
+        terminal.history_size(),
+        self.last_content.cursor.point,
+      );
+      if fingerprint != self.search_fingerprint {
+        self.search_fingerprint = fingerprint;
+        let old_count = self.last_content.search_matches.len();
+        self.last_content.search_matches = Self::execute_search(&terminal, search_state);
+        let new_count = self.last_content.search_matches.len();
+        if self.last_content.current_search_match_index > new_count {
+          self.last_content.current_search_match_index = if new_count > 0 { new_count } else { 0 };
+        }
+        if old_count == 0 && new_count > 0 && self.last_content.current_search_match_index == 0 {
+          self.last_content.current_search_match_index = 1;
+        }
       }
     }
 
