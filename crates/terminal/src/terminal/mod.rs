@@ -509,6 +509,37 @@ impl Terminal {
       None
     };
 
+    // Adjust search match coordinates when content has shifted.
+    // When new output pushes content into scrollback, history_size increases
+    // and all grid coordinates shift by the delta.
+    let current_history_size = term.history_size();
+    let history_delta = current_history_size as i32 - last_content.search_history_size as i32;
+    let (search_matches, search_history_size) =
+      if history_delta != 0 && !last_content.search_matches.is_empty() {
+        let topmost = term.topmost_line();
+        let adjusted = last_content
+          .search_matches
+          .iter()
+          .filter_map(|range| {
+            let start =
+              AlacPoint::new(range.start().line - history_delta, range.start().column);
+            let end = AlacPoint::new(range.end().line - history_delta, range.end().column);
+            // Discard matches that have scrolled out of the buffer
+            if end.line >= topmost {
+              Some(start..=end)
+            } else {
+              None
+            }
+          })
+          .collect();
+        (adjusted, current_history_size)
+      } else {
+        (
+          last_content.search_matches.clone(),
+          last_content.search_history_size,
+        )
+      };
+
     TerminalContent {
       cells,
       mode: content.mode,
@@ -519,11 +550,12 @@ impl Terminal {
       cursor_char: term.grid()[content.cursor.point].c,
       terminal_bounds: last_content.terminal_bounds,
       last_hovered_word: last_content.last_hovered_word.clone(),
-      history_size: term.history_size(),
-      scrolled_to_top: content.display_offset == term.history_size(),
+      history_size: current_history_size,
+      scrolled_to_top: content.display_offset == current_history_size,
       scrolled_to_bottom: content.display_offset == 0,
-      search_matches: last_content.search_matches.clone(),
+      search_matches,
       current_search_match_index: last_content.current_search_match_index,
+      search_history_size,
       image_placements: Vec::new(),
     }
   }

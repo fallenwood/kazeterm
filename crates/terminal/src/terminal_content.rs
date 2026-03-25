@@ -26,6 +26,9 @@ pub struct TerminalContent {
   pub scrolled_to_bottom: bool,
   pub search_matches: Vec<RangeInclusive<AlacPoint>>,
   pub current_search_match_index: usize,
+  /// The history_size at the time search matches were computed.
+  /// Used to adjust match coordinates when terminal content shifts.
+  pub search_history_size: usize,
   pub image_placements: Vec<VisiblePlacement>,
 }
 
@@ -49,6 +52,7 @@ impl Default for TerminalContent {
       scrolled_to_bottom: false,
       search_matches: Vec::new(),
       current_search_match_index: 0,
+      search_history_size: 0,
       image_placements: Vec::new(),
     }
   }

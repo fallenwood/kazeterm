@@ -56,6 +56,9 @@ impl Terminal {
   }
 
   pub fn set_search_matches(&mut self, matches: Vec<std::ops::RangeInclusive<AlacPoint>>) {
+    let term = self.term.lock_unfair();
+    self.last_content.search_history_size = term.history_size();
+    drop(term);
     self.last_content.search_matches = matches;
   }
 
