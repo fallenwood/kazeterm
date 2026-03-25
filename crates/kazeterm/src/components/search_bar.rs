@@ -2,8 +2,10 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
-use gpui_component::{ActiveTheme, Sizable};
+use gpui_component::{ActiveTheme, IconName, Sizable};
 use terminal::TerminalView;
+
+const DEFAULT_FONT_SIZE: f32 = 14.0;
 
 #[derive(Clone)]
 pub struct SearchBarCloseEvent;
@@ -16,13 +18,17 @@ pub struct SearchBar {
   use_regex: bool,
   search_input_state: Entity<InputState>,
   _subscription: Subscription,
+  drag_offset: Option<Point<Pixels>>,
+  position: Point<Pixels>,
+  font_size: f32,
 }
 
 impl EventEmitter<SearchBarCloseEvent> for SearchBar {}
 
 impl SearchBar {
   pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-    let search_input_state = cx.new(|cx| InputState::new(window, cx));
+    let search_input_state =
+      cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
 
     let subscription = cx.subscribe_in(
       &search_input_state,
@@ -46,6 +52,9 @@ impl SearchBar {
       use_regex: false,
       search_input_state,
       _subscription: subscription,
+      drag_offset: None,
+      position: Point::new(px(0.), px(0.)),
+      font_size: DEFAULT_FONT_SIZE,
     }
   }
 
@@ -56,6 +65,10 @@ impl SearchBar {
 
   pub fn set_terminal_view(&mut self, terminal_view: Entity<TerminalView>) {
     self.terminal_view = Some(terminal_view);
+  }
+
+  pub fn set_font_size(&mut self, font_size: f32) {
+    self.font_size = font_size;
   }
 
   pub fn clear_search(&mut self, cx: &mut Context<Self>) {
@@ -169,6 +182,10 @@ impl SearchBar {
   fn close(&mut self, cx: &mut Context<Self>) {
     cx.emit(SearchBarCloseEvent);
   }
+
+  pub fn reset_position(&mut self) {
+    self.position = Point::new(px(0.), px(0.));
+  }
 }
 
 impl Focusable for SearchBar {
@@ -182,26 +199,45 @@ impl Render for SearchBar {
     let theme = cx.theme();
     let active_bg = theme.accent;
     let (match_count, current_match) = self.read_match_state(cx);
+    let pos = self.position;
+    let font_size = self.font_size;
 
     div()
       .absolute()
-      .top_2()
-      .right_4()
+      .top(px(8.) + pos.y)
+      .right(px(16.) - pos.x)
+      .text_size(px(font_size))
       .bg(theme.popover)
       .text_color(theme.popover_foreground)
       .rounded_md()
       .shadow_lg()
       .border_1()
       .border_color(theme.border)
-      .py_1()
-      .px_2()
-      .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+      .py_0p5()
+      .px_1p5()
+      .cursor_grab()
+      .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, e: &MouseDownEvent, _, cx| {
+        this.drag_offset = Some(e.position);
         cx.stop_propagation();
-      })
+      }))
+      .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, _, cx| {
+        if let Some(start) = this.drag_offset {
+          if e.pressed_button == Some(MouseButton::Left) {
+            let delta = e.position - start;
+            this.position.x += delta.x;
+            this.position.y += delta.y;
+            this.drag_offset = Some(e.position);
+            cx.notify();
+          } else {
+            this.drag_offset = None;
+          }
+        }
+      }))
+      .on_mouse_up(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+        this.drag_offset = None;
+        cx.stop_propagation();
+      }))
       .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| {
-        cx.stop_propagation();
-      })
-      .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {
         cx.stop_propagation();
       })
       .on_mouse_up(gpui::MouseButton::Right, |_, _, cx| {
@@ -209,18 +245,18 @@ impl Render for SearchBar {
       })
       .child(
         gpui_component::h_flex()
-          .gap_2()
+          .gap_1()
           .items_center()
           .child(
             Input::new(&self.search_input_state)
-              .w(px(200.))
+              .prefix(IconName::Search)
+              .w(px(160.))
               .cursor_text(),
           )
           .child(
             div()
-              .text_sm()
               .text_color(theme.muted_foreground)
-              .min_w(px(50.))
+              .min_w(px(40.))
               .text_center()
               .child(format!("{}/{}", current_match, match_count)),
           )
@@ -231,7 +267,7 @@ impl Render for SearchBar {
               .child(
                 Button::new("prev-match")
                   .ghost()
-                  .small()
+                  .xsmall()
                   .label("↑")
                   .on_click(cx.listener(|this, _, _window, cx| {
                     this.go_to_previous_match(cx);
@@ -240,14 +276,14 @@ impl Render for SearchBar {
               .child(
                 Button::new("next-match")
                   .ghost()
-                  .small()
+                  .xsmall()
                   .label("↓")
                   .on_click(cx.listener(|this, _, _window, cx| {
                     this.go_to_next_match(cx);
                   })),
               ),
           )
-          .child(div().h(px(16.)).w(px(1.)).bg(theme.border))
+          .child(div().h(px(14.)).w(px(1.)).bg(theme.border))
           .child(
             gpui_component::h_flex()
               .gap_0p5()
@@ -255,7 +291,7 @@ impl Render for SearchBar {
               .child(
                 Button::new("match-case")
                   .ghost()
-                  .small()
+                  .xsmall()
                   .label("Aa")
                   .when(self.match_case, |btn| btn.bg(active_bg))
                   .on_click(cx.listener(|this, _, _window, cx| {
@@ -265,7 +301,7 @@ impl Render for SearchBar {
               .child(
                 Button::new("match-whole")
                   .ghost()
-                  .small()
+                  .xsmall()
                   .label("\"\"")
                   .when(self.match_whole, |btn| btn.bg(active_bg))
                   .on_click(cx.listener(|this, _, _window, cx| {
@@ -275,7 +311,7 @@ impl Render for SearchBar {
               .child(
                 Button::new("regex")
                   .ghost()
-                  .small()
+                  .xsmall()
                   .label(".*")
                   .when(self.use_regex, |btn| btn.bg(active_bg))
                   .on_click(cx.listener(|this, _, _window, cx| {
@@ -286,7 +322,7 @@ impl Render for SearchBar {
           .child(
             Button::new("close-search")
               .ghost()
-              .small()
+              .xsmall()
               .label("×")
               .on_click(cx.listener(|this, _, _window, cx| {
                 this.close(cx);
