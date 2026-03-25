@@ -87,11 +87,28 @@ impl TerminalElement {
       let terminal_view = terminal_view;
       move |e: &gpui::MouseMoveEvent, _phase, window, cx| {
         if e.pressed_button.is_some() && !cx.has_active_drag() && focus.is_focused(window) {
+          // Skip terminal mouse handling while scrollbar is being dragged
+          if terminal_view.read(cx).scrollbar_drag_state.is_some() {
+            return;
+          }
+
           if terminal.read(cx).is_touch_active() {
             terminal.update(cx, |terminal, cx| {
               terminal.touch_move(e.position);
               cx.notify();
             });
+            return;
+          }
+
+          // Skip if mouse is over scrollbar or minimap
+          if let Some(sb_bounds) = scrollbar_bounds
+            && sb_bounds.contains(&e.position)
+          {
+            return;
+          }
+          if let Some(mm_bounds) = minimap_bounds
+            && mm_bounds.contains(&e.position)
+          {
             return;
           }
 
