@@ -71,6 +71,9 @@ pub struct Config {
   /// Window background opacity (0.0 = fully transparent, 1.0 = fully opaque)
   /// Values between 0.0 and 1.0 allow seeing through the terminal window
   pub background_opacity: f32,
+  /// Blur the desktop background behind the window instead of plain transparency.
+  /// Only takes effect when background_opacity < 1.0. Not supported on all platforms.
+  pub background_blur: bool,
   /// Custom keyboard shortcuts
   pub keybindings: KeybindingConfig,
   /// Minimum idle time (in seconds) since last input before a command completion
@@ -125,6 +128,7 @@ impl Default for Config {
       close_on_last_tab: true,
       tab_switcher_popup: true,
       background_opacity: 1.0,
+      background_blur: false,
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 0,
@@ -514,6 +518,7 @@ mod tests {
       close_on_last_tab: true,
       tab_switcher_popup: true,
       background_opacity: 1.0,
+      background_blur: false,
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 0,

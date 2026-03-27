@@ -304,12 +304,17 @@ pub fn watch_additional_path(path: PathBuf) {
 
 /// Update the window background appearance for all open windows based on opacity config.
 ///
-/// When `background_opacity` < 1.0, the window is set to transparent so the desktop
-/// behind it is visible. When fully opaque, the window is set back to opaque mode.
+/// When `background_opacity` < 1.0, the window is set to transparent (or blurred if
+/// `background_blur` is enabled) so the desktop behind it is visible.
+/// When fully opaque, the window is set back to opaque mode.
 fn update_window_background_appearance(cx: &mut App, config: &Config) {
   let opacity = config.get_background_opacity();
   let appearance = if opacity < 1.0 {
-    WindowBackgroundAppearance::Transparent
+    if config.background_blur {
+      WindowBackgroundAppearance::Blurred
+    } else {
+      WindowBackgroundAppearance::Transparent
+    }
   } else {
     WindowBackgroundAppearance::Opaque
   };

@@ -173,10 +173,15 @@ fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
   let window_width = config.window_width;
   let window_height = config.window_height;
   let background_opacity = config.get_background_opacity();
+  let background_blur = config.background_blur;
 
   cx.spawn(async move |cx| {
     let window_background = if background_opacity < 1.0 {
-      WindowBackgroundAppearance::Transparent
+      if background_blur {
+        WindowBackgroundAppearance::Blurred
+      } else {
+        WindowBackgroundAppearance::Transparent
+      }
     } else {
       WindowBackgroundAppearance::Opaque
     };

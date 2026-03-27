@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260323.2";
+pub const CURRENT_CONFIG_VERSION: &str = "20260327.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -54,6 +54,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260323.1",
       to_version: "20260323.2",
       migrate: migrate_v20260323_1_to_20260323_2,
+    },
+    Migration {
+      from_version: "20260323.2",
+      to_version: "20260327.1",
+      migrate: migrate_v20260323_2_to_20260327_1,
     },
   ]
 }
@@ -161,6 +166,19 @@ fn migrate_v20260323_1_to_20260323_2(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260323.2".to_string()),
+    );
+  }
+}
+
+/// Add background_blur configuration support.
+fn migrate_v20260323_2_to_20260327_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("background_blur") {
+      table.insert("background_blur".to_string(), Value::Boolean(false));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260327.1".to_string()),
     );
   }
 }
@@ -392,6 +410,29 @@ theme = "one"
     assert_eq!(
       config.get("version").unwrap().as_str().unwrap(),
       "99999999.1"
+    );
+  }
+
+  #[test]
+  fn migrate_20260323_2_adds_background_blur() {
+    let mut config: Value = toml::from_str(
+      r##"
+version = "20260323.2"
+theme = "one"
+font_size = 18.0
+background_opacity = 0.8
+"##,
+    )
+    .unwrap();
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config.get("background_blur").unwrap().as_bool().unwrap(),
+      false
     );
   }
 
