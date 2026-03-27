@@ -58,17 +58,21 @@ features = [
   "Win32_UI_WindowsAndMessaging",
 ]
 
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
-debug = "limited"
+debug = false
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
+panic = "abort"
 
 [profile.release-fast]
 inherits = "release"
-debug = "full"
+debug = false
 lto = false
 codegen-units = 16
-strip = true
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow" }
