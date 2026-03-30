@@ -47,6 +47,10 @@ mod unix {
   /// Returns `Some((absolute_line, column))` on success, `None` if lock unavailable.
   pub type CursorFn = Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
 
+  /// Callback for DSR cursor position queries (DECXCPR).
+  /// Returns `Some((row_1based, col_1based))` screen-relative, or `None` if lock unavailable.
+  pub type DsrCursorFn = Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
+
   /// APC filter state machine states.
   #[derive(Debug, Clone, Copy, PartialEq)]
   enum FilterState {
@@ -58,6 +62,8 @@ mod unix {
     ApcCollect,
     /// Inside APC, saw ESC — waiting for '\' to end sequence.
     ApcEscape,
+    /// Inside CSI sequence (\x1b[...), collecting parameter/intermediate bytes.
+    CsiCollect,
   }
 
   /// A `Read` adapter that filters APC graphics sequences from PTY output.
@@ -83,6 +89,12 @@ mod unix {
     /// Shared atomic: terminal sets this to height_cells after place_image().
     /// Filter injects CNL on next read and resets to 0.
     pending_cnl: Arc<AtomicU32>,
+    /// Buffer for collecting CSI sequence bytes (after ESC [).
+    csi_buf: Vec<u8>,
+    /// Callback for DSR cursor queries (returns 1-based screen-relative row, col).
+    dsr_cursor_fn: DsrCursorFn,
+    /// Cached DSR cursor position from last successful try-lock.
+    last_dsr_cursor: (i32, i32),
   }
 
   /// Parsed APC parameters relevant to cursor advancement.
@@ -186,6 +198,79 @@ mod unix {
       self.last_cursor
     }
 
+    /// Try to capture screen-relative cursor position for DSR. Updates cache on success.
+    fn capture_dsr_cursor(&mut self) -> (i32, i32) {
+      if let Some(pos) = (self.dsr_cursor_fn)() {
+        self.last_dsr_cursor = pos;
+      }
+      self.last_dsr_cursor
+    }
+
+    /// Handle a completed CSI sequence. If it's a private DSR query (`CSI ? N n`),
+    /// write the response directly to the PTY and return true (consumed).
+    /// Otherwise return false so the bytes are flushed to pending for alacritty.
+    fn handle_csi_final(&mut self, final_byte: u8) -> bool {
+      // Only intercept private DSR: final byte 'n' with '?' prefix.
+      if final_byte != b'n' || self.csi_buf.first() != Some(&b'?') {
+        return false;
+      }
+
+      // Parse the parameter after '?'. Supports single numeric param only.
+      let param_bytes = &self.csi_buf[1..];
+      let param_str = match std::str::from_utf8(param_bytes) {
+        Ok(s) => s,
+        Err(_) => return false,
+      };
+      let param: u16 = match param_str.parse() {
+        Ok(v) => v,
+        Err(_) => return false,
+      };
+
+      let response: Option<String> = match param {
+        // DECXCPR: Extended Cursor Position Report.
+        6 => {
+          let (row, col) = self.capture_dsr_cursor();
+          Some(format!("\x1b[?{};{}R", row, col))
+        }
+        // Printer status: no printer connected.
+        15 => Some("\x1b[?13n".to_string()),
+        // UDK (User Defined Keys) status: locked.
+        25 => Some("\x1b[?21n".to_string()),
+        // Keyboard dialect: North American (US).
+        26 => Some("\x1b[?27;1n".to_string()),
+        // Locator status: no locator.
+        53 | 55 => Some("\x1b[?53n".to_string()),
+        // Locator type: mouse.
+        56 => Some("\x1b[?57;1n".to_string()),
+        // Macro space report: 0 bytes available.
+        62 => Some("\x1b[0*{".to_string()),
+        // Data integrity report: no malfunction.
+        75 => Some("\x1b[?70n".to_string()),
+        // Multi-session status: not in multi-session mode.
+        85 => Some("\x1b[?83n".to_string()),
+        _ => None,
+      };
+
+      if let Some(resp) = response {
+        use std::io::Write;
+        let _ = self.inner.write(resp.as_bytes());
+        true
+      } else {
+        false
+      }
+    }
+
+    /// Flush the buffered CSI sequence to pending (pass-through to alacritty).
+    fn flush_csi_to_pending(&mut self, final_byte: Option<u8>) {
+      self.pending.push(0x1B);
+      self.pending.push(b'[');
+      self.pending.extend_from_slice(&self.csi_buf);
+      if let Some(fb) = final_byte {
+        self.pending.push(fb);
+      }
+      self.csi_buf.clear();
+    }
+
     /// Inject CNL escape into the pending buffer to advance cursor past image.
     fn inject_cnl(&mut self, rows: u32) {
       if rows > 0 {
@@ -251,11 +336,47 @@ mod unix {
             if byte == b'_' {
               self.state = FilterState::ApcCollect;
               self.apc_buf.clear();
+            } else if byte == b'[' {
+              self.state = FilterState::CsiCollect;
+              self.csi_buf.clear();
             } else {
-              // Not APC — pass through the ESC and this byte.
+              // Not APC or CSI — pass through the ESC and this byte.
               self.pending.push(0x1B);
               self.pending.push(byte);
               self.state = FilterState::Normal;
+            }
+          }
+          FilterState::CsiCollect => {
+            match byte {
+              // Parameter bytes (digits, semicolons, and private-mode markers like '?').
+              0x30..=0x3F => {
+                self.csi_buf.push(byte);
+                // Cap at 256 bytes to prevent unbounded buffering.
+                if self.csi_buf.len() > 256 {
+                  self.flush_csi_to_pending(None);
+                  self.state = FilterState::Normal;
+                }
+              }
+              // Intermediate bytes (space through '/').
+              0x20..=0x2F => {
+                self.csi_buf.push(byte);
+              }
+              // Final byte — CSI sequence is complete.
+              0x40..=0x7E => {
+                if !self.handle_csi_final(byte) {
+                  // Not a DSR we handle — flush to pending for alacritty.
+                  self.flush_csi_to_pending(Some(byte));
+                } else {
+                  self.csi_buf.clear();
+                }
+                self.state = FilterState::Normal;
+              }
+              // Control character or other invalid byte inside CSI.
+              _ => {
+                self.flush_csi_to_pending(None);
+                self.pending.push(byte);
+                self.state = FilterState::Normal;
+              }
             }
           }
           FilterState::ApcCollect => {
@@ -369,6 +490,9 @@ mod unix {
     /// `cursor_fn` is called (via try-lock) to capture the cursor position
     /// when an APC graphics sequence is intercepted.
     ///
+    /// `dsr_cursor_fn` is called to capture the screen-relative cursor position
+    /// (1-based row, col) for DECXCPR responses.
+    ///
     /// Returns `(filter, pending_cnl, graphics_rx, osc7_rx)`:
     /// - `pending_cnl`: shared atomic for terminal to request cursor advancement
     /// - `graphics_rx`: receives Kitty graphics commands with cursor positions
@@ -376,6 +500,7 @@ mod unix {
     pub fn new(
       pty: Pty,
       cursor_fn: CursorFn,
+      dsr_cursor_fn: DsrCursorFn,
     ) -> io::Result<(
       Self,
       Arc<AtomicU32>,
@@ -407,6 +532,9 @@ mod unix {
         last_cursor: (0, 0),
         cnl_injected: false,
         pending_cnl: Arc::clone(&pending_cnl),
+        csi_buf: Vec::with_capacity(64),
+        dsr_cursor_fn,
+        last_dsr_cursor: (1, 1),
       };
 
       Ok((GraphicsPtyFilter { reader, pty }, pending_cnl, graphics_rx, osc7_rx))

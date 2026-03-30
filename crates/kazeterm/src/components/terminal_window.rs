@@ -174,8 +174,16 @@ fn new_terminal(
         Some((hs + cursor.line.0, cursor.column.0 as i32))
       });
 
+    let term_for_dsr = term.clone();
+    let dsr_cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> =
+      Box::new(move || {
+        let t = term_for_dsr.try_lock_unfair()?;
+        let cursor = t.grid().cursor.point;
+        Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
+      });
+
     let (filter, pending_cnl, graphics_rx, osc7_rx) =
-      GraphicsPtyFilter::new(pty, cursor_fn).unwrap();
+      GraphicsPtyFilter::new(pty, cursor_fn, dsr_cursor_fn).unwrap();
     let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
     let event_loop = EventLoop::new(
