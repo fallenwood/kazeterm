@@ -664,6 +664,11 @@ impl Terminal {
       AlacTermEvent::Wakeup => {
         cx.emit(Event::Wakeup);
 
+        // Run prompt detection on every wakeup so background terminals
+        // (which are not painted and therefore never call sync()) can
+        // still emit PromptReturned and trigger notifications.
+        self.process_prompt_detection(cx);
+
         if self.pty_info.has_changed()
           && let Some(info) = &self.pty_info.current
         {
