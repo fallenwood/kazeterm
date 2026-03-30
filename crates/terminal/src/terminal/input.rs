@@ -162,10 +162,10 @@ impl Terminal {
         let match_end = match_start + query.len();
 
         if match_whole {
-          let before_ok =
-            match_start == 0 || !is_word_char(line.chars().nth(match_start - 1).unwrap_or(' '));
-          let after_ok =
-            match_end >= line.len() || !is_word_char(line.chars().nth(match_end).unwrap_or(' '));
+          let before_ok = match_start == 0
+            || !is_word_char(line[..match_start].chars().last().unwrap_or(' '));
+          let after_ok = match_end >= line.len()
+            || !is_word_char(line[match_end..].chars().next().unwrap_or(' '));
           if before_ok && after_ok {
             matches.push((match_start, match_end));
           }
@@ -212,8 +212,11 @@ impl Terminal {
             )
           };
 
-        for (start_pos, end_pos) in line_matches {
-          let end_pos = end_pos.saturating_sub(1);
+        for (byte_start, byte_end) in line_matches {
+          // Convert byte offsets to character indices (= cell indices),
+          // since multibyte chars (e.g. "→") occupy 1 cell but multiple bytes.
+          let start_pos = current_line_text[..byte_start].chars().count();
+          let end_pos = current_line_text[..byte_end].chars().count().saturating_sub(1);
           if start_pos < current_line_cells.len() {
             let match_start = current_line_cells[start_pos];
             let match_end_idx = end_pos.min(current_line_cells.len().saturating_sub(1));

@@ -1,3 +1,4 @@
+use crate::components::search_bar::SearchBarState;
 use crate::components::split_pane::SplitContainer;
 
 /// A single tab containing a terminal or split container
@@ -10,6 +11,8 @@ pub struct TabItem {
   pub(crate) _shell_name: String,
   pub(crate) split_container: SplitContainer,
   pub(crate) _subscription: gpui::Subscription,
+  /// Per-tab search bar state, saved/restored on tab switch.
+  pub(crate) search_bar_state: SearchBarState,
 }
 
 impl TabItem {

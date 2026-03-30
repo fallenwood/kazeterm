@@ -5,6 +5,7 @@ use terminal::TerminalView;
 
 use super::main_window::MainWindow;
 use super::main_window_tab_item::TabItem;
+use crate::components::search_bar::SearchBarState;
 use crate::components::split_pane::SplitContainer;
 
 enum NotificationReason {
@@ -118,14 +119,13 @@ impl MainWindow {
       _shell_name: shell_name,
       split_container,
       _subscription: subscription,
+      search_bar_state: SearchBarState::default(),
     };
     this.items.push(item);
-    this.active_tab_ix = Some(this.items.len() - 1);
 
-    // Focus the terminal
-    terminal.update(cx, |view, _cx| {
-      window.focus(&view.focus_handle);
-    });
+    // Use set_active_tab to properly save old tab's search state and focus the new tab
+    let new_tab_ix = this.items.len() - 1;
+    this.set_active_tab(new_tab_ix, window, cx);
 
     // Mark that we need to scroll tabs to the end after next render
     this.scroll_tabs_to_end = true;
@@ -572,17 +572,34 @@ impl MainWindow {
   }
 
   pub(crate) fn set_active_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+    // Save current tab's search state before switching
+    if let Some(old_ix) = self.active_tab_ix {
+      if old_ix < self.items.len() {
+        let saved = self.search_bar.read(cx).save_state(self.search_visible, cx);
+        self.items[old_ix].search_bar_state = saved;
+      }
+    }
+
     self.active_tab_ix = Some(ix);
 
-    // Update search bar with the new active terminal
+    // Restore new tab's search state
+    let new_state = self.items[ix].search_bar_state.clone();
+    self.search_visible = new_state.visible;
+
     if let Some(terminal) = self.active_terminal() {
       let terminal_clone = terminal.clone();
-      self.search_bar.update(cx, |search_bar, _cx| {
-        search_bar.set_terminal_view(terminal_clone.clone());
+      self.search_bar.update(cx, |search_bar, cx| {
+        search_bar.set_terminal_view(terminal_clone);
+        search_bar.restore_state(&new_state, window, cx);
       });
 
-      // Focus the terminal
-      Self::focus_terminal(window, &terminal, cx);
+      if !self.search_visible {
+        Self::focus_terminal(window, &terminal, cx);
+      } else {
+        self.search_bar.update(cx, |search_bar, cx| {
+          search_bar.focus(window, cx);
+        });
+      }
     }
 
     cx.notify();
