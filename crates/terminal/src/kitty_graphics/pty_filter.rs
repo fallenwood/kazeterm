@@ -611,3 +611,291 @@ mod unix {
 
 #[cfg(unix)]
 pub use unix::GraphicsPtyFilter;
+
+#[cfg(not(unix))]
+mod windows {
+  use std::io::{self, Read, Write};
+  use std::sync::Arc;
+
+  use alacritty_terminal::event::{OnResize, WindowSize};
+  use alacritty_terminal::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
+  use polling::{Event, PollMode, Poller};
+
+  /// Callback for DSR cursor position queries (DECXCPR).
+  /// Returns `Some((row_1based, col_1based))` screen-relative, or `None` if lock unavailable.
+  pub type DsrCursorFn = Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
+
+  /// Minimal CSI filter state for DSR detection on Windows.
+  #[derive(Debug, Clone, Copy, PartialEq)]
+  enum FilterState {
+    Normal,
+    Escape,
+    CsiCollect,
+  }
+
+  /// PTY wrapper that intercepts private DSR queries on Windows.
+  ///
+  /// ConPTY may pass through CSI sequences it doesn't handle. This wrapper
+  /// scans the conout byte stream for `CSI ? N n` (private DSR) and writes
+  /// responses directly to the conin pipe (PTY input).
+  ///
+  /// Uses `type Reader = Self` / `type Writer = Self` so that `Read::read()`
+  /// has access to both the inner reader and writer of the wrapped Pty.
+  pub struct WindowsDsrFilter {
+    pty: Pty,
+    state: FilterState,
+    csi_buf: Vec<u8>,
+    pending: Vec<u8>,
+    pending_pos: usize,
+    dsr_cursor_fn: DsrCursorFn,
+    last_dsr_cursor: (i32, i32),
+  }
+
+  impl WindowsDsrFilter {
+    pub fn new(pty: Pty, dsr_cursor_fn: DsrCursorFn) -> Self {
+      Self {
+        pty,
+        state: FilterState::Normal,
+        csi_buf: Vec::with_capacity(64),
+        pending: Vec::with_capacity(8192),
+        pending_pos: 0,
+        dsr_cursor_fn,
+        last_dsr_cursor: (1, 1),
+      }
+    }
+
+    /// Try to capture screen-relative cursor position for DSR.
+    fn capture_dsr_cursor(&mut self) -> (i32, i32) {
+      if let Some(pos) = (self.dsr_cursor_fn)() {
+        self.last_dsr_cursor = pos;
+      }
+      self.last_dsr_cursor
+    }
+
+    /// Handle a completed CSI sequence. If it's a private DSR query (`CSI ? N n`),
+    /// write the response directly to the PTY input and return true (consumed).
+    fn handle_csi_final(&mut self, final_byte: u8) -> bool {
+      if final_byte != b'n' || self.csi_buf.first() != Some(&b'?') {
+        return false;
+      }
+
+      let param_bytes = &self.csi_buf[1..];
+      let param_str = match std::str::from_utf8(param_bytes) {
+        Ok(s) => s,
+        Err(_) => return false,
+      };
+      let param: u16 = match param_str.parse() {
+        Ok(v) => v,
+        Err(_) => return false,
+      };
+
+      let response: Option<String> = match param {
+        // DECXCPR: Extended Cursor Position Report.
+        6 => {
+          let (row, col) = self.capture_dsr_cursor();
+          Some(format!("\x1b[?{};{}R", row, col))
+        }
+        // Printer status: no printer connected.
+        15 => Some("\x1b[?13n".to_string()),
+        // UDK (User Defined Keys) status: locked.
+        25 => Some("\x1b[?21n".to_string()),
+        // Keyboard dialect: North American (US).
+        26 => Some("\x1b[?27;1n".to_string()),
+        // Locator status: no locator.
+        53 | 55 => Some("\x1b[?53n".to_string()),
+        // Locator type: mouse.
+        56 => Some("\x1b[?57;1n".to_string()),
+        // Macro space report: 0 bytes available.
+        62 => Some("\x1b[0*{".to_string()),
+        // Data integrity report: no malfunction.
+        75 => Some("\x1b[?70n".to_string()),
+        // Multi-session status: not in multi-session mode.
+        85 => Some("\x1b[?83n".to_string()),
+        _ => None,
+      };
+
+      if let Some(resp) = response {
+        // Write DSR response to PTY input (conin) so it reaches the child process.
+        let _ = self.pty.writer().write_all(resp.as_bytes());
+        true
+      } else {
+        false
+      }
+    }
+
+    /// Flush the buffered CSI sequence to pending (pass-through to alacritty).
+    fn flush_csi_to_pending(&mut self, final_byte: Option<u8>) {
+      self.pending.push(0x1B);
+      self.pending.push(b'[');
+      self.pending.extend_from_slice(&self.csi_buf);
+      if let Some(fb) = final_byte {
+        self.pending.push(fb);
+      }
+      self.csi_buf.clear();
+    }
+  }
+
+  impl Read for WindowsDsrFilter {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+      // Drain pending filtered bytes from a previous read.
+      if self.pending_pos < self.pending.len() {
+        let avail = &self.pending[self.pending_pos..];
+        let n = avail.len().min(buf.len());
+        buf[..n].copy_from_slice(&avail[..n]);
+        self.pending_pos += n;
+        if self.pending_pos >= self.pending.len() {
+          self.pending.clear();
+          self.pending_pos = 0;
+        }
+        return Ok(n);
+      }
+
+      // Read raw bytes from the inner PTY reader.
+      let mut raw = [0u8; 8192];
+      let n = self.pty.reader().read(&mut raw)?;
+      if n == 0 {
+        return Ok(0);
+      }
+
+      self.pending.clear();
+      self.pending_pos = 0;
+
+      // Run the CSI/DSR state machine over the raw bytes.
+      for &byte in &raw[..n] {
+        match self.state {
+          FilterState::Normal => {
+            if byte == 0x1B {
+              self.state = FilterState::Escape;
+            } else {
+              self.pending.push(byte);
+            }
+          }
+          FilterState::Escape => {
+            if byte == b'[' {
+              self.state = FilterState::CsiCollect;
+              self.csi_buf.clear();
+            } else {
+              // Not CSI — pass through the ESC and this byte.
+              self.pending.push(0x1B);
+              self.pending.push(byte);
+              self.state = FilterState::Normal;
+            }
+          }
+          FilterState::CsiCollect => match byte {
+            // Parameter bytes (digits, semicolons, private-mode markers like '?').
+            0x30..=0x3F => {
+              self.csi_buf.push(byte);
+              if self.csi_buf.len() > 256 {
+                self.flush_csi_to_pending(None);
+                self.state = FilterState::Normal;
+              }
+            }
+            // Intermediate bytes (space through '/').
+            0x20..=0x2F => {
+              self.csi_buf.push(byte);
+            }
+            // Final byte — CSI sequence is complete.
+            0x40..=0x7E => {
+              if !self.handle_csi_final(byte) {
+                self.flush_csi_to_pending(Some(byte));
+              } else {
+                self.csi_buf.clear();
+              }
+              self.state = FilterState::Normal;
+            }
+            // Invalid byte inside CSI.
+            _ => {
+              self.flush_csi_to_pending(None);
+              self.pending.push(byte);
+              self.state = FilterState::Normal;
+            }
+          },
+        }
+      }
+
+      if self.pending.is_empty() {
+        return Ok(0);
+      }
+
+      let n = self.pending.len().min(buf.len());
+      buf[..n].copy_from_slice(&self.pending[..n]);
+      self.pending_pos = n;
+      if self.pending_pos >= self.pending.len() {
+        self.pending.clear();
+        self.pending_pos = 0;
+      }
+      Ok(n)
+    }
+  }
+
+  impl Write for WindowsDsrFilter {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+      self.pty.writer().write(buf)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+      self.pty.writer().flush()
+    }
+  }
+
+  impl EventedReadWrite for WindowsDsrFilter {
+    type Reader = Self;
+    type Writer = Self;
+
+    #[inline]
+    unsafe fn register(
+      &mut self,
+      poll: &Arc<Poller>,
+      interest: Event,
+      poll_mode: PollMode,
+    ) -> io::Result<()> {
+      unsafe { self.pty.register(poll, interest, poll_mode) }
+    }
+
+    #[inline]
+    fn reregister(
+      &mut self,
+      poll: &Arc<Poller>,
+      interest: Event,
+      poll_mode: PollMode,
+    ) -> io::Result<()> {
+      self.pty.reregister(poll, interest, poll_mode)
+    }
+
+    #[inline]
+    fn deregister(&mut self, poll: &Arc<Poller>) -> io::Result<()> {
+      self.pty.deregister(poll)
+    }
+
+    #[inline]
+    fn reader(&mut self) -> &mut Self::Reader {
+      self
+    }
+
+    #[inline]
+    fn writer(&mut self) -> &mut Self::Writer {
+      self
+    }
+  }
+
+  impl EventedPty for WindowsDsrFilter {
+    #[inline]
+    fn next_child_event(&mut self) -> Option<ChildEvent> {
+      self.pty.next_child_event()
+    }
+  }
+
+  impl OnResize for WindowsDsrFilter {
+    #[inline]
+    fn on_resize(&mut self, window_size: WindowSize) {
+      self.pty.on_resize(window_size);
+    }
+  }
+}
+
+#[cfg(not(unix))]
+pub use windows::WindowsDsrFilter;
+#[cfg(not(unix))]
+pub use windows::DsrCursorFn as WindowsDsrCursorFn;

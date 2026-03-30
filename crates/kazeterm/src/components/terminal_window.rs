@@ -203,12 +203,22 @@ fn new_terminal(
 
   #[cfg(not(unix))]
   let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
+    use terminal::kitty_graphics::{WindowsDsrCursorFn, WindowsDsrFilter};
+
+    let term_for_dsr = term.clone();
+    let dsr_cursor_fn: WindowsDsrCursorFn = Box::new(move || {
+      let t = term_for_dsr.try_lock_unfair()?;
+      let cursor = t.grid().cursor.point;
+      Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
+    });
+
     let pty_info = PtyProcessInfo::new(&pty);
+    let filter = WindowsDsrFilter::new(pty, dsr_cursor_fn);
 
     let event_loop = EventLoop::new(
       term.clone(),
       TerminalEventListener(events_tx),
-      pty,
+      filter,
       pty_options.drain_on_exit,
       false,
     )

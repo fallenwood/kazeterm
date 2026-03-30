@@ -12,4 +12,6 @@ pub use parser::KittyParser;
 pub use placement::PlacementManager;
 #[cfg(unix)]
 pub use pty_filter::GraphicsPtyFilter;
+#[cfg(not(unix))]
+pub use pty_filter::{WindowsDsrCursorFn, WindowsDsrFilter};
 pub use storage::KittyImageStorage;
