@@ -10,6 +10,30 @@ const DEFAULT_FONT_SIZE: f32 = 14.0;
 #[derive(Clone)]
 pub struct SearchBarCloseEvent;
 
+/// Saveable search bar state, stored per-tab so each terminal has independent search.
+#[derive(Clone)]
+pub struct SearchBarState {
+  pub query: SharedString,
+  pub match_case: bool,
+  pub match_whole: bool,
+  pub use_regex: bool,
+  pub visible: bool,
+  pub position: Point<Pixels>,
+}
+
+impl Default for SearchBarState {
+  fn default() -> Self {
+    Self {
+      query: SharedString::from(""),
+      match_case: false,
+      match_whole: false,
+      use_regex: false,
+      visible: false,
+      position: Point::new(px(0.), px(0.)),
+    }
+  }
+}
+
 pub struct SearchBar {
   query: SharedString,
   terminal_view: Option<Entity<TerminalView>>,
@@ -69,6 +93,39 @@ impl SearchBar {
 
   pub fn set_font_size(&mut self, font_size: f32) {
     self.font_size = font_size;
+  }
+
+  /// Save the current search bar state for later restoration.
+  /// Reads the live input text so unsaved edits (typed but not yet Enter'd) are preserved.
+  pub fn save_state(&self, visible: bool, cx: &App) -> SearchBarState {
+    let input_text = self.search_input_state.read(cx).value().clone();
+    SearchBarState {
+      query: input_text,
+      match_case: self.match_case,
+      match_whole: self.match_whole,
+      use_regex: self.use_regex,
+      visible,
+      position: self.position,
+    }
+  }
+
+  /// Restore search bar state from a previously saved state.
+  pub fn restore_state(&mut self, state: &SearchBarState, window: &mut Window, cx: &mut Context<Self>) {
+    self.query = state.query.clone();
+    self.match_case = state.match_case;
+    self.match_whole = state.match_whole;
+    self.use_regex = state.use_regex;
+    self.position = state.position;
+
+    // Update the input field text to match the restored query
+    self.search_input_state.update(cx, |input_state, cx| {
+      input_state.set_value(state.query.to_string(), window, cx);
+    });
+
+    // Re-execute the search on the (now-active) terminal so highlights appear
+    if !state.query.is_empty() {
+      self.perform_search(cx);
+    }
   }
 
   pub fn clear_search(&mut self, cx: &mut Context<Self>) {
