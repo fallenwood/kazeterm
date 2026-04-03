@@ -511,7 +511,6 @@ impl SplitContainer {
       .and_then(|id| self.root.find_terminal(id))
   }
 
-  #[allow(dead_code)]
   pub fn set_active_pane(&mut self, pane_id: PaneId) {
     if self.root.find_terminal(pane_id).is_some() {
       self.active_pane_id = Some(pane_id);
