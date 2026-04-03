@@ -5,6 +5,20 @@ use super::main_window_tab_management::get_working_directory_pathbuf;
 use crate::components::split_pane::SplitDirection;
 
 impl MainWindow {
+  /// Update `active_pane_id` to match the terminal pane that currently has
+  /// OS focus. This keeps the split-container state in sync with user clicks
+  /// so that split / close / swap act on the pane the user is looking at.
+  fn sync_active_pane_from_focus(&mut self, window: &Window, cx: &gpui::App) {
+    if let Some(item) = self.active_tab_item_mut() {
+      for (id, terminal) in item.split_container.all_terminals() {
+        if terminal.read(cx).focus_handle.is_focused(window) {
+          item.split_container.set_active_pane(id);
+          return;
+        }
+      }
+    }
+  }
+
   pub fn split_pane_horizontal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.split_pane(SplitDirection::Horizontal, window, cx);
   }
@@ -17,6 +31,8 @@ impl MainWindow {
     if self.active_tab_item_mut().is_none() {
       return;
     }
+
+    self.sync_active_pane_from_focus(window, cx);
 
     let working_directory = self.active_terminal_working_directory(cx);
 
@@ -62,6 +78,8 @@ impl MainWindow {
   }
 
   pub fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.sync_active_pane_from_focus(window, cx);
+
     let pane_closed = self
       .active_tab_item_mut()
       .map(|item| item.split_container.close_active_pane())
@@ -92,6 +110,8 @@ impl MainWindow {
   }
 
   pub fn swap_split_panes(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    self.sync_active_pane_from_focus(_window, cx);
+
     if let Some(item) = self.active_tab_item_mut() {
       if item.split_container.swap_panes() {
         cx.notify();
