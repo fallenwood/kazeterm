@@ -61,8 +61,7 @@ impl EventEmitter<SearchBarCloseEvent> for SearchBar {}
 
 impl SearchBar {
   pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-    let search_input_state =
-      cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
+    let search_input_state = cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
 
     let subscription = cx.subscribe_in(
       &search_input_state,
@@ -120,7 +119,12 @@ impl SearchBar {
   }
 
   /// Restore search bar state from a previously saved state.
-  pub fn restore_state(&mut self, state: &SearchBarState, window: &mut Window, cx: &mut Context<Self>) {
+  pub fn restore_state(
+    &mut self,
+    state: &SearchBarState,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     self.query = state.query.clone();
     self.match_case = state.match_case;
     self.match_whole = state.match_whole;

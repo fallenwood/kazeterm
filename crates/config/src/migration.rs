@@ -129,10 +129,7 @@ fn migrate_v20260306_1_to_20260322_1(value: &mut Value) {
 fn migrate_v20260322_1_to_20260323_1(value: &mut Value) {
   if let Value::Table(table) = value {
     if !table.contains_key("scrollback_lines") {
-      table.insert(
-        "scrollback_lines".to_string(),
-        Value::Integer(10_000),
-      );
+      table.insert("scrollback_lines".to_string(), Value::Integer(10_000));
     }
     if !table.contains_key("cursor_shape") {
       table.insert(
@@ -144,16 +141,10 @@ fn migrate_v20260322_1_to_20260323_1(value: &mut Value) {
       table.insert("cursor_blink".to_string(), Value::Boolean(true));
     }
     if !table.contains_key("cursor_blink_interval") {
-      table.insert(
-        "cursor_blink_interval".to_string(),
-        Value::Integer(750),
-      );
+      table.insert("cursor_blink_interval".to_string(), Value::Integer(750));
     }
     if !table.contains_key("osc52") {
-      table.insert(
-        "osc52".to_string(),
-        Value::String("copy_only".to_string()),
-      );
+      table.insert("osc52".to_string(), Value::String("copy_only".to_string()));
     }
     if !table.contains_key("copy_on_select") {
       table.insert("copy_on_select".to_string(), Value::Boolean(false));
@@ -396,7 +387,11 @@ background_opacity = 0.9
       CURRENT_CONFIG_VERSION
     );
     assert_eq!(
-      config.get("scrollback_lines").unwrap().as_integer().unwrap(),
+      config
+        .get("scrollback_lines")
+        .unwrap()
+        .as_integer()
+        .unwrap(),
       10_000
     );
     assert_eq!(

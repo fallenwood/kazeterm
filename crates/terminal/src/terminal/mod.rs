@@ -1,7 +1,8 @@
 use std::{cmp, collections::VecDeque, process::ExitStatus, sync::Arc};
 
 use crate::{
-  TerminalBounds, indexed_cell::IndexedCell,
+  TerminalBounds,
+  indexed_cell::IndexedCell,
   kitty_graphics::{
     ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
     PlacementManager, RawGraphicsCommand,
@@ -26,54 +27,13 @@ use themeing::ActiveTheme;
 mod events;
 mod input;
 mod mouse_scroll;
+mod search;
+mod touch;
 
 pub use events::TerminalEventListener;
-
-/// Active search parameters stored in Terminal so the search can be
-/// automatically re-executed whenever terminal content changes.
-pub struct SearchState {
-  pub query: String,
-  pub match_case: bool,
-  pub match_whole: bool,
-  pub use_regex: bool,
-  /// Pre-compiled regex (only set when `use_regex` is true and the pattern is valid).
-  compiled_regex: Option<regex::Regex>,
-}
-
-impl SearchState {
-  pub fn new(query: String, match_case: bool, match_whole: bool, use_regex: bool) -> Option<Self> {
-    if query.is_empty() {
-      return None;
-    }
-
-    let compiled_regex = if use_regex {
-      let pattern = if match_whole {
-        format!(r"\b{}\b", query)
-      } else {
-        query.clone()
-      };
-      let result = if match_case {
-        regex::Regex::new(&pattern)
-      } else {
-        regex::Regex::new(&format!("(?i){}", pattern))
-      };
-      match result {
-        Ok(re) => Some(re),
-        Err(_) => return None, // invalid regex
-      }
-    } else {
-      None
-    };
-
-    Some(Self {
-      query,
-      match_case,
-      match_whole,
-      use_regex,
-      compiled_regex,
-    })
-  }
-}
+pub use search::SearchState;
+#[allow(unused_imports)]
+pub use touch::{TouchMode, TouchState};
 
 #[derive(Clone)]
 pub enum InternalEvent {
@@ -309,10 +269,7 @@ impl Terminal {
 
     // Re-run search only when content has actually changed.
     if let Some(search_state) = &self.search_state {
-      let fingerprint = (
-        terminal.history_size(),
-        self.last_content.cursor.point,
-      );
+      let fingerprint = (terminal.history_size(), self.last_content.cursor.point);
       if fingerprint != self.search_fingerprint {
         self.search_fingerprint = fingerprint;
         let old_count = self.last_content.search_matches.len();
@@ -341,11 +298,10 @@ impl Terminal {
     let viewport_top = history_size - display_offset;
     let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
 
-    self.last_content.image_placements = self.placement_manager.visible_placements(
-      &self.image_storage,
-      viewport_top,
-      viewport_lines,
-    );
+    self.last_content.image_placements =
+      self
+        .placement_manager
+        .visible_placements(&self.image_storage, viewport_top, viewport_lines);
   }
 
   fn process_graphics_commands(&mut self) {
@@ -399,9 +355,9 @@ impl Terminal {
     } else if let Some(cwd_file) = self.cwd_file.clone() {
       // Fallback: poll cwd_file modification time (Windows, or when PTY filter is not used).
       // Throttled to every ~500ms to avoid excessive stat() calls.
-      let should_check = self
-        .last_cwd_file_check
-        .map_or(true, |t| t.elapsed() >= std::time::Duration::from_millis(500));
+      let should_check = self.last_cwd_file_check.map_or(true, |t| {
+        t.elapsed() >= std::time::Duration::from_millis(500)
+      });
       if should_check {
         self.last_cwd_file_check = Some(std::time::Instant::now());
         if let Ok(mtime) = std::fs::metadata(&cwd_file).and_then(|m| m.modified()) {
@@ -437,12 +393,7 @@ impl Terminal {
     }
   }
 
-  fn execute_graphics_command(
-    &mut self,
-    cmd: &KittyCommand,
-    cursor_line: i32,
-    cursor_column: i32,
-  ) {
+  fn execute_graphics_command(&mut self, cmd: &KittyCommand, cursor_line: i32, cursor_column: i32) {
     match cmd.action {
       KittyAction::Transmit => {
         let _ = self.image_storage.store(cmd);
@@ -686,8 +637,8 @@ impl Terminal {
         });
         self.write_to_pty(format(color).into_bytes());
       }
-      AlacTermEvent::ChildExit(error_code) => {
-        self.register_task_finished(Some(error_code), cx);
+      AlacTermEvent::ChildExit(exit_status) => {
+        self.register_task_finished(Some(exit_status), cx);
       }
     }
   }
@@ -792,25 +743,6 @@ impl EventEmitter<Event> for Terminal {}
 pub enum SelectionPhase {
   Selecting,
   Ended,
-}
-
-/// State of an active touch interaction (Windows touch-to-mouse).
-pub enum TouchState {
-  Pending {
-    position: gpui::Point<Pixels>,
-    start_time: std::time::Instant,
-  },
-  Scrolling {
-    last_position: gpui::Point<Pixels>,
-  },
-  Selecting,
-}
-
-#[derive(PartialEq, Eq)]
-pub enum TouchMode {
-  Pending,
-  Scrolling,
-  Selecting,
 }
 
 fn content_index_for_mouse(pos: gpui::Point<Pixels>, terminal_bounds: &TerminalBounds) -> usize {

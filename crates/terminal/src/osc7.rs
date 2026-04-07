@@ -90,9 +90,7 @@ fn parse_file_uri(uri_bytes: &[u8]) -> Option<PathBuf> {
   let decoded = percent_decode(path_str);
 
   // Normalize Windows UNC prefix if present.
-  let cleaned = decoded
-    .strip_prefix("\\\\?\\")
-    .unwrap_or(&decoded);
+  let cleaned = decoded.strip_prefix("\\\\?\\").unwrap_or(&decoded);
 
   let path = PathBuf::from(cleaned);
   if path.as_os_str().is_empty() {
@@ -187,10 +185,7 @@ mod tests {
     data.extend_from_slice(b"hello world\r\n");
     data.extend_from_slice(b"\x1b]7;file:///home/user\x07");
     data.extend_from_slice(b"more output\r\n");
-    assert_eq!(
-      extract_osc7_path(&data),
-      Some(PathBuf::from("/home/user"))
-    );
+    assert_eq!(extract_osc7_path(&data), Some(PathBuf::from("/home/user")));
   }
 
   #[test]

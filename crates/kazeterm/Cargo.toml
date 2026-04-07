@@ -38,7 +38,7 @@ raw-window-handle = "0.6"
 # notify-rust is only needed on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = { workspace = true }
-which = "7"
+which.workspace = true
 raw-window-handle = "0.6"
 x11rb = "0.13"
 image = { workspace = true }

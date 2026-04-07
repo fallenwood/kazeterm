@@ -45,7 +45,8 @@ impl PlacementManager {
 
   /// Remove all placements at a given grid position.
   pub fn remove_at_cursor(&mut self, line: i32, column: i32) {
-    self.placements
+    self
+      .placements
       .retain(|p| !(p.line == line && p.column == column));
   }
 
@@ -56,7 +57,8 @@ impl PlacementManager {
 
   /// Remove placements for images that no longer exist in storage.
   pub fn gc(&mut self, storage: &KittyImageStorage) {
-    self.placements
+    self
+      .placements
       .retain(|p| storage.peek(p.image_id).is_some());
   }
 

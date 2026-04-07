@@ -282,12 +282,8 @@ impl Element for TerminalElement {
         };
 
         let (minimap_state, minimap_bounds) = if minimap_enabled {
-          let minimap_state = MinimapState::new(
-            total_lines,
-            visible_lines,
-            display_offset,
-            history_size,
-          );
+          let minimap_state =
+            MinimapState::new(total_lines, visible_lines, display_offset, history_size);
           let minimap_bounds = Bounds {
             origin: Point {
               x: bounds.origin.x + bounds.size.width - scrollbar_width - minimap_width,
@@ -366,7 +362,14 @@ impl Element for TerminalElement {
         .map(|c| c.right_click_context_menu)
         .unwrap_or(false);
 
-      self.register_mouse_listeners(layout.mode, &layout.hitbox, layout.scrollbar_bounds, layout.minimap_bounds, right_click_context_menu, window);
+      self.register_mouse_listeners(
+        layout.mode,
+        &layout.hitbox,
+        layout.scrollbar_bounds,
+        layout.minimap_bounds,
+        right_click_context_menu,
+        window,
+      );
       if window.modifiers().secondary()
         && bounds.contains(&window.mouse_position())
         && self.terminal_view.read(cx).hover.is_some()
@@ -642,7 +645,13 @@ fn paint_image_placement(
   let w = placement.width_cells as f32 * dimensions.cell_width();
   let h = placement.height_cells as f32 * dimensions.line_height();
 
-  let img_bounds = Bounds::new(Point::new(x, y), gpui::Size { width: w, height: h });
+  let img_bounds = Bounds::new(
+    Point::new(x, y),
+    gpui::Size {
+      width: w,
+      height: h,
+    },
+  );
 
   let _ = window.paint_image(
     img_bounds,

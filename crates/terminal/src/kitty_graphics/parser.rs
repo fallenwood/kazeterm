@@ -199,7 +199,10 @@ mod tests {
 
     // First chunk (m=1 means more coming).
     let chunk1 = b"a=T,f=100,i=5,m=1;AAAA";
-    assert!(parser.parse(chunk1).is_none(), "intermediate chunk returns None");
+    assert!(
+      parser.parse(chunk1).is_none(),
+      "intermediate chunk returns None"
+    );
 
     // Second chunk (m=1 still).
     let chunk2 = b"m=1;BBBB";
