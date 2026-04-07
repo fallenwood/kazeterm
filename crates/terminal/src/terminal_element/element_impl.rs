@@ -363,7 +363,7 @@ impl Element for TerminalElement {
 
       let right_click_context_menu = cx
         .try_global::<config::Config>()
-        .map(|c| c.right_click == "context_menu")
+        .map(|c| c.right_click_context_menu)
         .unwrap_or(false);
 
       self.register_mouse_listeners(layout.mode, &layout.hitbox, layout.scrollbar_bounds, layout.minimap_bounds, right_click_context_menu, window);

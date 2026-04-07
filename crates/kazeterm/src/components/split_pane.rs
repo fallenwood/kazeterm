@@ -293,7 +293,7 @@ impl SplitPane {
       SplitPane::Terminal { id: _, terminal } => {
         let right_click_context_menu = cx
           .try_global::<config::Config>()
-          .map(|c| c.right_click == "context_menu")
+          .map(|c| c.right_click_context_menu)
           .unwrap_or(false);
 
         let base = div().size_full().child(terminal.clone());

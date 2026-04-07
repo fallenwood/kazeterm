@@ -188,15 +188,17 @@ fn migrate_v20260323_2_to_20260327_1(value: &mut Value) {
   }
 }
 
-/// Add right_click behavior configuration.
+/// Add right_click_context_menu configuration.
 fn migrate_v20260327_1_to_20260407_1(value: &mut Value) {
   if let Value::Table(table) = value {
-    if !table.contains_key("right_click") {
+    if !table.contains_key("right_click_context_menu") {
       table.insert(
-        "right_click".to_string(),
-        Value::String("copy_paste".to_string()),
+        "right_click_context_menu".to_string(),
+        Value::Boolean(false),
       );
     }
+    // Remove old string-based right_click field if present
+    table.remove("right_click");
     table.insert(
       "version".to_string(),
       Value::String("20260407.1".to_string()),
@@ -475,8 +477,12 @@ background_blur = false
       CURRENT_CONFIG_VERSION
     );
     assert_eq!(
-      config.get("right_click").unwrap().as_str().unwrap(),
-      "copy_paste"
+      config
+        .get("right_click_context_menu")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
+      false
     );
   }
 
