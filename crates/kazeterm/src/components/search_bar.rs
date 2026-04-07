@@ -2,10 +2,20 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
+use gpui_component::input::Escape as InputEscape;
 use gpui_component::{ActiveTheme, IconName, Sizable};
 use terminal::TerminalView;
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
+
+#[derive(Clone)]
+struct DragSearchBar(EntityId);
+
+impl Render for DragSearchBar {
+  fn render(&mut self, _window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    Empty
+  }
+}
 
 #[derive(Clone)]
 pub struct SearchBarCloseEvent;
@@ -263,7 +273,10 @@ impl Render for SearchBar {
     let pos = self.position;
     let font_size = self.font_size;
 
+    let entity_id = cx.entity_id();
+
     div()
+      .id("search-bar-drag")
       .absolute()
       .top(px(8.) + pos.y)
       .right(px(16.) - pos.x)
@@ -277,33 +290,34 @@ impl Render for SearchBar {
       .py_0p5()
       .px_1p5()
       .cursor_grab()
-      .on_mouse_down(
-        gpui::MouseButton::Left,
-        cx.listener(|this, e: &MouseDownEvent, _, cx| {
-          this.drag_offset = Some(e.position);
-          cx.stop_propagation();
-        }),
-      )
-      .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, _, cx| {
+      .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, e: &MouseDownEvent, _, cx| {
+        this.drag_offset = Some(e.position);
+        cx.stop_propagation();
+      }))
+      .on_drag(DragSearchBar(entity_id), |drag, _, _, cx| {
+        cx.stop_propagation();
+        cx.new(|_| drag.clone())
+      })
+      .on_drag_move(cx.listener(|this, e: &DragMoveEvent<DragSearchBar>, _, cx| {
+        let drag = e.drag(cx);
+        if cx.entity_id() != drag.0 {
+          return;
+        }
         if let Some(start) = this.drag_offset {
-          if e.pressed_button == Some(MouseButton::Left) {
-            let delta = e.position - start;
-            this.position.x += delta.x;
-            this.position.y += delta.y;
-            this.drag_offset = Some(e.position);
-            cx.notify();
-          } else {
-            this.drag_offset = None;
-          }
+          let delta = e.event.position - start;
+          this.position.x += delta.x;
+          this.position.y += delta.y;
+          this.drag_offset = Some(e.event.position);
+          cx.notify();
         }
       }))
-      .on_mouse_up(
-        gpui::MouseButton::Left,
-        cx.listener(|this, _, _, cx| {
-          this.drag_offset = None;
-          cx.stop_propagation();
-        }),
-      )
+      .on_mouse_up(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+        this.drag_offset = None;
+        cx.stop_propagation();
+      }))
+      .on_action(cx.listener(|this, _: &InputEscape, _window, cx| {
+        this.close(cx);
+      }))
       .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| {
         cx.stop_propagation();
       })
