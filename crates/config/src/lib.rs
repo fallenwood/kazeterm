@@ -96,6 +96,8 @@ pub struct Config {
   pub osc52: String,
   /// Automatically copy selected text to the clipboard
   pub copy_on_select: bool,
+  /// Show a context menu on right-click instead of the default copy/paste behavior
+  pub right_click_context_menu: bool,
   /// Additional environment variables to set for the terminal shell
   #[serde(default)]
   pub env: HashMap<String, String>,
@@ -138,6 +140,7 @@ impl Default for Config {
       cursor_blink_interval: 750,
       osc52: "copy_only".to_string(),
       copy_on_select: false,
+      right_click_context_menu: true,
       env: HashMap::new(),
       working_directory: None,
     }
@@ -528,6 +531,7 @@ mod tests {
       cursor_blink_interval: 750,
       osc52: "copy_only".into(),
       copy_on_select: false,
+      right_click_context_menu: true,
       env: HashMap::new(),
       working_directory: None,
     };

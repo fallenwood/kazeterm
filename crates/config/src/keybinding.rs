@@ -121,6 +121,37 @@ impl ParsedKeybinding {
   pub fn matches(&self, control: bool, shift: bool, alt: bool, key: &str) -> bool {
     self.control == control && self.shift == shift && self.alt == alt && self.key == key
   }
+
+  /// Format the keybinding for display in menus, e.g. "ctrl-shift-c" → "Ctrl+Shift+C"
+  pub fn display_text(&self) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if self.control {
+      parts.push("Ctrl".into());
+    }
+    if self.shift {
+      parts.push("Shift".into());
+    }
+    if self.alt {
+      parts.push("Alt".into());
+    }
+    parts.push(display_key(&self.key));
+    parts.join("+")
+  }
+}
+
+/// Capitalize a key name for display: single chars uppercase, multi-char title-case, F-keys uppercase.
+fn display_key(key: &str) -> String {
+  if key.len() == 1 {
+    return key.to_uppercase();
+  }
+  let mut chars = key.chars();
+  match chars.next() {
+    Some(c) => {
+      let first = c.to_uppercase().to_string();
+      first + chars.as_str()
+    }
+    None => String::new(),
+  }
 }
 
 #[cfg(test)]
