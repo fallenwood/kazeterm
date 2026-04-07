@@ -53,7 +53,10 @@ pub enum KittyDelete {
   /// Delete all images visible on screen.
   All,
   /// Delete image by ID (and optionally placement).
-  ById { image_id: u32, placement_id: Option<u32> },
+  ById {
+    image_id: u32,
+    placement_id: Option<u32>,
+  },
   /// Delete all placements at the cursor position.
   AtCursor,
   /// Delete all images with z-index matching a given value.

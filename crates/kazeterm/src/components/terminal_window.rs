@@ -1,10 +1,10 @@
 use std::{path::PathBuf, sync::Arc};
 
+use alacritty_terminal::term::Osc52;
+use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle as AlacCursorStyle};
 use alacritty_terminal::{
   Term, event_loop::EventLoop, grid::Dimensions, sync::FairMutex, term::Config,
 };
-use alacritty_terminal::term::Osc52;
-use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle as AlacCursorStyle};
 use futures::{FutureExt, StreamExt as _, channel::mpsc::unbounded};
 use gpui::{AppContext, Context, Entity};
 
@@ -122,11 +122,7 @@ fn new_terminal(
   let mut args = args;
   if shell_name == "pwsh" || shell_name == "powershell" {
     if args.is_empty() {
-      args = vec![
-        "-NoExit".to_string(),
-        "-Command".to_string(),
-        pwsh_init,
-      ];
+      args = vec!["-NoExit".to_string(), "-Command".to_string(), pwsh_init];
     }
   }
 
@@ -166,21 +162,19 @@ fn new_terminal(
     use terminal::kitty_graphics::GraphicsPtyFilter;
 
     let term_for_cursor = term.clone();
-    let cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> =
-      Box::new(move || {
-        let t = term_for_cursor.try_lock_unfair()?;
-        let cursor = t.grid().cursor.point;
-        let hs = t.history_size() as i32;
-        Some((hs + cursor.line.0, cursor.column.0 as i32))
-      });
+    let cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> = Box::new(move || {
+      let t = term_for_cursor.try_lock_unfair()?;
+      let cursor = t.grid().cursor.point;
+      let hs = t.history_size() as i32;
+      Some((hs + cursor.line.0, cursor.column.0 as i32))
+    });
 
     let term_for_dsr = term.clone();
-    let dsr_cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> =
-      Box::new(move || {
-        let t = term_for_dsr.try_lock_unfair()?;
-        let cursor = t.grid().cursor.point;
-        Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
-      });
+    let dsr_cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> = Box::new(move || {
+      let t = term_for_dsr.try_lock_unfair()?;
+      let cursor = t.grid().cursor.point;
+      Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
+    });
 
     let (filter, pending_cnl, graphics_rx, osc7_rx) =
       GraphicsPtyFilter::new(pty, cursor_fn, dsr_cursor_fn).unwrap();
@@ -198,7 +192,13 @@ fn new_terminal(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, Some(graphics_rx), Some(pending_cnl), Some(osc7_rx))
+    (
+      pty_tx,
+      pty_info,
+      Some(graphics_rx),
+      Some(pending_cnl),
+      Some(osc7_rx),
+    )
   };
 
   #[cfg(not(unix))]
@@ -231,7 +231,13 @@ fn new_terminal(
   };
 
   let terminal = terminal::Terminal::new(
-    pty_tx, term, pty_info, graphics_rx, pending_cnl, osc7_rx, Some(cwd_file),
+    pty_tx,
+    term,
+    pty_info,
+    graphics_rx,
+    pending_cnl,
+    osc7_rx,
+    Some(cwd_file),
   );
 
   (terminal, events_rx)

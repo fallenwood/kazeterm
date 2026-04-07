@@ -1,9 +1,6 @@
 use alacritty_terminal::term::TermMode;
 use gpui::*;
-use gpui_component::{
-  h_flex, v_flex,
-  menu::ContextMenuExt,
-};
+use gpui_component::{h_flex, menu::ContextMenuExt, v_flex};
 use terminal::TerminalView;
 use themeing::SettingsStore;
 
@@ -603,5 +600,3 @@ impl SplitContainer {
     self.root.render(self.active_pane_id, vec![], window, cx)
   }
 }
-
-

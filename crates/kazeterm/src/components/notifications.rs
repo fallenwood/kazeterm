@@ -107,15 +107,13 @@ impl MainWindow {
         return false;
       };
 
-      let notification: *mut objc::runtime::Object =
-        msg_send![class!(NSUserNotification), new];
+      let notification: *mut objc::runtime::Object = msg_send![class!(NSUserNotification), new];
       if notification.is_null() {
         return false;
       }
 
       let title_bytes = "Kazeterm";
-      let title_ns: *mut objc::runtime::Object =
-        msg_send![class!(NSString), alloc];
+      let title_ns: *mut objc::runtime::Object = msg_send![class!(NSString), alloc];
       let title_ns: *mut objc::runtime::Object = msg_send![
         title_ns,
         initWithBytes: title_bytes.as_ptr()
@@ -123,8 +121,7 @@ impl MainWindow {
         encoding: 4usize // NSUTF8StringEncoding
       ];
 
-      let body_ns: *mut objc::runtime::Object =
-        msg_send![class!(NSString), alloc];
+      let body_ns: *mut objc::runtime::Object = msg_send![class!(NSString), alloc];
       let body_ns: *mut objc::runtime::Object = msg_send![
         body_ns,
         initWithBytes: body.as_ptr()
@@ -142,8 +139,7 @@ impl MainWindow {
       if center.is_null() {
         return false;
       }
-      let _: () =
-        msg_send![center, deliverNotification: notification];
+      let _: () = msg_send![center, deliverNotification: notification];
       true
     }
   }
@@ -151,9 +147,7 @@ impl MainWindow {
   #[cfg(target_os = "macos")]
   fn send_notification_osascript(body: &str) {
     let escaped = body.replace('\\', "\\\\").replace('"', "\\\"");
-    let script = format!(
-      r#"display notification "{escaped}" with title "Kazeterm""#
-    );
+    let script = format!(r#"display notification "{escaped}" with title "Kazeterm""#);
     let _ = std::process::Command::new("osascript")
       .args(["-e", &script])
       .output();
@@ -161,10 +155,10 @@ impl MainWindow {
 
   #[cfg(target_os = "windows")]
   fn send_notification_windows(body: &str) {
-    use windows::core::HSTRING;
-    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
     use windows::Data::Xml::Dom::XmlDocument;
     use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+    use windows::core::HSTRING;
 
     // Use PowerShell's AUMID — it is always registered on Windows, so
     // CreateToastNotifierWithId works without any shortcut or registry setup.
@@ -192,9 +186,7 @@ impl MainWindow {
       return;
     };
     let Ok(notifier) =
-      ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
-        POWERSHELL_AUMID,
-      ))
+      ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(POWERSHELL_AUMID))
     else {
       return;
     };

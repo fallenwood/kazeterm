@@ -162,8 +162,8 @@ impl Terminal {
         let match_end = match_start + query.len();
 
         if match_whole {
-          let before_ok = match_start == 0
-            || !is_word_char(line[..match_start].chars().last().unwrap_or(' '));
+          let before_ok =
+            match_start == 0 || !is_word_char(line[..match_start].chars().last().unwrap_or(' '));
           let after_ok = match_end >= line.len()
             || !is_word_char(line[match_end..].chars().next().unwrap_or(' '));
           if before_ok && after_ok {
@@ -197,26 +197,29 @@ impl Terminal {
       let trimmed_len = current_line_text.trim_end().len();
 
       if trimmed_len > 0 {
-        let line_matches: Vec<(usize, usize)> =
-          if let Some(ref regex) = search_state.compiled_regex {
-            regex
-              .find_iter(&current_line_text[..trimmed_len])
-              .map(|m| (m.start(), m.end()))
-              .collect()
-          } else {
-            find_matches_simple(
-              &current_line_text[..trimmed_len],
-              &search_state.query,
-              search_state.match_case,
-              search_state.match_whole,
-            )
-          };
+        let line_matches: Vec<(usize, usize)> = if let Some(ref regex) = search_state.compiled_regex
+        {
+          regex
+            .find_iter(&current_line_text[..trimmed_len])
+            .map(|m| (m.start(), m.end()))
+            .collect()
+        } else {
+          find_matches_simple(
+            &current_line_text[..trimmed_len],
+            &search_state.query,
+            search_state.match_case,
+            search_state.match_whole,
+          )
+        };
 
         for (byte_start, byte_end) in line_matches {
           // Convert byte offsets to character indices (= cell indices),
           // since multibyte chars (e.g. "→") occupy 1 cell but multiple bytes.
           let start_pos = current_line_text[..byte_start].chars().count();
-          let end_pos = current_line_text[..byte_end].chars().count().saturating_sub(1);
+          let end_pos = current_line_text[..byte_end]
+            .chars()
+            .count()
+            .saturating_sub(1);
           if start_pos < current_line_cells.len() {
             let match_start = current_line_cells[start_pos];
             let match_end_idx = end_pos.min(current_line_cells.len().saturating_sub(1));

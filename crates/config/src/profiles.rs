@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Config, ssh};
 use crate::shell;
+use crate::{Config, ssh};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
@@ -156,9 +156,7 @@ impl Config {
 mod tests {
   use std::collections::HashMap;
 
-  use crate::{
-    CURRENT_CONFIG_VERSION, Config, KeybindingConfig, Profile, ThemeMode,
-  };
+  use crate::{CURRENT_CONFIG_VERSION, Config, KeybindingConfig, Profile, ThemeMode};
 
   #[test]
   fn get_profile_helpers() {
@@ -222,7 +220,10 @@ mod tests {
     assert_eq!(config.get_default_profile().unwrap().name, "two");
 
     // get_shell_for_profile
-    assert_eq!(config.get_shell_for_profile("two").unwrap(), "bash".to_string());
+    assert_eq!(
+      config.get_shell_for_profile("two").unwrap(),
+      "bash".to_string()
+    );
     assert!(config.get_shell_for_profile("missing").is_none());
 
     // get_profile_names preserves order

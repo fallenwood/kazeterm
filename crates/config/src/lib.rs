@@ -141,7 +141,6 @@ impl Default for Config {
   }
 }
 
-
 impl Config {
   /// Get the background opacity clamped to valid range [0.0, 1.0]
   pub fn get_background_opacity(&self) -> f32 {
@@ -338,5 +337,4 @@ mod tests {
     assert_eq!(to_hex_string(&rgba(0, 255, 0, 128)), "#00FF0080");
     assert_eq!(to_hex_string(&rgba(34, 85, 136, 255)), "#225588FF");
   }
-
 }

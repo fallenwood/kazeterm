@@ -18,15 +18,12 @@ pub fn set_macos_app_icon() {
     if ns_data.is_null() {
       return;
     }
-    let ns_image_alloc: *mut objc::runtime::Object =
-      msg_send![class!(NSImage), alloc];
-    let ns_image: *mut objc::runtime::Object =
-      msg_send![ns_image_alloc, initWithData: ns_data];
+    let ns_image_alloc: *mut objc::runtime::Object = msg_send![class!(NSImage), alloc];
+    let ns_image: *mut objc::runtime::Object = msg_send![ns_image_alloc, initWithData: ns_data];
     if ns_image.is_null() {
       return;
     }
-    let ns_app: *mut objc::runtime::Object =
-      msg_send![class!(NSApplication), sharedApplication];
+    let ns_app: *mut objc::runtime::Object = msg_send![class!(NSApplication), sharedApplication];
     let _: () = msg_send![ns_app, setApplicationIconImage: ns_image];
   }
 }
@@ -67,8 +64,7 @@ fn install_xdg_icon_files(data_dir: &std::path::Path) {
   };
 
   for size in [256, 128, 64, 48] {
-    let icon_dir =
-      data_dir.join(format!("icons/hicolor/{size}x{size}/apps"));
+    let icon_dir = data_dir.join(format!("icons/hicolor/{size}x{size}/apps"));
     let icon_path = icon_dir.join("kazeterm.png");
     if icon_path.exists() {
       continue;
@@ -76,11 +72,7 @@ fn install_xdg_icon_files(data_dir: &std::path::Path) {
     if std::fs::create_dir_all(&icon_dir).is_err() {
       continue;
     }
-    let resized = img.resize_exact(
-      size,
-      size,
-      image::imageops::FilterType::Lanczos3,
-    );
+    let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
     let _ = resized.save(&icon_path);
   }
 }
@@ -126,8 +118,7 @@ Keywords=terminal;console;shell;prompt;command;commandline;
 pub fn set_x11_window_icon(window: &gpui::Window) {
   use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-  let Ok(wh) = <gpui::Window as HasWindowHandle>::window_handle(window)
-  else {
+  let Ok(wh) = <gpui::Window as HasWindowHandle>::window_handle(window) else {
     return;
   };
 
@@ -167,16 +158,13 @@ fn set_x11_net_wm_icon(window_id: u32) {
   let mut icon_data: Vec<u32> = Vec::new();
 
   for &size in sizes {
-    let resized =
-      img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+    let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
     let rgba = resized.to_rgba8();
     icon_data.push(size);
     icon_data.push(size);
     for pixel in rgba.pixels() {
       let [r, g, b, a] = pixel.0;
-      icon_data.push(
-        (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
-      );
+      icon_data.push((a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32);
     }
   }
 

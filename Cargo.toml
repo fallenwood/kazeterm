@@ -18,17 +18,12 @@ gpui-component = "0.5.1"
 alacritty_terminal = "0.25.1"
 anyhow = "1.0.100"
 smol = "2.0.2"
-tokio = { version = "1" }
-tokio-tungstenite = { version = "0.26", features = ["__rustls-tls"] }
-windows-core = "0.61"
-image = "0.25"
-itertools = "0.14.0"
-futures = "0.3"
-futures-batch = "0.6.1"
-futures-lite = "1.13"
-rust-embed = "8.9.0"
-smallvec = { version = "1.6", features = ["union"] }
-sysinfo = "0.31.0"
+  windows-core = "0.61"
+  image = "0.25"
+  itertools = "0.14.0"
+  futures = "0.3"
+  rust-embed = "8.9.0"
+  sysinfo = "0.31.0"
 libc = "0.2"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }

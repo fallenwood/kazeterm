@@ -257,7 +257,6 @@ impl MainWindow {
     }
   }
 
-
   pub fn remove_tab_by(&mut self, tab_index: usize, window: &mut Window, cx: &mut Context<Self>) {
     // Find the position of the tab to remove
     let removed_pos = self.items.iter().position(|item| item.index == tab_index);
@@ -367,7 +366,10 @@ impl MainWindow {
 }
 
 pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -> Option<PathBuf> {
-  tracing::debug!("get_working_directory_pathbuf: input={:?}", working_directory);
+  tracing::debug!(
+    "get_working_directory_pathbuf: input={:?}",
+    working_directory
+  );
   if let Some(working_directory) = working_directory {
     let path = std::path::Path::new(&working_directory);
     if path.exists() && path.is_dir() {

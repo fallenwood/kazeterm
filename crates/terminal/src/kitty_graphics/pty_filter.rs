@@ -33,8 +33,8 @@ mod unix {
 
   /// Extra blank lines inserted below an image before the next prompt.
   const IMAGE_BOTTOM_PADDING: u32 = 2;
-  use std::sync::mpsc;
   use std::sync::Arc;
+  use std::sync::mpsc;
 
   use alacritty_terminal::event::{OnResize, WindowSize};
   use alacritty_terminal::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
@@ -537,7 +537,12 @@ mod unix {
         last_dsr_cursor: (1, 1),
       };
 
-      Ok((GraphicsPtyFilter { reader, pty }, pending_cnl, graphics_rx, osc7_rx))
+      Ok((
+        GraphicsPtyFilter { reader, pty },
+        pending_cnl,
+        graphics_rx,
+        osc7_rx,
+      ))
     }
 
     /// Get the raw PTY master fd (for tcgetpgrp / PtyProcessInfo).
@@ -896,6 +901,6 @@ mod windows {
 }
 
 #[cfg(not(unix))]
-pub use windows::WindowsDsrFilter;
-#[cfg(not(unix))]
 pub use windows::DsrCursorFn as WindowsDsrCursorFn;
+#[cfg(not(unix))]
+pub use windows::WindowsDsrFilter;
