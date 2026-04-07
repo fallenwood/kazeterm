@@ -33,6 +33,7 @@ impl TerminalElement {
     hitbox: &gpui::Hitbox,
     scrollbar_bounds: Option<Bounds<Pixels>>,
     minimap_bounds: Option<Bounds<Pixels>>,
+    right_click_context_menu: bool,
     window: &mut Window,
   ) {
     let focus = self.focus.clone();
@@ -208,43 +209,45 @@ impl TerminalElement {
         }),
       );
     } else {
-      self.interactivity.on_mouse_down(MouseButton::Right, {
-        let terminal = terminal.clone();
-        move |e, _window, cx| {
-          if is_mouse_from_touch() {
-            terminal.update(cx, |term, cx| {
-              term.start_touch_selection(e.position);
-              cx.notify();
-            });
-            return;
+      if !right_click_context_menu {
+        self.interactivity.on_mouse_down(MouseButton::Right, {
+          let terminal = terminal.clone();
+          move |e, _window, cx| {
+            if is_mouse_from_touch() {
+              terminal.update(cx, |term, cx| {
+                term.start_touch_selection(e.position);
+                cx.notify();
+              });
+              return;
+            }
+            let has_selection = terminal.read(cx).last_content.selection.is_some();
+            if has_selection {
+              terminal.update(cx, |term, cx| {
+                term.copy_and_clear_selection(cx);
+              });
+            } else if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+              terminal.update(cx, |term, _cx| {
+                term.input(text.into_bytes());
+              });
+            }
           }
-          let has_selection = terminal.read(cx).last_content.selection.is_some();
-          if has_selection {
-            terminal.update(cx, |term, cx| {
-              term.copy_and_clear_selection(cx);
-            });
-          } else if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            terminal.update(cx, |term, _cx| {
-              term.input(text.into_bytes());
-            });
-          }
-        }
-      });
+        });
 
-      self.interactivity.on_mouse_up(MouseButton::Right, {
-        let terminal = terminal.clone();
-        let focus = focus.clone();
-        move |_e, window, cx| {
-          if !focus.is_focused(window) {
-            return;
+        self.interactivity.on_mouse_up(MouseButton::Right, {
+          let terminal = terminal.clone();
+          let focus = focus.clone();
+          move |_e, window, cx| {
+            if !focus.is_focused(window) {
+              return;
+            }
+            if terminal.read(cx).is_touch_active() {
+              terminal.update(cx, |term, _| {
+                term.end_touch();
+              });
+            }
           }
-          if terminal.read(cx).is_touch_active() {
-            terminal.update(cx, |term, _| {
-              term.end_touch();
-            });
-          }
-        }
-      });
+        });
+      }
     }
   }
 }

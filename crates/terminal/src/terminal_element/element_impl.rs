@@ -361,7 +361,12 @@ impl Element for TerminalElement {
           .map(|cursor| cursor.bounding_rect(origin)),
       };
 
-      self.register_mouse_listeners(layout.mode, &layout.hitbox, layout.scrollbar_bounds, layout.minimap_bounds, window);
+      let right_click_context_menu = cx
+        .try_global::<config::Config>()
+        .map(|c| c.right_click == "context_menu")
+        .unwrap_or(false);
+
+      self.register_mouse_listeners(layout.mode, &layout.hitbox, layout.scrollbar_bounds, layout.minimap_bounds, right_click_context_menu, window);
       if window.modifiers().secondary()
         && bounds.contains(&window.mouse_position())
         && self.terminal_view.read(cx).hover.is_some()
