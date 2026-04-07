@@ -637,8 +637,8 @@ impl Terminal {
         });
         self.write_to_pty(format(color).into_bytes());
       }
-      AlacTermEvent::ChildExit(error_code) => {
-        self.register_task_finished(Some(error_code), cx);
+      AlacTermEvent::ChildExit(exit_status) => {
+        self.register_task_finished(Some(exit_status), cx);
       }
     }
   }

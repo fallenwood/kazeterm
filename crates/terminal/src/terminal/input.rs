@@ -237,22 +237,11 @@ impl Terminal {
 
   pub(super) fn register_task_finished(
     &mut self,
-    error_code: Option<i32>,
+    exit_status: Option<ExitStatus>,
     cx: &mut Context<Terminal>,
   ) {
-    let e: Option<ExitStatus> = error_code.map(|code| {
-      #[cfg(unix)]
-      {
-        std::os::unix::process::ExitStatusExt::from_raw(code)
-      }
-      #[cfg(windows)]
-      {
-        std::os::windows::process::ExitStatusExt::from_raw(code as u32)
-      }
-    });
-
-    if let Some(e) = e {
-      self.child_exited = Some(e);
+    if let Some(status) = exit_status {
+      self.child_exited = Some(status);
     }
 
     if self.child_exited.is_none_or(|e| e.code() == Some(0)) {
