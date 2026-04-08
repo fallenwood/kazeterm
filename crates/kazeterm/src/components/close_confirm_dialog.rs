@@ -5,8 +5,10 @@ use gpui_component::button::{Button, ButtonVariants};
 /// Event emitted when the close confirmation dialog is resolved
 #[derive(Clone)]
 pub enum CloseConfirmEvent {
-  /// User confirmed they want to close the app
+  /// User confirmed they want to close and save workspace
   Confirm,
+  /// User wants to close without saving workspace
+  CloseWithoutSaving,
   /// User cancelled the close action
   Cancel,
 }
@@ -26,6 +28,10 @@ impl CloseConfirmDialog {
 
   fn confirm(&mut self, cx: &mut Context<Self>) {
     cx.emit(CloseConfirmEvent::Confirm);
+  }
+
+  fn close_without_saving(&mut self, cx: &mut Context<Self>) {
+    cx.emit(CloseConfirmEvent::CloseWithoutSaving);
   }
 
   fn cancel(&mut self, cx: &mut Context<Self>) {
@@ -70,7 +76,7 @@ impl Render for CloseConfirmDialog {
           .border_1()
           .border_color(theme.border)
           .p_4()
-          .w(px(350.0))
+          .w(px(420.0))
           .child(
             div()
               .flex()
@@ -87,7 +93,7 @@ impl Render for CloseConfirmDialog {
                 div()
                   .text_sm()
                   .text_color(theme.muted_foreground)
-                  .child("Are you sure you want to close the application? All terminal sessions will be terminated."),
+                  .child("Do you want to save the workspace before closing? Saved workspaces will be restored on next launch."),
               )
               .child(
                 gpui_component::h_flex()
@@ -102,9 +108,17 @@ impl Render for CloseConfirmDialog {
                       })),
                   )
                   .child(
-                    Button::new("confirm")
+                    Button::new("close-without-saving")
                       .danger()
-                      .label("Close")
+                      .label("Don't Save")
+                      .on_click(cx.listener(|this, _, _window, cx| {
+                        this.close_without_saving(cx);
+                      })),
+                  )
+                  .child(
+                    Button::new("confirm")
+                      .primary()
+                      .label("Save & Close")
                       .on_click(cx.listener(|this, _, _window, cx| {
                         this.confirm(cx);
                       })),

@@ -9,6 +9,7 @@ use crate::components::import_alacritty_dialog::ImportAlacrittyDialog;
 use crate::components::search_bar::SearchBar;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
+use crate::components::workspace_state::WorkspaceState;
 
 pub(crate) use super::main_window_tab_item::TabItem;
 
@@ -115,6 +116,17 @@ impl MainWindow {
       last_notification_time: None,
       tab_bar_visible: true,
     };
+
+    // Try to restore previous workspace
+    let config = cx.global::<::config::Config>();
+    if config.restore_workspace {
+      if let Some(state) = WorkspaceState::load() {
+        main_window.restore_workspace(state, window, cx);
+        WorkspaceState::delete();
+        return main_window;
+      }
+    }
+
     main_window.insert_new_tab(window, cx);
     main_window
   }

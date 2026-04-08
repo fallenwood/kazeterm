@@ -84,7 +84,16 @@ impl MainWindow {
   ) {
     match event {
       CloseConfirmEvent::Confirm => {
+        // Save workspace state before closing
+        let state = self.capture_workspace_state(cx);
+        state.save();
         // User confirmed, close the window
+        self.close_confirm_dialog = None;
+        self._close_confirm_subscription = None;
+        window.remove_window();
+      }
+      CloseConfirmEvent::CloseWithoutSaving => {
+        // Close without saving workspace state
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
         window.remove_window();

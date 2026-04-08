@@ -8,6 +8,7 @@ pub struct TabItem {
   /// Custom title set by the user. When Some, auto-title updates are ignored.
   pub(crate) custom_title: Option<String>,
   pub(crate) shell_path: String,
+  pub(crate) shell_args: Vec<String>,
   pub(crate) _shell_name: String,
   pub(crate) split_container: SplitContainer,
   pub(crate) _subscription: gpui::Subscription,

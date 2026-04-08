@@ -99,7 +99,7 @@ impl MainWindow {
       window,
       index,
       &shell_program,
-      shell_args,
+      shell_args.clone(),
       working_directory,
       cx,
     );
@@ -112,6 +112,7 @@ impl MainWindow {
       title: tab_title,
       custom_title: None,
       shell_path: shell_program,
+      shell_args,
       _shell_name: shell_name,
       split_container,
       _subscription: subscription,

@@ -98,6 +98,9 @@ pub struct Config {
   /// Default working directory for new terminals.
   /// Per-profile working_directory takes priority over this setting.
   pub working_directory: Option<String>,
+  /// Automatically restore the previous workspace (tabs, splits, working directories)
+  /// on application launch. Default: true.
+  pub restore_workspace: bool,
 }
 
 impl Default for Config {
@@ -137,6 +140,7 @@ impl Default for Config {
       right_click_context_menu: true,
       env: HashMap::new(),
       working_directory: None,
+      restore_workspace: true,
     }
   }
 }
