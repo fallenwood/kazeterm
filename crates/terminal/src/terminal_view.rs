@@ -486,13 +486,21 @@ impl TerminalView {
     self.clear_bell(cx);
     self.pause_cursor_blinking(window, cx);
 
-    // Let MainWindow-level keybindings pass through without terminal consumption
+    // Let certain keybindings pass through without terminal consumption so the
+    // GPUI action system (or parent window handlers) can process them instead.
     let keybindings = &cx.global::<config::Config>().keybindings;
     let mods = &event.keystroke.modifiers;
     let key = &event.keystroke.key;
-    let kb_fullscreen = config::ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
-    if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
-      return;
+    let passthrough_bindings = [
+      &keybindings.toggle_fullscreen,
+      &keybindings.global_copy,
+      &keybindings.global_paste,
+    ];
+    for binding_str in &passthrough_bindings {
+      let kb = config::ParsedKeybinding::parse(binding_str);
+      if kb.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        return;
+      }
     }
 
     let handled = self
