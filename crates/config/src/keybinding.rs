@@ -41,6 +41,10 @@ pub struct KeybindingConfig {
   pub toggle_fullscreen: String,
   /// Toggle tab bar visibility
   pub toggle_tab_bar: String,
+  /// Global copy shortcut (always intercepted by the terminal, never sent to running app)
+  pub global_copy: String,
+  /// Global paste shortcut (always intercepted by the terminal, never sent to running app)
+  pub global_paste: String,
 }
 
 impl Default for KeybindingConfig {
@@ -66,6 +70,8 @@ impl Default for KeybindingConfig {
         "f11".to_string()
       },
       toggle_tab_bar: "ctrl-shift-b".to_string(),
+      global_copy: "ctrl-insert".to_string(),
+      global_paste: "shift-insert".to_string(),
     }
   }
 }
@@ -80,19 +86,21 @@ pub struct ParsedKeybinding {
   pub control: bool,
   pub shift: bool,
   pub alt: bool,
+  pub platform: bool,
   pub key: String,
 }
 
 impl ParsedKeybinding {
   /// Parse a keybinding string like `"ctrl-shift-c"` into components.
   ///
-  /// Recognized modifier prefixes: `ctrl-`, `shift-`, `alt-`.
+  /// Recognized modifier prefixes: `ctrl-`, `shift-`, `alt-`, `win-`/`cmd-`/`super-`.
   /// Everything after modifiers is treated as the key name.
   pub fn parse(s: &str) -> Self {
     let mut remaining = s;
     let mut control = false;
     let mut shift = false;
     let mut alt = false;
+    let mut platform = false;
 
     loop {
       if let Some(rest) = remaining.strip_prefix("ctrl-") {
@@ -104,6 +112,13 @@ impl ParsedKeybinding {
       } else if let Some(rest) = remaining.strip_prefix("alt-") {
         alt = true;
         remaining = rest;
+      } else if let Some(rest) = remaining
+        .strip_prefix("win-")
+        .or_else(|| remaining.strip_prefix("cmd-"))
+        .or_else(|| remaining.strip_prefix("super-"))
+      {
+        platform = true;
+        remaining = rest;
       } else {
         break;
       }
@@ -113,18 +128,26 @@ impl ParsedKeybinding {
       control,
       shift,
       alt,
+      platform,
       key: remaining.to_string(),
     }
   }
 
   /// Check if this parsed keybinding matches the given key event parameters.
-  pub fn matches(&self, control: bool, shift: bool, alt: bool, key: &str) -> bool {
-    self.control == control && self.shift == shift && self.alt == alt && self.key == key
+  pub fn matches(&self, control: bool, shift: bool, alt: bool, platform: bool, key: &str) -> bool {
+    self.control == control
+      && self.shift == shift
+      && self.alt == alt
+      && self.platform == platform
+      && self.key == key
   }
 
   /// Format the keybinding for display in menus, e.g. "ctrl-shift-c" → "Ctrl+Shift+C"
   pub fn display_text(&self) -> String {
     let mut parts: Vec<String> = Vec::new();
+    if self.platform {
+      parts.push("Win".into());
+    }
     if self.control {
       parts.push("Ctrl".into());
     }
@@ -167,6 +190,7 @@ mod tests {
         control: false,
         shift: false,
         alt: false,
+        platform: false,
         key: "tab".to_string(),
       }
     );
@@ -181,6 +205,7 @@ mod tests {
         control: true,
         shift: false,
         alt: false,
+        platform: false,
         key: "c".to_string(),
       }
     );
@@ -195,6 +220,7 @@ mod tests {
         control: true,
         shift: true,
         alt: false,
+        platform: false,
         key: "c".to_string(),
       }
     );
@@ -209,6 +235,7 @@ mod tests {
         control: true,
         shift: true,
         alt: true,
+        platform: false,
         key: "x".to_string(),
       }
     );
@@ -224,6 +251,7 @@ mod tests {
         control: true,
         shift: false,
         alt: false,
+        platform: false,
         key: "-".to_string(),
       }
     );
@@ -238,31 +266,50 @@ mod tests {
         control: true,
         shift: false,
         alt: false,
+        platform: false,
         key: "=".to_string(),
       }
     );
   }
 
   #[test]
+  fn parse_platform_modifier() {
+    let kb = ParsedKeybinding::parse("win-ctrl-shift-c");
+    assert_eq!(
+      kb,
+      ParsedKeybinding {
+        control: true,
+        shift: true,
+        alt: false,
+        platform: true,
+        key: "c".to_string(),
+      }
+    );
+    // cmd- and super- are aliases
+    assert_eq!(kb, ParsedKeybinding::parse("cmd-ctrl-shift-c"));
+    assert_eq!(kb, ParsedKeybinding::parse("super-ctrl-shift-c"));
+  }
+
+  #[test]
   fn matches_keystroke() {
     let kb = ParsedKeybinding::parse("ctrl-shift-c");
-    assert!(kb.matches(true, true, false, "c"));
-    assert!(!kb.matches(true, false, false, "c"));
-    assert!(!kb.matches(false, true, false, "c"));
-    assert!(!kb.matches(true, true, false, "v"));
+    assert!(kb.matches(true, true, false, false, "c"));
+    assert!(!kb.matches(true, false, false, false, "c"));
+    assert!(!kb.matches(false, true, false, false, "c"));
+    assert!(!kb.matches(true, true, false, false, "v"));
   }
 
   #[test]
   fn default_keybindings_parse_correctly() {
     let config = KeybindingConfig::default();
     let copy = ParsedKeybinding::parse(&config.copy);
-    assert!(copy.matches(true, true, false, "c"));
+    assert!(copy.matches(true, true, false, false, "c"));
 
     let zoom_in = ParsedKeybinding::parse(&config.zoom_in);
-    assert!(zoom_in.matches(true, false, false, "="));
+    assert!(zoom_in.matches(true, false, false, false, "="));
 
     let zoom_out = ParsedKeybinding::parse(&config.zoom_out);
-    assert!(zoom_out.matches(true, false, false, "-"));
+    assert!(zoom_out.matches(true, false, false, false, "-"));
   }
 
   #[test]

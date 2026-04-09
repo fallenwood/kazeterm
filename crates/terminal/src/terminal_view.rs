@@ -491,7 +491,7 @@ impl TerminalView {
     let mods = &event.keystroke.modifiers;
     let key = &event.keystroke.key;
     let kb_fullscreen = config::ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
-    if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
+    if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
       return;
     }
 
@@ -529,7 +529,21 @@ impl TerminalView {
   fn paste(&mut self, _: &Paste, _window: &mut Window, cx: &mut Context<Self>) {
     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
       self.terminal.update(cx, |term, _cx| {
-        term.input(text.into_bytes());
+        // Normalize \r\n to \r for proper terminal line endings
+        let text = text.replace("\r\n", "\r").replace('\n', "\r");
+
+        let bracketed = term.last_content.mode.contains(TermMode::BRACKETED_PASTE);
+        if bracketed {
+          // Wrap with bracketed paste escape sequences so applications like
+          // neovim know this is pasted text and won't auto-indent each line.
+          let mut payload = Vec::with_capacity(text.len() + 12);
+          payload.extend_from_slice(b"\x1b[200~");
+          payload.extend_from_slice(text.as_bytes());
+          payload.extend_from_slice(b"\x1b[201~");
+          term.input(payload);
+        } else {
+          term.input(text.into_bytes());
+        }
       });
     }
   }
