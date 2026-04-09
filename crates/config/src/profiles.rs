@@ -208,6 +208,7 @@ mod tests {
       osc52: "copy_only".into(),
       copy_on_select: false,
       right_click_context_menu: true,
+      restore_workspace: true,
       env: HashMap::new(),
       working_directory: None,
     };
