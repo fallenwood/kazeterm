@@ -41,10 +41,6 @@ pub struct KeybindingConfig {
   pub toggle_fullscreen: String,
   /// Toggle tab bar visibility
   pub toggle_tab_bar: String,
-  /// Global copy shortcut (always intercepted by the terminal, never sent to running app)
-  pub global_copy: String,
-  /// Global paste shortcut (always intercepted by the terminal, never sent to running app)
-  pub global_paste: String,
 }
 
 impl Default for KeybindingConfig {
@@ -70,8 +66,6 @@ impl Default for KeybindingConfig {
         "f11".to_string()
       },
       toggle_tab_bar: "ctrl-shift-b".to_string(),
-      global_copy: "ctrl-insert".to_string(),
-      global_paste: "shift-insert".to_string(),
     }
   }
 }

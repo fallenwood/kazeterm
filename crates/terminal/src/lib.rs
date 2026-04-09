@@ -64,8 +64,5 @@ pub fn bind_terminal_keys(cx: &mut App, keybindings: &KeybindingConfig) {
     KeyBinding::new(&keybindings.zoom_in, ZoomIn, Some("Terminal")),
     KeyBinding::new(&keybindings.zoom_out, ZoomOut, Some("Terminal")),
     KeyBinding::new(&keybindings.zoom_reset, ZoomReset, Some("Terminal")),
-    // Global copy/paste shortcuts that are always intercepted by the terminal
-    KeyBinding::new(&keybindings.global_copy, Copy, Some("Terminal")),
-    KeyBinding::new(&keybindings.global_paste, Paste, Some("Terminal")),
   ]);
 }
