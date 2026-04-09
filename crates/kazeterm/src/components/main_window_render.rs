@@ -126,7 +126,7 @@ impl Render for MainWindow {
         let kb_toggle_tab_bar = ParsedKeybinding::parse(&keybindings.toggle_tab_bar);
         let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
 
-        if kb_next.matches(mods.control, mods.shift, mods.alt, key) {
+        if kb_next.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           if tab_switcher_popup {
             this.show_tab_switcher(true, window, cx);
           } else {
@@ -134,7 +134,7 @@ impl Render for MainWindow {
             let next_ix = (current_ix + 1) % this.items.len();
             this.set_active_tab(next_ix, window, cx);
           }
-        } else if kb_prev.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_prev.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           if tab_switcher_popup {
             this.show_tab_switcher(false, window, cx);
           } else {
@@ -146,25 +146,25 @@ impl Render for MainWindow {
             };
             this.set_active_tab(prev_ix, window, cx);
           }
-        } else if kb_search.matches(mods.control, mods.shift, mods.alt, key)
+        } else if kb_search.matches(mods.control, mods.shift, mods.alt, mods.platform, key)
           || (e.keystroke.key == "Escape" && this.search_visible)
         {
           this.toggle_search(window, cx);
-        } else if kb_split_h.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_split_h.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.split_pane_horizontal(window, cx);
-        } else if kb_split_v.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_split_v.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.split_pane_vertical(window, cx);
-        } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.close_active_pane(window, cx);
-        } else if kb_focus_next_pane.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_focus_next_pane.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.focus_next_pane(window, cx);
-        } else if kb_focus_prev_pane.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_focus_prev_pane.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.focus_prev_pane(window, cx);
-        } else if kb_swap_panes.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_swap_panes.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.swap_split_panes(window, cx);
-        } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           window.toggle_fullscreen();
-        } else if kb_toggle_tab_bar.matches(mods.control, mods.shift, mods.alt, key) {
+        } else if kb_toggle_tab_bar.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.toggle_tab_bar(cx);
         }
       }))
