@@ -50,6 +50,10 @@ pub struct Config {
   pub ui_font_size: f32,
   pub window_width: f32,
   pub window_height: f32,
+  /// Width of split pane divider drag handles in pixels.
+  pub split_pane_divider_width: f32,
+  /// Open the main window maximized on application startup.
+  pub start_maximized: bool,
   #[serde(skip)]
   pub container_profiles: Vec<Profile>,
   /// Enable the terminal minimap (shows a zoomed-out preview of scrollback)
@@ -121,6 +125,8 @@ impl Default for Config {
       ui_font_size: 18.0,
       window_width: 800.0,
       window_height: 600.0,
+      split_pane_divider_width: 6.0,
+      start_maximized: false,
       container_profiles: profiles::detect_container_profiles(),
       minimap_enabled: false,
       vertical_tabs: false,
@@ -163,6 +169,11 @@ impl Config {
   /// Get scrollback lines clamped to [0, 100_000]
   pub fn get_scrollback_lines(&self) -> usize {
     (self.scrollback_lines as usize).min(100_000)
+  }
+
+  /// Get split pane divider width clamped to a reasonable range in pixels.
+  pub fn get_split_pane_divider_width(&self) -> f32 {
+    self.split_pane_divider_width.clamp(1.0, 32.0)
   }
 
   /// Get cursor blink interval as Duration, clamped to [10, 10000] ms

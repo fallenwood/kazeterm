@@ -319,6 +319,10 @@ impl SplitPane {
       } => {
         let ratio = *ratio;
         let direction = *direction;
+        let divider_width = cx
+          .try_global::<config::Config>()
+          .map(|config| config.get_split_pane_divider_width())
+          .unwrap_or(6.0);
         let colors = cx.global::<SettingsStore>().theme().colors().clone();
 
         let mut first_path = path.clone();
@@ -342,7 +346,7 @@ impl SplitPane {
         let divider = match direction {
           SplitDirection::Horizontal => v_flex()
             .id(divider_id)
-            .h(px(6.0))
+            .h(px(divider_width))
             .w_full()
             .flex_shrink_0()
             .justify_center()
@@ -355,7 +359,7 @@ impl SplitPane {
             .child(div().h(px(1.0)).w_full().bg(colors.border_variant)),
           SplitDirection::Vertical => h_flex()
             .id(divider_id)
-            .w(px(6.0))
+            .w(px(divider_width))
             .h_full()
             .flex_shrink_0()
             .justify_center()

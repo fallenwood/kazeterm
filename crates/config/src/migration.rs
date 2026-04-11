@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260411.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260411.3";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -69,6 +69,16 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260407.1",
       to_version: "20260411.1",
       migrate: migrate_v20260407_1_to_20260411_1,
+    },
+    Migration {
+      from_version: "20260411.1",
+      to_version: "20260411.2",
+      migrate: migrate_v20260411_1_to_20260411_2,
+    },
+    Migration {
+      from_version: "20260411.2",
+      to_version: "20260411.3",
+      migrate: migrate_v20260411_2_to_20260411_3,
     },
   ]
 }
@@ -219,6 +229,32 @@ fn migrate_v20260407_1_to_20260411_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260411.1".to_string()),
+    );
+  }
+}
+
+/// Add startup maximized window configuration support.
+fn migrate_v20260411_1_to_20260411_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("start_maximized") {
+      table.insert("start_maximized".to_string(), Value::Boolean(false));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260411.2".to_string()),
+    );
+  }
+}
+
+/// Add split pane divider width configuration support.
+fn migrate_v20260411_2_to_20260411_3(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("split_pane_divider_width") {
+      table.insert("split_pane_divider_width".to_string(), Value::Float(6.0));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260411.3".to_string()),
     );
   }
 }
@@ -521,6 +557,57 @@ background_blur = false
   }
 
   #[test]
+  fn migrate_20260411_1_adds_start_maximized() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260411.1"
+theme = "one"
+font_size = 18.0
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config.get("start_maximized").unwrap().as_bool().unwrap(),
+      false
+    );
+  }
+
+  #[test]
+  fn migrate_20260411_2_adds_split_pane_divider_width() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260411.2"
+theme = "one"
+font_size = 18.0
+start_maximized = false
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config
+        .get("split_pane_divider_width")
+        .unwrap()
+        .as_float()
+        .unwrap(),
+      6.0
+    );
+  }
+
+  #[test]
   fn migrated_config_deserializes_to_config_struct() {
     let mut raw = make_v0_config();
     apply_migrations(&mut raw);
@@ -528,5 +615,7 @@ background_blur = false
     assert_eq!(config.version, CURRENT_CONFIG_VERSION);
     assert_eq!(config.theme, "one");
     assert_eq!(config.font_size, 18.0);
+    assert_eq!(config.split_pane_divider_width, 6.0);
+    assert!(!config.start_maximized);
   }
 }
