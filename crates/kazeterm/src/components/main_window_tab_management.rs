@@ -9,6 +9,73 @@ use super::notifications::NotificationReason;
 use crate::components::search_bar::SearchBarState;
 use crate::components::split_pane::SplitContainer;
 
+fn shell_name_for(program: &str) -> String {
+  std::path::Path::new(program)
+    .file_stem()
+    .and_then(|name| name.to_str())
+    .unwrap_or(program)
+    .to_lowercase()
+}
+
+fn resolve_tab_launch(
+  config: &::config::Config,
+  profile_name: Option<&str>,
+  working_directory: Option<String>,
+) -> (String, Vec<String>, String, String, Option<PathBuf>) {
+  if let Some(name) = profile_name {
+    let profile = config.get_profile(name);
+
+    let (program, args) = if let Some(profile) = profile {
+      (profile.shell.clone(), profile.args.clone())
+    } else {
+      let ssh_hosts = ::config::get_ssh_hosts();
+      if ssh_hosts.contains(&name.to_string()) {
+        ("ssh".to_string(), vec![name.to_string()])
+      } else {
+        (config.get_shell(), vec![])
+      }
+    };
+
+    let working_directory =
+      working_directory.or(profile.and_then(|profile| profile.working_directory.clone()));
+    let shell_name = shell_name_for(&program);
+
+    return (
+      program,
+      args,
+      name.to_string(),
+      shell_name,
+      get_working_directory_pathbuf(working_directory),
+    );
+  }
+
+  if let Some(profile) = config.get_default_profile() {
+    let shell = profile.shell.clone();
+    let shell_name = shell_name_for(&shell);
+    let working_directory =
+      get_working_directory_pathbuf(working_directory.or_else(|| profile.working_directory.clone()));
+
+    return (
+      shell,
+      profile.args.clone(),
+      shell_name.clone(),
+      shell_name,
+      working_directory,
+    );
+  }
+
+  let shell = config.get_shell();
+  let shell_name = shell_name_for(&shell);
+
+  (
+    shell,
+    vec![],
+    shell_name.clone(),
+    shell_name,
+    get_working_directory_pathbuf(working_directory),
+  )
+}
+
 impl MainWindow {
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.insert_new_tab_with_profile(None, None, window, cx);
@@ -45,55 +112,8 @@ impl MainWindow {
       .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     let config = cx.global::<::config::Config>();
-
     let (shell_program, shell_args, tab_title, shell_name, working_directory) =
-      if let Some(name) = profile_name {
-        let profile = config.get_profile(name);
-
-        let (program, args) = if let Some(p) = profile {
-          (p.shell.clone(), p.args.clone())
-        } else {
-          let ssh_hosts = ::config::get_ssh_hosts();
-          if ssh_hosts.contains(&name.to_string()) {
-            ("ssh".to_string(), vec![name.to_string()])
-          } else {
-            (config.get_shell(), vec![])
-          }
-        };
-
-        let working_directory =
-          working_directory.or(profile.and_then(|e| e.working_directory.clone()));
-        let shell_name = std::path::Path::new(&program)
-          .file_stem()
-          .and_then(|n| n.to_str())
-          .unwrap_or(&program)
-          .to_lowercase();
-        let working_directory = get_working_directory_pathbuf(working_directory);
-
-        (
-          program,
-          args,
-          name.to_string(),
-          shell_name,
-          working_directory,
-        )
-      } else {
-        let shell = config.get_shell().clone();
-        let shell_name = std::path::Path::new(&shell)
-          .file_stem()
-          .and_then(|n| n.to_str())
-          .unwrap_or(&shell)
-          .to_lowercase();
-        let working_directory = get_working_directory_pathbuf(working_directory);
-
-        (
-          shell,
-          vec![],
-          shell_name.clone(),
-          shell_name,
-          working_directory,
-        )
-      };
+      resolve_tab_launch(config, profile_name, working_directory);
 
     let terminal = match crate::components::terminal_window::new_terminal_window_with_shell(
       window,
@@ -388,5 +408,54 @@ pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -
     }
   } else {
     std::env::home_dir()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use config::{Config, Profile};
+
+  use super::resolve_tab_launch;
+
+  #[test]
+  fn resolve_profile_launch_uses_default_profile_args() {
+    let config = Config {
+      default_profile: Some("login-shell".to_string()),
+      profiles: vec![Profile {
+        name: "login-shell".to_string(),
+        shell: "bash".to_string(),
+        args: vec!["--login".to_string(), "-i".to_string()],
+        working_directory: None,
+      }],
+      ..Config::default()
+    };
+
+    let (shell, args, tab_title, shell_name, _) = resolve_tab_launch(&config, None, None);
+
+    assert_eq!(shell, "bash");
+    assert_eq!(args, vec!["--login", "-i"]);
+    assert_eq!(tab_title, "bash");
+    assert_eq!(shell_name, "bash");
+  }
+
+  #[test]
+  fn resolve_profile_launch_uses_selected_profile_args() {
+    let config = Config {
+      profiles: vec![Profile {
+        name: "login-shell".to_string(),
+        shell: "bash".to_string(),
+        args: vec!["--login".to_string()],
+        working_directory: None,
+      }],
+      ..Config::default()
+    };
+
+    let (shell, args, tab_title, shell_name, _) =
+      resolve_tab_launch(&config, Some("login-shell"), None);
+
+    assert_eq!(shell, "bash");
+    assert_eq!(args, vec!["--login"]);
+    assert_eq!(tab_title, "login-shell");
+    assert_eq!(shell_name, "bash");
   }
 }
