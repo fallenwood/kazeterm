@@ -41,6 +41,26 @@ pub struct KeybindingConfig {
   pub toggle_fullscreen: String,
   /// Toggle tab bar visibility
   pub toggle_tab_bar: String,
+  /// Open a new tab with the default profile
+  pub new_tab: String,
+  /// Open a new tab with profile 1
+  pub new_tab_profile_1: String,
+  /// Open a new tab with profile 2
+  pub new_tab_profile_2: String,
+  /// Open a new tab with profile 3
+  pub new_tab_profile_3: String,
+  /// Open a new tab with profile 4
+  pub new_tab_profile_4: String,
+  /// Open a new tab with profile 5
+  pub new_tab_profile_5: String,
+  /// Open a new tab with profile 6
+  pub new_tab_profile_6: String,
+  /// Open a new tab with profile 7
+  pub new_tab_profile_7: String,
+  /// Open a new tab with profile 8
+  pub new_tab_profile_8: String,
+  /// Open a new tab with profile 9
+  pub new_tab_profile_9: String,
 }
 
 impl Default for KeybindingConfig {
@@ -66,6 +86,16 @@ impl Default for KeybindingConfig {
         "f11".to_string()
       },
       toggle_tab_bar: "ctrl-shift-b".to_string(),
+      new_tab: "ctrl-shift-t".to_string(),
+      new_tab_profile_1: "ctrl-shift-1".to_string(),
+      new_tab_profile_2: "ctrl-shift-2".to_string(),
+      new_tab_profile_3: "ctrl-shift-3".to_string(),
+      new_tab_profile_4: "ctrl-shift-4".to_string(),
+      new_tab_profile_5: "ctrl-shift-5".to_string(),
+      new_tab_profile_6: "ctrl-shift-6".to_string(),
+      new_tab_profile_7: "ctrl-shift-7".to_string(),
+      new_tab_profile_8: "ctrl-shift-8".to_string(),
+      new_tab_profile_9: "ctrl-shift-9".to_string(),
     }
   }
 }
@@ -128,12 +158,36 @@ impl ParsedKeybinding {
   }
 
   /// Check if this parsed keybinding matches the given key event parameters.
+  ///
+  /// On Windows, GPUI converts Shift+digit into the shifted symbol (e.g. `!` for
+  /// Shift+1) and clears the shift modifier flag. To handle this, when the binding
+  /// specifies shift and a key that has a shifted equivalent, we also accept the
+  /// shifted symbol with shift=false from the event.
   pub fn matches(&self, control: bool, shift: bool, alt: bool, platform: bool, key: &str) -> bool {
-    self.control == control
+    if self.control == control
       && self.shift == shift
       && self.alt == alt
       && self.platform == platform
       && self.key == key
+    {
+      return true;
+    }
+
+    // Handle GPUI's shifted-key normalization on Windows:
+    // When shift is in the binding but the event has shift=false and a shifted symbol,
+    // match if the shifted symbol corresponds to the binding's key.
+    if self.shift
+      && !shift
+      && self.control == control
+      && self.alt == alt
+      && self.platform == platform
+    {
+      if let Some(shifted) = shift_key(&self.key) {
+        return shifted == key;
+      }
+    }
+
+    false
   }
 
   /// Format the keybinding for display in menus, e.g. "ctrl-shift-c" → "Ctrl+Shift+C"
@@ -153,6 +207,38 @@ impl ParsedKeybinding {
     }
     parts.push(display_key(&self.key));
     parts.join("+")
+  }
+}
+
+/// Map an unshifted key to its shifted symbol on a US keyboard layout.
+///
+/// On Windows, GPUI converts Shift+digit into the shifted symbol and clears the
+/// shift modifier. This mapping lets us compare the binding's key (e.g. `"1"`)
+/// against the event's key (e.g. `"!"`).
+fn shift_key(key: &str) -> Option<&str> {
+  match key {
+    "1" => Some("!"),
+    "2" => Some("@"),
+    "3" => Some("#"),
+    "4" => Some("$"),
+    "5" => Some("%"),
+    "6" => Some("^"),
+    "7" => Some("&"),
+    "8" => Some("*"),
+    "9" => Some("("),
+    "0" => Some(")"),
+    "`" => Some("~"),
+    "-" => Some("_"),
+    "=" => Some("+"),
+    "[" => Some("{"),
+    "]" => Some("}"),
+    "\\" => Some("|"),
+    ";" => Some(":"),
+    "'" => Some("\""),
+    "," => Some("<"),
+    "." => Some(">"),
+    "/" => Some("?"),
+    _ => None,
   }
 }
 
@@ -291,6 +377,28 @@ mod tests {
     assert!(!kb.matches(true, false, false, false, "c"));
     assert!(!kb.matches(false, true, false, false, "c"));
     assert!(!kb.matches(true, true, false, false, "v"));
+  }
+
+  #[test]
+  fn matches_shifted_number_keys() {
+    // GPUI on Windows converts Shift+1 to key="!" with shift=false.
+    // ctrl-shift-1 should match when event has ctrl=true, shift=false, key="!"
+    let kb = ParsedKeybinding::parse("ctrl-shift-1");
+    assert!(kb.matches(true, true, false, false, "1")); // direct match
+    assert!(kb.matches(true, false, false, false, "!")); // GPUI shifted key
+
+    let kb5 = ParsedKeybinding::parse("ctrl-shift-5");
+    assert!(kb5.matches(true, true, false, false, "5"));
+    assert!(kb5.matches(true, false, false, false, "%"));
+
+    let kb9 = ParsedKeybinding::parse("ctrl-shift-9");
+    assert!(kb9.matches(true, true, false, false, "9"));
+    assert!(kb9.matches(true, false, false, false, "("));
+
+    // Without shift in the binding, shifted symbols should not match
+    let kb_no_shift = ParsedKeybinding::parse("ctrl-1");
+    assert!(kb_no_shift.matches(true, false, false, false, "1"));
+    assert!(!kb_no_shift.matches(true, false, false, false, "!"));
   }
 
   #[test]

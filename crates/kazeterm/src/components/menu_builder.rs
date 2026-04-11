@@ -168,30 +168,48 @@ pub(super) fn build_new_tab_menu(
   local_profiles: &[(String, String)],
   container_profiles: &[(String, String)],
   ssh_hosts: &[String],
+  profile_shortcuts: &[String],
 ) -> PopupMenu {
   // Local profiles
-  for (name, shell_path) in local_profiles.iter() {
+  for (idx, (name, shell_path)) in local_profiles.iter().enumerate() {
     let profile_name = name.clone();
     let shell_path = shell_path.clone();
     let display_name = name.clone();
+    let shortcut_text = profile_shortcuts.get(idx).cloned().unwrap_or_default();
     let view_clone = view.clone();
     menu = menu.item(
       PopupMenuItem::element(move |_window, _cx| {
         let shell_icon = ShellIcon::new(&shell_path);
-        h_flex()
+        let mut row = h_flex()
+          .w_full()
           .gap_2()
           .items_center()
+          .justify_between()
           .child(
-            div()
-              .w(px(16.0))
-              .h(px(16.0))
-              .flex()
+            h_flex()
+              .gap_2()
               .items_center()
-              .justify_center()
-              .child(shell_icon.into_element(px(16.0))),
-          )
-          .child(display_name.clone())
-          .into_any_element()
+              .child(
+                div()
+                  .w(px(16.0))
+                  .h(px(16.0))
+                  .flex()
+                  .items_center()
+                  .justify_center()
+                  .child(shell_icon.into_element(px(16.0))),
+              )
+              .child(display_name.clone()),
+          );
+        if !shortcut_text.is_empty() {
+          row = row.child(
+            div()
+              .pl_4()
+              .text_color(gpui::rgb(0x888888))
+              .text_size(px(11.0))
+              .child(shortcut_text.clone()),
+          );
+        }
+        row.into_any_element()
       })
       .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
         view_clone.update(cx, |this, cx| {

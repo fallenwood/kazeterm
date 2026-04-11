@@ -490,9 +490,26 @@ impl TerminalView {
     let keybindings = &cx.global::<config::Config>().keybindings;
     let mods = &event.keystroke.modifiers;
     let key = &event.keystroke.key;
-    let kb_fullscreen = config::ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
-    if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
-      return;
+
+    let passthrough_bindings = [
+      &keybindings.toggle_fullscreen,
+      &keybindings.new_tab,
+      &keybindings.new_tab_profile_1,
+      &keybindings.new_tab_profile_2,
+      &keybindings.new_tab_profile_3,
+      &keybindings.new_tab_profile_4,
+      &keybindings.new_tab_profile_5,
+      &keybindings.new_tab_profile_6,
+      &keybindings.new_tab_profile_7,
+      &keybindings.new_tab_profile_8,
+      &keybindings.new_tab_profile_9,
+    ];
+
+    for binding in &passthrough_bindings {
+      let kb = config::ParsedKeybinding::parse(binding);
+      if kb.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        return;
+      }
     }
 
     let handled = self

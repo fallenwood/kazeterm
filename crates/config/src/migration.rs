@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260407.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260411.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -64,6 +64,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260327.1",
       to_version: "20260407.1",
       migrate: migrate_v20260327_1_to_20260407_1,
+    },
+    Migration {
+      from_version: "20260407.1",
+      to_version: "20260411.1",
+      migrate: migrate_v20260407_1_to_20260411_1,
     },
   ]
 }
@@ -193,6 +198,27 @@ fn migrate_v20260327_1_to_20260407_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260407.1".to_string()),
+    );
+  }
+}
+
+fn migrate_v20260407_1_to_20260411_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    // Add new_tab and new_tab_profile_N keybindings to existing keybindings section
+    if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
+      if !kb.contains_key("new_tab") {
+        kb.insert("new_tab".to_string(), Value::String("ctrl-shift-t".to_string()));
+      }
+      for i in 1..=9 {
+        let key = format!("new_tab_profile_{}", i);
+        if !kb.contains_key(&key) {
+          kb.insert(key, Value::String(format!("ctrl-shift-{}", i)));
+        }
+      }
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260411.1".to_string()),
     );
   }
 }

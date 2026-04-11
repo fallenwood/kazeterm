@@ -40,6 +40,23 @@ impl Render for MainWindow {
     let local_profiles = config.get_local_profiles_with_shells();
     let container_profiles = config.get_container_profiles_with_shells();
     let ssh_hosts = ::config::Config::get_ssh_hosts();
+    let new_tab_shortcut = ParsedKeybinding::parse(&config.keybindings.new_tab).display_text();
+    let profile_shortcuts: Vec<String> = [
+      &config.keybindings.new_tab_profile_1,
+      &config.keybindings.new_tab_profile_2,
+      &config.keybindings.new_tab_profile_3,
+      &config.keybindings.new_tab_profile_4,
+      &config.keybindings.new_tab_profile_5,
+      &config.keybindings.new_tab_profile_6,
+      &config.keybindings.new_tab_profile_7,
+      &config.keybindings.new_tab_profile_8,
+      &config.keybindings.new_tab_profile_9,
+    ]
+    .iter()
+    .map(|s| ParsedKeybinding::parse(s).display_text())
+    .collect();
+    let toggle_tab_bar_shortcut =
+      ParsedKeybinding::parse(&config.keybindings.toggle_tab_bar).display_text();
 
     // Get current window bounds to detect resize
     let current_bounds = window.bounds();
@@ -124,6 +141,24 @@ impl Render for MainWindow {
         let kb_swap_panes = ParsedKeybinding::parse(&keybindings.swap_split_panes);
         let kb_fullscreen = ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
         let kb_toggle_tab_bar = ParsedKeybinding::parse(&keybindings.toggle_tab_bar);
+        let kb_new_tab = ParsedKeybinding::parse(&keybindings.new_tab);
+        let kb_new_tab_profiles: Vec<ParsedKeybinding> = (1..=9)
+          .map(|i| {
+            let field = match i {
+              1 => &keybindings.new_tab_profile_1,
+              2 => &keybindings.new_tab_profile_2,
+              3 => &keybindings.new_tab_profile_3,
+              4 => &keybindings.new_tab_profile_4,
+              5 => &keybindings.new_tab_profile_5,
+              6 => &keybindings.new_tab_profile_6,
+              7 => &keybindings.new_tab_profile_7,
+              8 => &keybindings.new_tab_profile_8,
+              9 => &keybindings.new_tab_profile_9,
+              _ => unreachable!(),
+            };
+            ParsedKeybinding::parse(field)
+          })
+          .collect();
         let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
 
         if kb_next.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
@@ -166,6 +201,19 @@ impl Render for MainWindow {
           window.toggle_fullscreen();
         } else if kb_toggle_tab_bar.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
           this.toggle_tab_bar(cx);
+        } else if kb_new_tab.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+          this.insert_new_tab(window, cx);
+        } else {
+          // Check profile-specific new tab shortcuts (Ctrl+Shift+1..9)
+          let profiles = cx.global::<config::Config>().get_local_profile_names();
+          for (i, kb_profile) in kb_new_tab_profiles.iter().enumerate() {
+            if kb_profile.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+              if let Some(profile_name) = profiles.get(i) {
+                this.insert_new_tab_with_profile(Some(profile_name), None, window, cx);
+              }
+              break;
+            }
+          }
         }
       }))
       .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, _cx| {
@@ -429,6 +477,11 @@ impl Render for MainWindow {
                       } else {
                         IconName::PanelLeftOpen
                       })
+                      .tooltip(if tab_bar_visible {
+                        format!("Hide Tab Bar ({})", toggle_tab_bar_shortcut)
+                      } else {
+                        format!("Show Tab Bar ({})", toggle_tab_bar_shortcut)
+                      })
                       .on_mouse_down(MouseButton::Left, |_, _, cx| {
                         cx.stop_propagation();
                       })
@@ -441,6 +494,7 @@ impl Render for MainWindow {
                       .ghost()
                       .small()
                       .icon(IconName::Plus)
+                      .tooltip(format!("New Tab ({})", new_tab_shortcut))
                       .on_mouse_down(MouseButton::Left, |_, _, cx| {
                         cx.stop_propagation();
                       })
@@ -455,6 +509,7 @@ impl Render for MainWindow {
                       .icon(IconName::ChevronDown)
                       .dropdown_menu({
                         let view = menu_view.clone();
+                        let profile_shortcuts = profile_shortcuts.clone();
                         move |menu: PopupMenu,
                               _window: &mut Window,
                               _cx: &mut Context<PopupMenu>| {
@@ -464,6 +519,7 @@ impl Render for MainWindow {
                             &local_profiles,
                             &container_profiles,
                             &ssh_hosts,
+                            &profile_shortcuts,
                           )
                         }
                       }),
