@@ -7,6 +7,7 @@ use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
 use crate::components::import_alacritty_dialog::ImportAlacrittyDialog;
 use crate::components::search_bar::SearchBar;
+use crate::components::shell_error_dialog::ShellErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
 use crate::components::workspace_state::WorkspaceState;
@@ -50,6 +51,9 @@ pub struct MainWindow {
   /// Import Alacritty config dialog state
   pub(crate) import_alacritty_dialog: Option<Entity<ImportAlacrittyDialog>>,
   pub(crate) _import_alacritty_subscription: Option<gpui::Subscription>,
+  /// Shell error dialog state
+  pub(crate) shell_error_dialog: Option<Entity<ShellErrorDialog>>,
+  pub(crate) _shell_error_subscription: Option<gpui::Subscription>,
   /// Tracks the last time an OS notification was sent, for throttling.
   pub(crate) last_notification_time: Option<std::time::Instant>,
   /// Whether the tab bar is currently visible
@@ -113,6 +117,8 @@ impl MainWindow {
       _about_dialog_subscription: None,
       import_alacritty_dialog: None,
       _import_alacritty_subscription: None,
+      shell_error_dialog: None,
+      _shell_error_subscription: None,
       last_notification_time: None,
       tab_bar_visible: true,
     };

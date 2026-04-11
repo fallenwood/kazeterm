@@ -186,7 +186,7 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     let mut next_pane_id: usize = 0;
-    let (root_pane, subscriptions) = Self::build_split_pane(
+    let (root_pane, subscriptions) = match Self::build_split_pane(
       &tab_state.pane_tree,
       &tab_state.shell_path,
       &tab_state.shell_args,
@@ -194,7 +194,14 @@ impl MainWindow {
       &self.tab_index,
       window,
       cx,
-    );
+    ) {
+      Ok(result) => result,
+      Err(err) => {
+        tracing::error!("Failed to restore tab: {err}");
+        self.show_shell_error_dialog(err, window, cx);
+        return;
+      }
+    };
 
     // Find the first terminal pane id for active_pane_id
     let first_pane_id = Self::first_pane_id(&root_pane);
@@ -250,7 +257,7 @@ impl MainWindow {
     tab_index_counter: &std::sync::atomic::AtomicUsize,
     window: &mut Window,
     cx: &mut Context<MainWindow>,
-  ) -> (SplitPane, Vec<gpui::Subscription>) {
+  ) -> Result<(SplitPane, Vec<gpui::Subscription>), String> {
     match state {
       PaneTreeState::Terminal { working_directory } => {
         let index = tab_index_counter.fetch_add(1, Ordering::SeqCst);
@@ -262,11 +269,11 @@ impl MainWindow {
           tab_shell_args.to_vec(),
           wd,
           cx,
-        );
+        )?;
         let sub = cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event);
         let pane_id = PaneId(*next_pane_id);
         *next_pane_id += 1;
-        (SplitPane::new_terminal(pane_id, terminal), vec![sub])
+        Ok((SplitPane::new_terminal(pane_id, terminal), vec![sub]))
       }
       PaneTreeState::Split {
         direction,
@@ -282,7 +289,7 @@ impl MainWindow {
           tab_index_counter,
           window,
           cx,
-        );
+        )?;
         let (second_pane, subs2) = Self::build_split_pane(
           second,
           tab_shell,
@@ -291,7 +298,7 @@ impl MainWindow {
           tab_index_counter,
           window,
           cx,
-        );
+        )?;
         subs.extend(subs2);
         let dir = match direction {
           SplitDirectionState::Horizontal => SplitDirection::Horizontal,
@@ -303,7 +310,7 @@ impl MainWindow {
           second: Box::new(second_pane),
           ratio: *ratio,
         };
-        (pane, subs)
+        Ok((pane, subs))
       }
     }
   }

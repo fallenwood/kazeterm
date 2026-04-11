@@ -95,14 +95,21 @@ impl MainWindow {
         )
       };
 
-    let terminal = crate::components::terminal_window::new_terminal_window_with_shell(
+    let terminal = match crate::components::terminal_window::new_terminal_window_with_shell(
       window,
       index,
       &shell_program,
       shell_args.clone(),
       working_directory,
       cx,
-    );
+    ) {
+      Ok(terminal) => terminal,
+      Err(err) => {
+        tracing::error!("Failed to start shell: {err}");
+        this.show_shell_error_dialog(err, window, cx);
+        return;
+      }
+    };
     let subscription = cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event);
 
     let split_container = SplitContainer::new(terminal.clone());

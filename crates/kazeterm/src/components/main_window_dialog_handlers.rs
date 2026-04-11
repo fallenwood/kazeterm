@@ -4,6 +4,7 @@ use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
 use crate::components::import_alacritty_dialog::{ImportAlacrittyDialog, ImportAlacrittyEvent};
+use crate::components::shell_error_dialog::{ShellErrorCloseEvent, ShellErrorDialog};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
 
 impl MainWindow {
@@ -224,5 +225,33 @@ impl MainWindow {
   /// Helper to refocus the active terminal after closing dialogs
   pub fn refocus_active_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.focus_active_terminal(window, cx);
+  }
+
+  /// Show shell error dialog
+  pub(crate) fn show_shell_error_dialog(
+    &mut self,
+    error_message: String,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let dialog = cx.new(|cx| ShellErrorDialog::new(error_message, window, cx));
+    let subscription = cx.subscribe_in(&dialog, window, Self::on_shell_error_event);
+
+    self.shell_error_dialog = Some(dialog);
+    self._shell_error_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  pub(crate) fn on_shell_error_event(
+    &mut self,
+    _dialog: &Entity<ShellErrorDialog>,
+    _event: &ShellErrorCloseEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    self.shell_error_dialog = None;
+    self._shell_error_subscription = None;
+    self.refocus_active_terminal(window, cx);
+    cx.notify();
   }
 }

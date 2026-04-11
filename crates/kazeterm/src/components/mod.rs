@@ -13,6 +13,7 @@ mod main_window_tab_switcher_logic;
 mod menu_builder;
 mod notifications;
 mod search_bar;
+mod shell_error_dialog;
 mod shell_icon;
 mod split_pane;
 mod split_pane_context_menu;

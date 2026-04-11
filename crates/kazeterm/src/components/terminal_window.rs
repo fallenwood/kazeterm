@@ -38,10 +38,13 @@ fn new_terminal(
   args: Vec<String>,
   working_directory: Option<PathBuf>,
   app_config: &config::Config,
-) -> (
-  terminal::Terminal,
-  futures::channel::mpsc::UnboundedReceiver<alacritty_terminal::event::Event>,
-) {
+) -> Result<
+  (
+    terminal::Terminal,
+    futures::channel::mpsc::UnboundedReceiver<alacritty_terminal::event::Event>,
+  ),
+  String,
+> {
   let mut env = std::collections::HashMap::new();
   if std::env::var("LANG").is_err() {
     env
@@ -141,6 +144,7 @@ fn new_terminal(
 
   let term = Arc::new(FairMutex::new(term));
 
+  let shell_program = program.clone();
   let pty_options = {
     let alac_shell = alacritty_terminal::tty::Shell::new(program, args);
 
@@ -155,7 +159,8 @@ fn new_terminal(
   };
 
   let pty =
-    alacritty_terminal::tty::new(&pty_options, TerminalBounds::default().into(), 1).unwrap();
+    alacritty_terminal::tty::new(&pty_options, TerminalBounds::default().into(), 1)
+      .map_err(|e| format!("Could not start shell '{}': {}", shell_program, e))?;
 
   #[cfg(unix)]
   let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
@@ -240,7 +245,7 @@ fn new_terminal(
     Some(cwd_file),
   );
 
-  (terminal, events_rx)
+  Ok((terminal, events_rx))
 }
 
 pub fn new_terminal_window_with_shell(
@@ -250,7 +255,7 @@ pub fn new_terminal_window_with_shell(
   args: Vec<String>,
   working_directory: Option<PathBuf>,
   cx: &mut Context<MainWindow>,
-) -> Entity<TerminalView> {
+) -> Result<Entity<TerminalView>, String> {
   let app_config = cx.global::<config::Config>().clone();
   // Use global working_directory as fallback if no per-profile working directory
   let working_directory = working_directory.or_else(|| {
@@ -260,7 +265,7 @@ pub fn new_terminal_window_with_shell(
       .map(|wd| PathBuf::from(wd))
   });
   let (terminal, events_rx) =
-    new_terminal(program.to_string(), args, working_directory, &app_config);
+    new_terminal(program.to_string(), args, working_directory, &app_config)?;
   let mut events_rx = events_rx;
   let terminal = cx.new(|_| terminal);
   let weak_terminal = terminal.downgrade();
@@ -327,5 +332,5 @@ pub fn new_terminal_window_with_shell(
   })
   .detach();
 
-  cx.new(|cx| TerminalView::new(terminal, window, index, cx))
+  Ok(cx.new(|cx| TerminalView::new(terminal, window, index, cx)))
 }

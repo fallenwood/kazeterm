@@ -49,14 +49,21 @@ impl MainWindow {
 
     let working_directory_path = get_working_directory_pathbuf(working_directory);
 
-    let new_terminal = crate::components::terminal_window::new_terminal_window_with_shell(
+    let new_terminal = match crate::components::terminal_window::new_terminal_window_with_shell(
       window,
       index,
       &shell,
       vec![],
       working_directory_path,
       cx,
-    );
+    ) {
+      Ok(terminal) => terminal,
+      Err(err) => {
+        tracing::error!("Failed to start shell for split pane: {err}");
+        self.show_shell_error_dialog(err, window, cx);
+        return;
+      }
+    };
 
     // Subscribe to the new terminal
     let subscription = cx.subscribe_in(&new_terminal, window, Self::subscribe_terminal_view_event);

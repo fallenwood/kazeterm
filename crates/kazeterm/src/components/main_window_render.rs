@@ -607,6 +607,13 @@ impl Render for MainWindow {
             } else {
               this
             }
+          })
+          .when(self.shell_error_dialog.is_some(), |this| {
+            if let Some(shell_error_dialog) = &self.shell_error_dialog {
+              this.child(shell_error_dialog.clone())
+            } else {
+              this
+            }
           });
 
         if vertical_tabs {
