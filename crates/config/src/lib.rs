@@ -294,7 +294,7 @@ impl Config {
   }
 
   fn load_from_path(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-    let mut raw = Self::read_raw_config(path)?;
+    let (original_content, mut raw) = Self::read_raw_config_with_content(path)?;
 
     let migrated = migration::apply_migrations(&mut raw);
     let mut merged = raw.clone();
@@ -306,6 +306,20 @@ impl Config {
 
     if migrated {
       tracing::info!("Config migrated to version {}", config.version);
+      match Self::create_migration_backup(path, &original_content) {
+        Ok(backup_path) => {
+          tracing::info!("Created migrated config backup at: {}", backup_path.display());
+        }
+        Err(error) => {
+          tracing::error!(
+            "Failed to create migrated config backup for {}: {}",
+            path.display(),
+            error
+          );
+          return Ok(config);
+        }
+      }
+
       if let Err(e) = Self::save_raw_to_path(path, &raw) {
         tracing::error!("Failed to save migrated config: {}", e);
       }
@@ -314,9 +328,17 @@ impl Config {
     Ok(config)
   }
 
-  fn read_raw_config(path: &Path) -> Result<toml::Value, Box<dyn std::error::Error>> {
+  fn read_raw_config_with_content(
+    path: &Path,
+  ) -> Result<(String, toml::Value), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
-    Ok(toml::from_str(&content)?)
+    let raw = toml::from_str(&content)?;
+    Ok((content, raw))
+  }
+
+  fn read_raw_config(path: &Path) -> Result<toml::Value, Box<dyn std::error::Error>> {
+    let (_, raw) = Self::read_raw_config_with_content(path)?;
+    Ok(raw)
   }
 
   fn save_raw_to_path(
@@ -327,6 +349,44 @@ impl Config {
     let content = format!("{}{}", GENERATED_CONFIG_HEADER, config_str);
     std::fs::write(path, content)?;
     Ok(())
+  }
+
+  fn create_migration_backup(
+    path: &Path,
+    original_content: &str,
+  ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let parent = path.parent().ok_or_else(|| {
+      std::io::Error::other("Could not create config backup because the config has no parent directory")
+    })?;
+    let stem = path
+      .file_stem()
+      .and_then(|stem| stem.to_str())
+      .unwrap_or("kazeterm");
+    let extension = path
+      .extension()
+      .and_then(|extension| extension.to_str())
+      .unwrap_or("toml");
+    let timestamp = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)?
+      .as_millis();
+
+    for collision_index in 0_u32.. {
+      let file_name = if collision_index == 0 {
+        format!("{stem}.backup.{timestamp}.{extension}")
+      } else {
+        format!("{stem}.backup.{timestamp}.{collision_index}.{extension}")
+      };
+      let backup_path = parent.join(file_name);
+
+      if backup_path.exists() {
+        continue;
+      }
+
+      std::fs::write(&backup_path, original_content)?;
+      return Ok(backup_path);
+    }
+
+    unreachable!("unbounded collision search should always find a free backup filename")
   }
 
   fn extract_imports(raw: &toml::Value) -> Vec<String> {
@@ -632,6 +692,46 @@ imports = ["./layer.toml"]
     );
 
     assert_eq!(paths, vec![base_path.clone(), overlay_path, nested_path]);
+
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn load_from_path_creates_backup_when_migrating() {
+    let dir = test_dir("migration-backup");
+    let base_path = dir.join("kazeterm.toml");
+    let original_content = r#"version = "20260412.1"
+theme = "one"
+font_size = 18.0
+inactive_pane_opacity = 0.6
+"#;
+
+    std::fs::write(&base_path, original_content).unwrap();
+
+    let config = Config::load_from_path(&base_path).unwrap();
+
+    assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+
+    let backup_paths = std::fs::read_dir(&dir)
+      .unwrap()
+      .map(|entry| entry.unwrap().path())
+      .filter(|path| {
+        path != &base_path
+          && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+              name.starts_with("kazeterm.backup.") && name.ends_with(".toml")
+            })
+      })
+      .collect::<Vec<_>>();
+
+    assert_eq!(backup_paths.len(), 1);
+    assert_eq!(std::fs::read_to_string(&backup_paths[0]).unwrap(), original_content);
+
+    let updated_content = std::fs::read_to_string(&base_path).unwrap();
+    assert!(updated_content.contains(&format!("version = \"{}\"", CURRENT_CONFIG_VERSION)));
+    assert!(updated_content.contains("imports = []"));
 
     std::fs::remove_dir_all(dir).unwrap();
   }
