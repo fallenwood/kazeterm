@@ -569,8 +569,14 @@ mod tests {
 
   #[test]
   fn keybinding_list_serializes_single_binding_as_string() {
+    #[derive(Serialize)]
+    struct Wrapper {
+      copy: KeybindingList,
+    }
+
     let bindings = KeybindingList::new("ctrl-shift-c");
-    assert_eq!(toml::to_string(&bindings).unwrap().trim(), "\"ctrl-shift-c\"");
+    let serialized = toml::to_string(&Wrapper { copy: bindings }).unwrap();
+    assert_eq!(serialized.trim(), "copy = \"ctrl-shift-c\"");
   }
 
   #[test]
