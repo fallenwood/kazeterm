@@ -52,6 +52,9 @@ pub struct Config {
   pub window_height: f32,
   /// Width of split pane divider drag handles in pixels.
   pub split_pane_divider_width: f32,
+  /// Opacity applied to inactive (unfocused) split panes to visually distinguish them.
+  /// 0.0 = fully transparent, 1.0 = no dimming. Default is 0.6.
+  pub inactive_pane_opacity: f32,
   /// Open the main window maximized on application startup.
   pub start_maximized: bool,
   #[serde(skip)]
@@ -126,6 +129,7 @@ impl Default for Config {
       window_width: 800.0,
       window_height: 600.0,
       split_pane_divider_width: 6.0,
+      inactive_pane_opacity: 0.6,
       start_maximized: false,
       container_profiles: profiles::detect_container_profiles(),
       minimap_enabled: false,
@@ -174,6 +178,11 @@ impl Config {
   /// Get split pane divider width clamped to a reasonable range in pixels.
   pub fn get_split_pane_divider_width(&self) -> f32 {
     self.split_pane_divider_width.clamp(1.0, 32.0)
+  }
+
+  /// Get inactive pane opacity clamped to [0.0, 1.0].
+  pub fn get_inactive_pane_opacity(&self) -> f32 {
+    self.inactive_pane_opacity.clamp(0.0, 1.0)
   }
 
   /// Get cursor blink interval as Duration, clamped to [10, 10000] ms

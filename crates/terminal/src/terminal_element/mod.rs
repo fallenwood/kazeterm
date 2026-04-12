@@ -41,6 +41,8 @@ pub struct TerminalElement {
   focus: FocusHandle,
   focused: bool,
   cursor_visible: bool,
+  /// Whether this terminal is in an inactive split pane (colors will be desaturated).
+  inactive: bool,
   interactivity: gpui::Interactivity,
 }
 
@@ -51,6 +53,7 @@ impl TerminalElement {
     focus: FocusHandle,
     focused: bool,
     cursor_visible: bool,
+    inactive: bool,
     interactivity: gpui::Interactivity,
   ) -> Self {
     Self {
@@ -59,6 +62,7 @@ impl TerminalElement {
       focus: focus.clone(),
       focused,
       cursor_visible,
+      inactive,
       interactivity,
     }
     .track_focus(&focus)

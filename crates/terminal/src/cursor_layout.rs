@@ -7,7 +7,7 @@ pub struct CursorLayout {
   origin: gpui::Point<Pixels>,
   block_width: Pixels,
   line_height: Pixels,
-  color: Hsla,
+  pub(crate) color: Hsla,
   shape: CursorShape,
   block_text: Option<ShapedLine>,
   cursor_name: Option<AnyElement>,

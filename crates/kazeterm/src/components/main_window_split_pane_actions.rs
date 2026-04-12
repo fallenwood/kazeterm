@@ -8,7 +8,7 @@ impl MainWindow {
   /// Update `active_pane_id` to match the terminal pane that currently has
   /// OS focus. This keeps the split-container state in sync with user clicks
   /// so that split / close / swap act on the pane the user is looking at.
-  fn sync_active_pane_from_focus(&mut self, window: &Window, cx: &gpui::App) {
+  pub(crate) fn sync_active_pane_from_focus(&mut self, window: &Window, cx: &gpui::App) {
     if let Some(item) = self.active_tab_item_mut() {
       for (id, terminal) in item.split_container.all_terminals() {
         if terminal.read(cx).focus_handle.is_focused(window) {

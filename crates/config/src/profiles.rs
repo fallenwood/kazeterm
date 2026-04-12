@@ -192,6 +192,7 @@ mod tests {
       window_width: 100.0,
       window_height: 50.0,
       split_pane_divider_width: 6.0,
+      inactive_pane_opacity: 0.6,
       start_maximized: false,
       container_profiles: vec![],
       minimap_enabled: false,

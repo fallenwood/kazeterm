@@ -1,6 +1,6 @@
 use alacritty_terminal::{grid::Dimensions, vte::ansi::CursorShape as AlacCursorShape};
 use gpui::{
-  AbsoluteLength, App, Bounds, Element, FontFeatures, FontStyle, FontWeight, HighlightStyle,
+  AbsoluteLength, App, Bounds, Element, FontFeatures, FontStyle, FontWeight, HighlightStyle, Hsla,
   MouseButton, Pixels, Point, TextRun, TextStyle, UnderlineStyle, WhiteSpace, Window, fill, px,
   relative,
 };
@@ -64,6 +64,11 @@ impl Element for TerminalElement {
     window: &mut Window,
     cx: &mut gpui::App,
   ) -> Self::PrepaintState {
+    let inactive = self.inactive;
+    let inactive_opacity = cx
+      .try_global::<::config::Config>()
+      .map(|c| c.get_inactive_pane_opacity())
+      .unwrap_or(0.6);
     self.interactivity.prepaint(
       global_id,
       inspector_id,
@@ -299,7 +304,7 @@ impl Element for TerminalElement {
           (None, None)
         };
 
-        LayoutState {
+        let mut layout = LayoutState {
           hitbox,
           batched_text_runs,
           cursor,
@@ -321,7 +326,13 @@ impl Element for TerminalElement {
           minimap_bounds,
           minimap_cells,
           image_placements,
+        };
+
+        if inactive && inactive_opacity < 1.0 {
+          desaturate_layout(&mut layout, inactive_opacity);
         }
+
+        layout
       },
     )
   }
@@ -660,4 +671,39 @@ fn paint_image_placement(
     0,
     false,
   );
+}
+
+/// Blend a color toward grey based on an opacity factor.
+/// `factor` of 1.0 returns the color unchanged; 0.0 returns a fully desaturated grey.
+fn desaturate_color(color: Hsla, factor: f32) -> Hsla {
+  // Convert to perceived luminance grey, then blend
+  let grey_lightness = 0.5;
+  Hsla {
+    h: color.h,
+    s: color.s * factor,
+    l: color.l * factor + grey_lightness * (1.0 - factor),
+    a: color.a,
+  }
+}
+
+/// Apply desaturation to all colors in the layout state for inactive panes.
+fn desaturate_layout(layout: &mut LayoutState, factor: f32) {
+  layout.background_color = desaturate_color(layout.background_color, factor);
+  layout.base_text_style.color = desaturate_color(layout.base_text_style.color, factor);
+
+  for rect in &mut layout.rects {
+    rect.color = desaturate_color(rect.color, factor);
+  }
+
+  for run in &mut layout.batched_text_runs {
+    run.style.color = desaturate_color(run.style.color, factor);
+  }
+
+  for (_, color) in &mut layout.relative_highlighted_ranges {
+    *color = desaturate_color(*color, factor);
+  }
+
+  if let Some(cursor) = &mut layout.cursor {
+    cursor.color = desaturate_color(cursor.color, factor);
+  }
 }

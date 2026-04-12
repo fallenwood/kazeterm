@@ -6,7 +6,7 @@ use gpui::{Bounds, Hsla, Pixels, Point, Window, fill, point};
 pub struct LayoutRect {
   point: AlacPoint<i32, i32>,
   num_of_cells: usize,
-  color: Hsla,
+  pub(crate) color: Hsla,
 }
 
 impl LayoutRect {

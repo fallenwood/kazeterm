@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260411.3";
+pub const CURRENT_CONFIG_VERSION: &str = "20260412.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -79,6 +79,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260411.2",
       to_version: "20260411.3",
       migrate: migrate_v20260411_2_to_20260411_3,
+    },
+    Migration {
+      from_version: "20260411.3",
+      to_version: "20260412.1",
+      migrate: migrate_v20260411_3_to_20260412_1,
     },
   ]
 }
@@ -255,6 +260,19 @@ fn migrate_v20260411_2_to_20260411_3(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260411.3".to_string()),
+    );
+  }
+}
+
+/// Add inactive_pane_opacity configuration for dimming unfocused split panes.
+fn migrate_v20260411_3_to_20260412_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("inactive_pane_opacity") {
+      table.insert("inactive_pane_opacity".to_string(), Value::Float(0.6));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260412.1".to_string()),
     );
   }
 }
@@ -617,5 +635,34 @@ start_maximized = false
     assert_eq!(config.font_size, 18.0);
     assert_eq!(config.split_pane_divider_width, 6.0);
     assert!(!config.start_maximized);
+    assert!((config.inactive_pane_opacity - 0.6).abs() < 0.001);
+  }
+
+  #[test]
+  fn migrate_20260411_3_adds_inactive_pane_opacity() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260411.3"
+theme = "one"
+font_size = 18.0
+split_pane_divider_width = 6.0
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config
+        .get("inactive_pane_opacity")
+        .unwrap()
+        .as_float()
+        .unwrap(),
+      0.6
+    );
   }
 }

@@ -556,6 +556,9 @@ impl Render for MainWindow {
       })
       .child({
         let active_ix = self.active_tab_ix.unwrap_or_default();
+        // Sync active pane from OS focus so the inactive-pane dimming
+        // reflects the currently focused terminal immediately.
+        self.sync_active_pane_from_focus(window, cx);
         let content = div()
           .flex_1()
           .size_full()

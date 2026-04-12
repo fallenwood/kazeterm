@@ -287,11 +287,16 @@ impl SplitPane {
     cx: &mut Context<MainWindow>,
   ) -> AnyElement {
     match self {
-      SplitPane::Terminal { id: _, terminal } => {
+      SplitPane::Terminal { id, terminal } => {
         let right_click_context_menu = cx
           .try_global::<config::Config>()
           .map(|c| c.right_click_context_menu)
           .unwrap_or(false);
+
+        let is_inactive = active_pane_id.is_some_and(|active| active != *id);
+        terminal.update(cx, |tv, _| {
+          tv.is_inactive_pane = is_inactive;
+        });
 
         let base = div().size_full().child(terminal.clone());
 
