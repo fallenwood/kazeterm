@@ -30,12 +30,19 @@ use super::terminal::Terminal;
 use super::terminal_element::TerminalElement;
 
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(750);
+const DEFAULT_TAB_TITLE_CHANGE_DELAY: Duration = Duration::from_millis(200);
 
 /// Returns the cursor blink interval from config, or the default constant.
 fn cursor_blink_interval(cx: &gpui::App) -> Duration {
   cx.try_global::<config::Config>()
     .map(|c| c.get_cursor_blink_interval())
     .unwrap_or(CURSOR_BLINK_INTERVAL)
+}
+
+fn tab_title_change_delay(cx: &gpui::App) -> Duration {
+  cx.try_global::<config::Config>()
+    .map(|c| c.get_tab_title_change_delay())
+    .unwrap_or(DEFAULT_TAB_TITLE_CHANGE_DELAY)
 }
 
 /// Returns whether cursor blinking is enabled from config.
@@ -84,6 +91,8 @@ pub struct TerminalView {
   pub scrollbar_drag_state: Option<(f32, f32)>,
   _subscriptions: Vec<gpui::Subscription>,
   _terminal_subscriptions: Vec<gpui::Subscription>,
+  /// Task used to debounce terminal-driven tab title updates.
+  pending_tab_title_update: Task<()>,
   /// Task for momentum scroll animation
   momentum_scroll_task: Task<()>,
   /// Task for touch long-press detection
@@ -178,9 +187,20 @@ impl TerminalView {
       is_hovered: false,
       _subscriptions: vec![focus_in, focus_out],
       _terminal_subscriptions: terminal_subscriptions,
+      pending_tab_title_update: Task::ready(()),
       momentum_scroll_task: Task::ready(()),
       long_press_task: Task::ready(()),
     }
+  }
+
+  fn schedule_tab_title_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    let delay = tab_title_change_delay(cx);
+    self.pending_tab_title_update = cx.spawn_in(window, async move |this, cx| {
+      Timer::after(delay).await;
+      _ = this.update(cx, |_, cx| {
+        cx.emit(TerminalEvent::UpdateTab);
+      });
+    });
   }
 
   /// Sets the marked (pre-edit) text from the IME.
@@ -643,7 +663,7 @@ fn subscribe_for_terminal_events(
     window,
     move |terminal_view, terminal, event, _window, cx| match event {
       crate::terminal::Event::TitleChanged => {
-        cx.emit(TerminalEvent::UpdateTab);
+        terminal_view.schedule_tab_title_update(_window, cx);
       }
       crate::terminal::Event::CloseTerminal => {
         cx.emit(TerminalEvent::CloseTerminal(terminal_view.index));

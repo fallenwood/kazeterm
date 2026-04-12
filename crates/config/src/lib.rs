@@ -91,6 +91,9 @@ pub struct Config {
   /// Prevents notification spam from rapid command completions.
   /// Set to 0 to allow every notification. Default is 5 seconds.
   pub notification_interval_secs: u64,
+  /// Delay before applying terminal-driven tab title changes, in milliseconds.
+  /// Helps avoid rapid title churn from shells or apps that update the title frequently.
+  pub tab_title_change_delay_ms: u64,
   /// Maximum number of lines in the scrollback buffer.
   /// Higher values use more memory. Default is 10000.
   pub scrollback_lines: u32,
@@ -149,6 +152,7 @@ impl Default for Config {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 0,
+      tab_title_change_delay_ms: 200,
       scrollback_lines: 10_000,
       cursor_shape: "block".to_string(),
       cursor_blink: true,
@@ -196,6 +200,11 @@ impl Config {
   /// Get cursor blink interval as Duration, clamped to [10, 10000] ms
   pub fn get_cursor_blink_interval(&self) -> std::time::Duration {
     std::time::Duration::from_millis(self.cursor_blink_interval.clamp(10, 10_000))
+  }
+
+  /// Get the tab title change delay as Duration, clamped to [0, 5000] ms.
+  pub fn get_tab_title_change_delay(&self) -> std::time::Duration {
+    std::time::Duration::from_millis(self.tab_title_change_delay_ms.clamp(0, 5_000))
   }
 
   pub fn load() -> Self {
