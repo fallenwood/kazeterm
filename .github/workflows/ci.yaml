@@ -14,10 +14,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
+      - uses: actions/checkout@sha256:0c366fd6a839edf440554fa01a7085ccba70ac98
 
       - name: Cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        uses: actions/cache@sha256:668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
           path: |
             ~/.cargo/registry
@@ -49,7 +49,7 @@ jobs:
           cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.info
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@sha256:043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: runner.os == 'Linux' && runner.arch == 'X64'
         with:
           name: coverage-lcov
@@ -90,7 +90,7 @@ jobs:
           tar -czf ./dists/kazeterm-$variant-${{ github.ref_name }}-dmg.tar.gz -C ./target/release-fast/bundle/osx Kazeterm.app
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
+        uses: softprops/action-gh-release@sha256:b4309332981a82ec1c5618f44dd2e27cc8bfbfda
         with:
           tag_name: wip
           prerelease: true
