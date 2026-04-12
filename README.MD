@@ -11,6 +11,17 @@ A lightweight cross-platform terminal app based on Alacritty, inspired by Window
 ## Documentation
 More details can be found at [wiki](https://github.com/fallenwood/kazeterm/wiki "")
 
+## Config Overlays
+
+Kazeterm loads `kazeterm.toml` as the base config and can merge extra TOML files listed in `imports`.
+Imported files have higher priority than the base file, and later imports override earlier ones.
+
+```toml
+imports = ["~/kazeterm.windows.toml"]
+```
+
+Relative import paths are resolved from the file that declares them, and nested imports are supported.
+
 ## How to Build
 
 ### Environment Setup

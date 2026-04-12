@@ -1,7 +1,10 @@
 use gpui::Rgba;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+
+const GENERATED_CONFIG_HEADER: &str =
+  "# Kazeterm Configuration\n# Generated automatically\n\n";
 
 pub mod palette;
 pub use palette::Palette;
@@ -36,6 +39,10 @@ pub use profiles::Profile;
 pub struct Config {
   /// Config file version in YYYYMMDD.Rev format (e.g., "20260220.1")
   pub version: String,
+  /// Additional config files to merge after the main `kazeterm.toml`.
+  /// Imported files override the base config, and later imports override earlier ones.
+  #[serde(default)]
+  pub imports: Vec<String>,
   pub theme: String,
   pub theme_mode: ThemeMode,
   /// Custom themes directory path
@@ -114,6 +121,7 @@ impl Default for Config {
   fn default() -> Self {
     Self {
       version: CURRENT_CONFIG_VERSION.to_string(),
+      imports: Vec::new(),
       theme: "one".to_string(),
       theme_mode: ThemeMode::default(),
       themes_path: None,
@@ -279,26 +287,26 @@ impl Config {
     let config_str = toml::to_string_pretty(&default_config)?;
 
     // Add header comment
-    let content = format!(
-      "# Kazeterm Configuration\n# Generated automatically\n\n{}",
-      config_str
-    );
+    let content = format!("{}{}", GENERATED_CONFIG_HEADER, config_str);
 
     std::fs::write(path, content)?;
     Ok(())
   }
 
   fn load_from_path(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-    let content = std::fs::read_to_string(path)?;
-    let mut raw: toml::Value = toml::from_str(&content)?;
+    let mut raw = Self::read_raw_config(path)?;
 
     let migrated = migration::apply_migrations(&mut raw);
-    let mut config: Config = raw.try_into()?;
+    let mut merged = raw.clone();
+    let mut visited = HashSet::from([Self::normalize_path(path)]);
+    Self::apply_imports(&mut merged, path, &Self::extract_imports(&raw), &mut visited);
+
+    let mut config: Config = merged.try_into()?;
     config.container_profiles = profiles::detect_container_profiles();
 
     if migrated {
       tracing::info!("Config migrated to version {}", config.version);
-      if let Err(e) = Self::save_to_path(path, &config) {
+      if let Err(e) = Self::save_raw_to_path(path, &raw) {
         tracing::error!("Failed to save migrated config: {}", e);
       }
     }
@@ -306,14 +314,151 @@ impl Config {
     Ok(config)
   }
 
-  fn save_to_path(path: &PathBuf, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+  fn read_raw_config(path: &Path) -> Result<toml::Value, Box<dyn std::error::Error>> {
+    let content = std::fs::read_to_string(path)?;
+    Ok(toml::from_str(&content)?)
+  }
+
+  fn save_raw_to_path(
+    path: &Path,
+    config: &toml::Value,
+  ) -> Result<(), Box<dyn std::error::Error>> {
     let config_str = toml::to_string_pretty(config)?;
-    let content = format!(
-      "# Kazeterm Configuration\n# Generated automatically\n\n{}",
-      config_str
-    );
+    let content = format!("{}{}", GENERATED_CONFIG_HEADER, config_str);
     std::fs::write(path, content)?;
     Ok(())
+  }
+
+  fn extract_imports(raw: &toml::Value) -> Vec<String> {
+    raw
+      .get("imports")
+      .and_then(toml::Value::as_array)
+      .into_iter()
+      .flatten()
+      .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+      .collect()
+  }
+
+  fn apply_imports(
+    merged: &mut toml::Value,
+    current_path: &Path,
+    imports: &[String],
+    visited: &mut HashSet<PathBuf>,
+  ) {
+    for import in imports {
+      let resolved_path = Self::resolve_import_path(current_path, import);
+      let normalized_path = Self::normalize_path(&resolved_path);
+
+      if !visited.insert(normalized_path) {
+        tracing::warn!(
+          "Skipping duplicate or recursive config import: {}",
+          resolved_path.display()
+        );
+        continue;
+      }
+
+      let imported_raw = match Self::read_raw_config(&resolved_path) {
+        Ok(raw) => raw,
+        Err(error) => {
+          tracing::warn!(
+            "Skipping config import {}: {}",
+            resolved_path.display(),
+            error
+          );
+          continue;
+        }
+      };
+
+      Self::merge_config_value(merged, imported_raw.clone());
+      Self::apply_imports(
+        merged,
+        &resolved_path,
+        &Self::extract_imports(&imported_raw),
+        visited,
+      );
+    }
+  }
+
+  fn merge_config_value(target: &mut toml::Value, overlay: toml::Value) {
+    match (target, overlay) {
+      (toml::Value::Table(target_table), toml::Value::Table(overlay_table)) => {
+        for (key, overlay_value) in overlay_table {
+          if matches!(key.as_str(), "version" | "imports") {
+            continue;
+          }
+
+          match target_table.get_mut(&key) {
+            Some(target_value)
+              if matches!(target_value, toml::Value::Table(_))
+                && matches!(overlay_value, toml::Value::Table(_)) =>
+            {
+              Self::merge_config_value(target_value, overlay_value);
+            }
+            _ => {
+              target_table.insert(key, overlay_value);
+            }
+          }
+        }
+      }
+      (target_value, overlay_value) => {
+        *target_value = overlay_value;
+      }
+    }
+  }
+
+  fn resolve_import_path(current_path: &Path, import_path: &str) -> PathBuf {
+    let expanded = if import_path == "~" {
+      dirs::home_dir().unwrap_or_else(|| PathBuf::from(import_path))
+    } else if let Some(rest) = import_path
+      .strip_prefix("~/")
+      .or_else(|| import_path.strip_prefix("~\\"))
+    {
+      dirs::home_dir()
+        .map(|home| home.join(rest))
+        .unwrap_or_else(|| PathBuf::from(import_path))
+    } else {
+      PathBuf::from(import_path)
+    };
+
+    if expanded.is_absolute() {
+      return expanded;
+    }
+
+    current_path
+      .parent()
+      .map(|parent| parent.join(&expanded))
+      .unwrap_or(expanded)
+  }
+
+  fn normalize_path(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+  }
+
+  fn collect_import_paths(
+    current_path: &Path,
+    imports: &[String],
+    visited: &mut HashSet<PathBuf>,
+    paths: &mut Vec<PathBuf>,
+  ) {
+    for import in imports {
+      let resolved_path = Self::resolve_import_path(current_path, import);
+      let normalized_path = Self::normalize_path(&resolved_path);
+
+      if !visited.insert(normalized_path) {
+        continue;
+      }
+
+      paths.push(resolved_path.clone());
+
+      let Ok(imported_raw) = Self::read_raw_config(&resolved_path) else {
+        continue;
+      };
+
+      let nested_imports = Self::extract_imports(&imported_raw);
+      if !nested_imports.is_empty() {
+        Self::collect_import_paths(&resolved_path, &nested_imports, visited, paths);
+      }
+    }
   }
 
   pub fn get_ssh_hosts() -> Vec<String> {
@@ -327,6 +472,26 @@ impl Config {
   pub fn get_config_file_path() -> Option<PathBuf> {
     let path = Self::get_config_file_path_impl();
     if path.exists() { Some(path) } else { None }
+  }
+
+  pub fn get_config_file_paths() -> Vec<PathBuf> {
+    let Some(path) = Self::get_config_file_path() else {
+      return Vec::new();
+    };
+
+    let mut paths = vec![path.clone()];
+    let mut visited = HashSet::from([Self::normalize_path(&path)]);
+
+    if let Ok(raw) = Self::read_raw_config(&path) {
+      Self::collect_import_paths(
+        &path,
+        &Self::extract_imports(&raw),
+        &mut visited,
+        &mut paths,
+      );
+    }
+
+    paths
   }
 }
 
@@ -345,6 +510,7 @@ pub fn to_hex_string(rgba: &Rgba) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::time::{SystemTime, UNIX_EPOCH};
 
   fn rgba(r: u8, g: u8, b: u8, a: u8) -> Rgba {
     Rgba {
@@ -360,5 +526,113 @@ mod tests {
     assert_eq!(to_hex_string(&rgba(255, 0, 0, 255)), "#FF0000FF");
     assert_eq!(to_hex_string(&rgba(0, 255, 0, 128)), "#00FF0080");
     assert_eq!(to_hex_string(&rgba(34, 85, 136, 255)), "#225588FF");
+  }
+
+  fn test_dir(name: &str) -> PathBuf {
+    let unique = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+      "kazeterm-config-tests-{}-{}-{}",
+      name,
+      std::process::id(),
+      unique,
+    ));
+    std::fs::create_dir_all(&path).unwrap();
+    path
+  }
+
+  #[test]
+  fn load_from_path_merges_imports_with_higher_priority() {
+    let dir = test_dir("imports-override");
+    let base_path = dir.join("kazeterm.toml");
+    let overlay_path = dir.join("kazeterm.windows.toml");
+
+    std::fs::write(
+      &base_path,
+      format!(
+        r#"version = "{}"
+imports = ["./kazeterm.windows.toml"]
+background_opacity = 1.0
+
+[keybindings]
+copy = "ctrl-shift-c"
+
+[env]
+BASE = "from-base"
+"#,
+        CURRENT_CONFIG_VERSION,
+      ),
+    )
+    .unwrap();
+    std::fs::write(
+      &overlay_path,
+      r#"background_opacity = 0.4
+
+[keybindings]
+paste = "ctrl-alt-v"
+
+[env]
+BASE = "from-overlay"
+EXTRA = "present"
+"#,
+    )
+    .unwrap();
+
+    let config = Config::load_from_path(&base_path).unwrap();
+
+    assert_eq!(config.background_opacity, 0.4);
+    assert_eq!(config.keybindings.copy, "ctrl-shift-c");
+    assert_eq!(config.keybindings.paste, "ctrl-alt-v");
+    assert_eq!(config.env.get("BASE").unwrap(), "from-overlay");
+    assert_eq!(config.env.get("EXTRA").unwrap(), "present");
+
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn resolve_import_path_expands_home_directory() {
+    let current_path = PathBuf::from("config/kazeterm.toml");
+    let home_dir = dirs::home_dir().expect("home directory should exist");
+
+    let resolved = Config::resolve_import_path(&current_path, "~/kazeterm.windows.toml");
+
+    assert_eq!(resolved, home_dir.join("kazeterm.windows.toml"));
+  }
+
+  #[test]
+  fn collect_import_paths_includes_nested_imports() {
+    let dir = test_dir("nested-imports");
+    let base_path = dir.join("kazeterm.toml");
+    let overlay_path = dir.join("layer.toml");
+    let nested_path = dir.join("layer.local.toml");
+
+    std::fs::write(
+      &base_path,
+      format!(
+        r#"version = "{}"
+imports = ["./layer.toml"]
+"#,
+        CURRENT_CONFIG_VERSION,
+      ),
+    )
+    .unwrap();
+    std::fs::write(&overlay_path, "imports = [\"./layer.local.toml\"]\n").unwrap();
+    std::fs::write(&nested_path, "background_opacity = 0.7\n").unwrap();
+
+    let mut paths = vec![base_path.clone()];
+    let mut visited = HashSet::from([Config::normalize_path(&base_path)]);
+    let raw = Config::read_raw_config(&base_path).unwrap();
+    Config::collect_import_paths(
+      &base_path,
+      &Config::extract_imports(&raw),
+      &mut visited,
+      &mut paths,
+    );
+
+    assert_eq!(paths, vec![base_path.clone(), overlay_path, nested_path]);
+
+    std::fs::remove_dir_all(dir).unwrap();
   }
 }

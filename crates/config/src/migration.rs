@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260412.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260412.2";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -84,6 +84,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260411.3",
       to_version: "20260412.1",
       migrate: migrate_v20260411_3_to_20260412_1,
+    },
+    Migration {
+      from_version: "20260412.1",
+      to_version: "20260412.2",
+      migrate: migrate_v20260412_1_to_20260412_2,
     },
   ]
 }
@@ -273,6 +278,19 @@ fn migrate_v20260411_3_to_20260412_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260412.1".to_string()),
+    );
+  }
+}
+
+/// Add config overlay import support.
+fn migrate_v20260412_1_to_20260412_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("imports") {
+      table.insert("imports".to_string(), Value::Array(Vec::new()));
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260412.2".to_string()),
     );
   }
 }
@@ -664,5 +682,26 @@ split_pane_divider_width = 6.0
         .unwrap(),
       0.6
     );
+  }
+
+  #[test]
+  fn migrate_20260412_1_adds_imports() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260412.1"
+theme = "one"
+font_size = 18.0
+inactive_pane_opacity = 0.6
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert!(config.get("imports").unwrap().as_array().unwrap().is_empty());
   }
 }

@@ -37,17 +37,17 @@ pub enum FileChangeType {
 /// the global state, triggering a re-render of all components.
 pub fn start_config_watcher(cx: &mut App) {
   // Get paths to watch
-  let config_path = Config::get_config_file_path();
+  let config_paths = Config::get_config_file_paths();
   let themes_path = ::config::get_custom_themes_path();
 
   // If no config file exists yet, nothing to watch
-  if config_path.is_none() && themes_path.is_none() {
+  if config_paths.is_empty() && themes_path.is_none() {
     tracing::debug!("No config or themes path to watch");
     return;
   }
 
   cx.spawn(async move |cx: &mut AsyncApp| {
-    if let Err(e) = run_file_watcher(cx, config_path, themes_path).await {
+    if let Err(e) = run_file_watcher(cx, config_paths, themes_path).await {
       tracing::error!("Config watcher error: {}", e);
     }
   })
@@ -70,8 +70,8 @@ fn is_content_change(kind: &EventKind) -> bool {
 /// Run the file watcher loop
 async fn run_file_watcher(
   cx: &mut AsyncApp,
-  config_path: Option<PathBuf>,
-  themes_path: Option<PathBuf>,
+  mut config_paths: Vec<PathBuf>,
+  mut themes_path: Option<PathBuf>,
 ) -> anyhow::Result<()> {
   let (tx, rx) = unbounded::<notify::Result<notify::Event>>();
 
@@ -83,30 +83,10 @@ async fn run_file_watcher(
     notify::Config::default(),
   )?;
 
-  // Watch config directory (more reliable for atomic save/rename)
-  if let Some(path) = &config_path {
-    if let Some(parent) = path.parent() {
-      if parent.exists() {
-        tracing::info!("Watching config directory: {}", parent.display());
-        watcher.watch(parent, RecursiveMode::NonRecursive)?;
-      } else if path.exists() {
-        tracing::info!("Watching config file: {}", path.display());
-        watcher.watch(path, RecursiveMode::NonRecursive)?;
-      }
-    } else if path.exists() {
-      tracing::info!("Watching config file: {}", path.display());
-      watcher.watch(path, RecursiveMode::NonRecursive)?;
-    }
-  }
-
-  // Watch themes directory
-  if let Some(path) = &themes_path
-    && path.exists()
-    && path.is_dir()
-  {
-    tracing::info!("Watching themes directory: {}", path.display());
-    watcher.watch(path, RecursiveMode::Recursive)?;
-  }
+  let mut watched_config_targets = HashSet::new();
+  let mut watched_theme_path = None;
+  sync_config_watches(&mut watcher, &config_paths, &mut watched_config_targets)?;
+  sync_theme_watch(&mut watcher, themes_path.as_ref(), &mut watched_theme_path)?;
 
   // Track pending changes for debouncing
   let mut pending_changes: HashSet<FileChangeType> = HashSet::new();
@@ -127,7 +107,7 @@ async fn run_file_watcher(
 
             // Determine what changed and add to pending set
             for path in &event.paths {
-              let change_type = determine_change_type(path, &config_path, &themes_path);
+              let change_type = determine_change_type(path, &config_paths, themes_path.as_ref());
               tracing::debug!("Content change detected: {:?} ({:?})", path, change_type);
               pending_changes.insert(change_type);
             }
@@ -166,8 +146,18 @@ async fn run_file_watcher(
 
           tracing::info!("Processing file change: {:?}", change_type);
 
+          let reconfigure_watches = change_type == FileChangeType::Config;
+
           if let Err(e) = handle_file_change(cx, change_type).await {
             tracing::error!("Failed to reload config/theme: {}", e);
+          }
+
+          if reconfigure_watches {
+            config_paths = Config::get_config_file_paths();
+            themes_path = ::config::get_custom_themes_path();
+
+            sync_config_watches(&mut watcher, &config_paths, &mut watched_config_targets)?;
+            sync_theme_watch(&mut watcher, themes_path.as_ref(), &mut watched_theme_path)?;
           }
 
           pending_changes.clear();
@@ -182,21 +172,20 @@ async fn run_file_watcher(
 /// Determine what type of file changed
 fn determine_change_type(
   changed_path: &PathBuf,
-  config_path: &Option<PathBuf>,
-  themes_path: &Option<PathBuf>,
+  config_paths: &[PathBuf],
+  themes_path: Option<&PathBuf>,
 ) -> FileChangeType {
-  // Check if it's the config file
-  if let Some(cp) = config_path {
-    if changed_path == cp {
+  for config_path in config_paths {
+    if changed_path == config_path {
       return FileChangeType::Config;
     }
 
-    // If we're watching the parent directory, match by filename + same parent
-    if let (Some(cp_parent), Some(cp_name)) = (cp.parent(), cp.file_name())
+    if let (Some(config_parent), Some(config_name)) =
+      (config_path.parent(), config_path.file_name())
       && let (Some(changed_parent), Some(changed_name)) =
         (changed_path.parent(), changed_path.file_name())
-      && cp_parent == changed_parent
-      && cp_name == changed_name
+      && config_parent == changed_parent
+      && config_name == changed_name
     {
       return FileChangeType::Config;
     }
@@ -212,6 +201,70 @@ fn determine_change_type(
 
   // Default to config (will reload everything anyway)
   FileChangeType::Config
+}
+
+fn sync_config_watches(
+  watcher: &mut RecommendedWatcher,
+  config_paths: &[PathBuf],
+  watched_targets: &mut HashSet<PathBuf>,
+) -> notify::Result<()> {
+  let desired_targets = config_watch_targets(config_paths);
+
+  for removed_path in watched_targets.difference(&desired_targets) {
+    tracing::info!("Stopped watching config path: {}", removed_path.display());
+    watcher.unwatch(removed_path)?;
+  }
+
+  for added_path in desired_targets.difference(watched_targets) {
+    tracing::info!("Watching config path: {}", added_path.display());
+    watcher.watch(added_path, RecursiveMode::NonRecursive)?;
+  }
+
+  *watched_targets = desired_targets;
+  Ok(())
+}
+
+fn sync_theme_watch(
+  watcher: &mut RecommendedWatcher,
+  theme_path: Option<&PathBuf>,
+  watched_theme_path: &mut Option<PathBuf>,
+) -> notify::Result<()> {
+  let desired_theme_path = theme_path
+    .filter(|path| path.exists() && path.is_dir())
+    .cloned();
+
+  if let Some(current_path) = watched_theme_path.as_ref()
+    && desired_theme_path.as_ref() != Some(current_path)
+  {
+    tracing::info!("Stopped watching themes directory: {}", current_path.display());
+    watcher.unwatch(current_path)?;
+    *watched_theme_path = None;
+  }
+
+  if let Some(path) = desired_theme_path
+    && watched_theme_path.as_ref() != Some(&path)
+  {
+    tracing::info!("Watching themes directory: {}", path.display());
+    watcher.watch(&path, RecursiveMode::Recursive)?;
+    *watched_theme_path = Some(path);
+  }
+
+  Ok(())
+}
+
+fn config_watch_targets(config_paths: &[PathBuf]) -> HashSet<PathBuf> {
+  config_paths
+    .iter()
+    .filter_map(|path| {
+      if let Some(parent) = path.parent()
+        && parent.exists()
+      {
+        return Some(parent.to_path_buf());
+      }
+
+      path.exists().then(|| path.to_path_buf())
+    })
+    .collect()
 }
 
 /// Handle a file change by reloading config/theme

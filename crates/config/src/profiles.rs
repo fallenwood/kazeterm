@@ -177,6 +177,7 @@ mod tests {
 
     let config = Config {
       version: CURRENT_CONFIG_VERSION.to_string(),
+      imports: vec![],
       theme: "one".into(),
       theme_mode: ThemeMode::Dark,
       themes_path: None,
