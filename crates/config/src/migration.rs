@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260412.2";
+pub const CURRENT_CONFIG_VERSION: &str = "20260412.3";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -89,6 +89,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260412.1",
       to_version: "20260412.2",
       migrate: migrate_v20260412_1_to_20260412_2,
+    },
+    Migration {
+      from_version: "20260412.2",
+      to_version: "20260412.3",
+      migrate: migrate_v20260412_2_to_20260412_3,
     },
   ]
 }
@@ -291,6 +296,22 @@ fn migrate_v20260412_1_to_20260412_2(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260412.2".to_string()),
+    );
+  }
+}
+
+/// Add configurable tab title debounce support.
+fn migrate_v20260412_2_to_20260412_3(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if !table.contains_key("tab_title_change_delay_ms") {
+      table.insert(
+        "tab_title_change_delay_ms".to_string(),
+        Value::Integer(200),
+      );
+    }
+    table.insert(
+      "version".to_string(),
+      Value::String("20260412.3".to_string()),
     );
   }
 }
@@ -576,6 +597,33 @@ background_blur = false
         .as_bool()
         .unwrap(),
       false
+    );
+  }
+
+  #[test]
+  fn migrate_20260412_2_adds_tab_title_change_delay() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260412.2"
+theme = "one"
+font_size = 18.0
+imports = []
+"#,
+    )
+    .unwrap();
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      config
+        .get("tab_title_change_delay_ms")
+        .unwrap()
+        .as_integer()
+        .unwrap(),
+      200
     );
   }
 

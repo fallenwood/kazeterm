@@ -205,6 +205,7 @@ mod tests {
       keybindings: KeybindingConfig::default(),
       long_running_threshold_secs: 10,
       notification_interval_secs: 0,
+      tab_title_change_delay_ms: 200,
       scrollback_lines: 10_000,
       cursor_shape: "block".into(),
       cursor_blink: true,
