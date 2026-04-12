@@ -191,6 +191,8 @@ mod tests {
       ui_font_size: 12.0,
       window_width: 100.0,
       window_height: 50.0,
+      split_pane_divider_width: 6.0,
+      start_maximized: false,
       container_profiles: vec![],
       minimap_enabled: false,
       vertical_tabs: false,

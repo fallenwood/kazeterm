@@ -172,6 +172,7 @@ fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
   let config = cx.global::<Config>().clone();
   let window_width = config.window_width;
   let window_height = config.window_height;
+  let start_maximized = config.start_maximized;
   let background_opacity = config.get_background_opacity();
   let background_blur = config.background_blur;
 
@@ -186,17 +187,23 @@ fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
       WindowBackgroundAppearance::Opaque
     };
 
+    let restore_bounds = gpui::Bounds {
+      origin: Point {
+        x: px(100f32),
+        y: px(100f32),
+      },
+      size: Size {
+        width: px(window_width),
+        height: px(window_height),
+      },
+    };
+
     let options = WindowOptions {
-      window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
-        origin: Point {
-          x: px(100f32),
-          y: px(100f32),
-        },
-        size: Size {
-          width: px(window_width),
-          height: px(window_height),
-        },
-      })),
+      window_bounds: Some(if start_maximized {
+        gpui::WindowBounds::Maximized(restore_bounds)
+      } else {
+        gpui::WindowBounds::Windowed(restore_bounds)
+      }),
       titlebar: Some(gpui::TitlebarOptions {
         title: Some("Kazeterm".into()),
         appears_transparent: true,
