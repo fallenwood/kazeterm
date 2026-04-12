@@ -153,7 +153,7 @@ impl ParsedKeybinding {
       shift,
       alt,
       platform,
-      key: remaining.to_string(),
+      key: normalize_key_name(remaining).to_string(),
     }
   }
 
@@ -239,6 +239,26 @@ fn shift_key(key: &str) -> Option<&str> {
     "." => Some(">"),
     "/" => Some("?"),
     _ => None,
+  }
+}
+
+/// Normalize human-friendly key names to the symbols GPUI uses in key events.
+fn normalize_key_name(key: &str) -> &str {
+  match key {
+    "minus" => "-",
+    "plus" => "+",
+    "equal" | "equals" => "=",
+    "comma" => ",",
+    "period" | "dot" => ".",
+    "slash" => "/",
+    "backslash" => "\\",
+    "semicolon" => ";",
+    "quote" | "apostrophe" => "'",
+    "backtick" | "grave" => "`",
+    "space" => " ",
+    "lbracket" | "leftbracket" => "[",
+    "rbracket" | "rightbracket" => "]",
+    _ => key,
   }
 }
 
@@ -440,5 +460,38 @@ mod tests {
     assert_eq!(config.copy, deserialized.copy);
     assert_eq!(config.paste, deserialized.paste);
     assert_eq!(config.zoom_in, deserialized.zoom_in);
+  }
+
+  #[test]
+  fn parse_key_name_aliases() {
+    // "alt-shift-minus" should normalize "minus" to "-"
+    let kb = ParsedKeybinding::parse("alt-shift-minus");
+    assert_eq!(kb.key, "-");
+    assert!(kb.alt);
+    assert!(kb.shift);
+
+    // "alt-shift-plus" should normalize "plus" to "+"
+    let kb = ParsedKeybinding::parse("alt-shift-plus");
+    assert_eq!(kb.key, "+");
+    assert!(kb.alt);
+    assert!(kb.shift);
+
+    // "ctrl-equal" should normalize to "="
+    let kb = ParsedKeybinding::parse("ctrl-equal");
+    assert_eq!(kb.key, "=");
+    assert!(kb.control);
+
+    // "ctrl-space" should normalize to " "
+    let kb = ParsedKeybinding::parse("ctrl-space");
+    assert_eq!(kb.key, " ");
+    assert!(kb.control);
+  }
+
+  #[test]
+  fn matches_alt_shift_minus() {
+    // User config: "alt-shift-minus" should match Alt+Shift+- key press
+    let kb = ParsedKeybinding::parse("alt-shift-minus");
+    assert!(kb.matches(false, true, true, false, "-")); // direct match
+    assert!(kb.matches(false, false, true, false, "_")); // GPUI shifted key (shift+- = _)
   }
 }

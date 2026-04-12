@@ -501,6 +501,7 @@ impl TerminalView {
 
     let passthrough_bindings = [
       &keybindings.toggle_fullscreen,
+      &keybindings.toggle_tab_bar,
       &keybindings.new_tab,
       &keybindings.new_tab_profile_1,
       &keybindings.new_tab_profile_2,
@@ -511,6 +512,15 @@ impl TerminalView {
       &keybindings.new_tab_profile_7,
       &keybindings.new_tab_profile_8,
       &keybindings.new_tab_profile_9,
+      &keybindings.next_tab,
+      &keybindings.previous_tab,
+      &keybindings.toggle_search,
+      &keybindings.split_horizontal,
+      &keybindings.split_vertical,
+      &keybindings.close_pane,
+      &keybindings.focus_next_pane,
+      &keybindings.focus_previous_pane,
+      &keybindings.swap_split_panes,
     ];
 
     for binding in &passthrough_bindings {
