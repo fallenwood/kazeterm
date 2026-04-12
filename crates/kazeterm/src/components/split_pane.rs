@@ -306,11 +306,11 @@ impl SplitPane {
         let is_hovered = terminal.read(cx).is_hovered;
 
         let border_color = if has_splits && is_active {
-          colors.border_focused
+          colors.border_selected
         } else if has_splits && is_hovered {
-          colors.border_variant
+          colors.border_focused
         } else if has_splits {
-          colors.border_transparent
+          colors.border_variant
         } else {
           colors.border_transparent
         };

@@ -157,8 +157,8 @@ impl Default for Palette {
     let element_disabled = rgb_u8(22, 23, 33);
     let accent = rgb_u8(116, 173, 232);
     let accent_bright = rgb_u8(142, 178, 255);
-    let border = rgb_u8(43, 130, 60);
-    let border_variant = rgb_u8(236, 151, 06);
+    let border = rgb_u8(70, 75, 87);
+    let border_variant = rgb_u8(36, 40, 59);
     let border_disabled = rgb_u8(31, 35, 52);
     let border_transparent = rgba_u8(0, 0, 0, 0);
     let text = rgb_u8(220, 224, 229);
@@ -209,7 +209,13 @@ impl Default for Palette {
     Palette {
       border,
       border_variant,
-      border_focused: accent,
+      border_focused: {
+        // Derive from accent: reduce saturation and shift lightness toward grey
+        let mut c = accent;
+        c.s *= 0.5;
+        c.l = c.l * 0.8 + 0.5 * 0.2;
+        c
+      },
       border_selected: accent,
       border_transparent,
       border_disabled,

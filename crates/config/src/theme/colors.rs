@@ -33,8 +33,12 @@ impl ThemeColors {
     if let Some(c) = accent {
       palette.text_accent = c;
       palette.terminal_cursor = c;
-      palette.border_focused = c;
       palette.border_selected = c;
+      // Derive border_focused as a greyed-out version of accent
+      let mut focused = c;
+      focused.s *= 0.5;
+      focused.l = focused.l * 0.8 + 0.5 * 0.2;
+      palette.border_focused = focused;
     }
     if let Some(c) = border_color {
       palette.border = c;
