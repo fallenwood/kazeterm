@@ -1,101 +1,187 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeybindingList(Vec<String>);
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum KeybindingListRepr {
+  Single(String),
+  Multiple(Vec<String>),
+}
+
+impl KeybindingList {
+  pub fn new(binding: impl Into<String>) -> Self {
+    Self::from_vec(vec![binding.into()])
+  }
+
+  pub fn from_vec(bindings: Vec<String>) -> Self {
+    Self(
+      bindings
+        .into_iter()
+        .map(|binding| binding.trim().to_string())
+        .filter(|binding| !binding.is_empty())
+        .collect(),
+    )
+  }
+
+  pub fn first(&self) -> Option<&str> {
+    self.0.first().map(String::as_str)
+  }
+
+  pub fn iter(&self) -> impl Iterator<Item = &str> {
+    self.0.iter().map(String::as_str)
+  }
+
+  pub fn matches(&self, control: bool, shift: bool, alt: bool, platform: bool, key: &str) -> bool {
+    self.iter().any(|binding| {
+      ParsedKeybinding::parse(binding).matches(control, shift, alt, platform, key)
+    })
+  }
+
+  pub fn display_text(&self) -> String {
+    self
+      .iter()
+      .map(|binding| ParsedKeybinding::parse(binding).display_text())
+      .collect::<Vec<_>>()
+      .join(" / ")
+  }
+}
+
+impl Default for KeybindingList {
+  fn default() -> Self {
+    Self(Vec::new())
+  }
+}
+
+impl Serialize for KeybindingList {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: Serializer,
+  {
+    match self.0.as_slice() {
+      [binding] => serializer.serialize_str(binding),
+      bindings => bindings.serialize(serializer),
+    }
+  }
+}
+
+impl<'de> Deserialize<'de> for KeybindingList {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    let repr = KeybindingListRepr::deserialize(deserializer)?;
+    Ok(match repr {
+      KeybindingListRepr::Single(binding) => Self::from_vec(vec![binding]),
+      KeybindingListRepr::Multiple(bindings) => Self::from_vec(bindings),
+    })
+  }
+}
+
+impl PartialEq<&str> for KeybindingList {
+  fn eq(&self, other: &&str) -> bool {
+    matches!(self.0.as_slice(), [binding] if binding == *other)
+  }
+}
 
 /// Configuration for custom keyboard shortcuts.
 ///
-/// Each field maps an action name to a keystroke string using the format:
+/// Each field maps an action name to either one keystroke string or an array of
+/// keystroke strings using the format:
 /// `[modifier-]...[key]` where modifiers can be `ctrl`, `shift`, `alt`.
 ///
-/// Examples: `"ctrl-shift-c"`, `"ctrl-tab"`, `"ctrl-="`, `"alt-1"`
+/// Examples: `"ctrl-shift-c"`, `["ctrl-shift-c", "ctrl-insert"]`, `"ctrl-tab"`
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct KeybindingConfig {
   /// Copy selection to clipboard
-  pub copy: String,
+  pub copy: KeybindingList,
   /// Paste from clipboard
-  pub paste: String,
+  pub paste: KeybindingList,
   /// Zoom in terminal text
-  pub zoom_in: String,
+  pub zoom_in: KeybindingList,
   /// Zoom out terminal text
-  pub zoom_out: String,
+  pub zoom_out: KeybindingList,
   /// Reset zoom level
-  pub zoom_reset: String,
+  pub zoom_reset: KeybindingList,
   /// Switch to next tab
-  pub next_tab: String,
+  pub next_tab: KeybindingList,
   /// Switch to previous tab
-  pub previous_tab: String,
+  pub previous_tab: KeybindingList,
   /// Toggle search bar
-  pub toggle_search: String,
+  pub toggle_search: KeybindingList,
   /// Split pane horizontally
-  pub split_horizontal: String,
+  pub split_horizontal: KeybindingList,
   /// Split pane vertically
-  pub split_vertical: String,
+  pub split_vertical: KeybindingList,
   /// Close active pane
-  pub close_pane: String,
+  pub close_pane: KeybindingList,
   /// Focus next split pane
-  pub focus_next_pane: String,
+  pub focus_next_pane: KeybindingList,
   /// Focus previous split pane
-  pub focus_previous_pane: String,
+  pub focus_previous_pane: KeybindingList,
   /// Swap the two halves of the current split
-  pub swap_split_panes: String,
+  pub swap_split_panes: KeybindingList,
   /// Toggle fullscreen mode
-  pub toggle_fullscreen: String,
+  pub toggle_fullscreen: KeybindingList,
   /// Toggle tab bar visibility
-  pub toggle_tab_bar: String,
+  pub toggle_tab_bar: KeybindingList,
   /// Open a new tab with the default profile
-  pub new_tab: String,
+  pub new_tab: KeybindingList,
   /// Open a new tab with profile 1
-  pub new_tab_profile_1: String,
+  pub new_tab_profile_1: KeybindingList,
   /// Open a new tab with profile 2
-  pub new_tab_profile_2: String,
+  pub new_tab_profile_2: KeybindingList,
   /// Open a new tab with profile 3
-  pub new_tab_profile_3: String,
+  pub new_tab_profile_3: KeybindingList,
   /// Open a new tab with profile 4
-  pub new_tab_profile_4: String,
+  pub new_tab_profile_4: KeybindingList,
   /// Open a new tab with profile 5
-  pub new_tab_profile_5: String,
+  pub new_tab_profile_5: KeybindingList,
   /// Open a new tab with profile 6
-  pub new_tab_profile_6: String,
+  pub new_tab_profile_6: KeybindingList,
   /// Open a new tab with profile 7
-  pub new_tab_profile_7: String,
+  pub new_tab_profile_7: KeybindingList,
   /// Open a new tab with profile 8
-  pub new_tab_profile_8: String,
+  pub new_tab_profile_8: KeybindingList,
   /// Open a new tab with profile 9
-  pub new_tab_profile_9: String,
+  pub new_tab_profile_9: KeybindingList,
 }
 
 impl Default for KeybindingConfig {
   fn default() -> Self {
     Self {
-      copy: "ctrl-shift-c".to_string(),
-      paste: "ctrl-shift-v".to_string(),
-      zoom_in: "ctrl-=".to_string(),
-      zoom_out: "ctrl--".to_string(),
-      zoom_reset: "ctrl-0".to_string(),
-      next_tab: "ctrl-tab".to_string(),
-      previous_tab: "ctrl-shift-tab".to_string(),
-      toggle_search: "ctrl-shift-f".to_string(),
-      split_horizontal: "ctrl-shift-d".to_string(),
-      split_vertical: "ctrl-shift-e".to_string(),
-      close_pane: "ctrl-shift-w".to_string(),
-      focus_next_pane: "ctrl-shift-]".to_string(),
-      focus_previous_pane: "ctrl-shift-[".to_string(),
-      swap_split_panes: "ctrl-shift-x".to_string(),
+      copy: KeybindingList::new("ctrl-shift-c"),
+      paste: KeybindingList::new("ctrl-shift-v"),
+      zoom_in: KeybindingList::new("ctrl-="),
+      zoom_out: KeybindingList::new("ctrl--"),
+      zoom_reset: KeybindingList::new("ctrl-0"),
+      next_tab: KeybindingList::new("ctrl-tab"),
+      previous_tab: KeybindingList::new("ctrl-shift-tab"),
+      toggle_search: KeybindingList::new("ctrl-shift-f"),
+      split_horizontal: KeybindingList::new("ctrl-shift-d"),
+      split_vertical: KeybindingList::new("ctrl-shift-e"),
+      close_pane: KeybindingList::new("ctrl-shift-w"),
+      focus_next_pane: KeybindingList::new("ctrl-shift-]"),
+      focus_previous_pane: KeybindingList::new("ctrl-shift-["),
+      swap_split_panes: KeybindingList::new("ctrl-shift-x"),
       toggle_fullscreen: if cfg!(target_os = "macos") {
-        "f12".to_string()
+        KeybindingList::new("f12")
       } else {
-        "f11".to_string()
+        KeybindingList::new("f11")
       },
-      toggle_tab_bar: "ctrl-shift-b".to_string(),
-      new_tab: "ctrl-shift-t".to_string(),
-      new_tab_profile_1: "ctrl-shift-1".to_string(),
-      new_tab_profile_2: "ctrl-shift-2".to_string(),
-      new_tab_profile_3: "ctrl-shift-3".to_string(),
-      new_tab_profile_4: "ctrl-shift-4".to_string(),
-      new_tab_profile_5: "ctrl-shift-5".to_string(),
-      new_tab_profile_6: "ctrl-shift-6".to_string(),
-      new_tab_profile_7: "ctrl-shift-7".to_string(),
-      new_tab_profile_8: "ctrl-shift-8".to_string(),
-      new_tab_profile_9: "ctrl-shift-9".to_string(),
+      toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
+      new_tab: KeybindingList::new("ctrl-shift-t"),
+      new_tab_profile_1: KeybindingList::new("ctrl-shift-1"),
+      new_tab_profile_2: KeybindingList::new("ctrl-shift-2"),
+      new_tab_profile_3: KeybindingList::new("ctrl-shift-3"),
+      new_tab_profile_4: KeybindingList::new("ctrl-shift-4"),
+      new_tab_profile_5: KeybindingList::new("ctrl-shift-5"),
+      new_tab_profile_6: KeybindingList::new("ctrl-shift-6"),
+      new_tab_profile_7: KeybindingList::new("ctrl-shift-7"),
+      new_tab_profile_8: KeybindingList::new("ctrl-shift-8"),
+      new_tab_profile_9: KeybindingList::new("ctrl-shift-9"),
     }
   }
 }
@@ -424,13 +510,13 @@ mod tests {
   #[test]
   fn default_keybindings_parse_correctly() {
     let config = KeybindingConfig::default();
-    let copy = ParsedKeybinding::parse(&config.copy);
+    let copy = ParsedKeybinding::parse(config.copy.first().unwrap());
     assert!(copy.matches(true, true, false, false, "c"));
 
-    let zoom_in = ParsedKeybinding::parse(&config.zoom_in);
+    let zoom_in = ParsedKeybinding::parse(config.zoom_in.first().unwrap());
     assert!(zoom_in.matches(true, false, false, false, "="));
 
-    let zoom_out = ParsedKeybinding::parse(&config.zoom_out);
+    let zoom_out = ParsedKeybinding::parse(config.zoom_out.first().unwrap());
     assert!(zoom_out.matches(true, false, false, false, "-"));
   }
 
@@ -460,6 +546,31 @@ mod tests {
     assert_eq!(config.copy, deserialized.copy);
     assert_eq!(config.paste, deserialized.paste);
     assert_eq!(config.zoom_in, deserialized.zoom_in);
+  }
+
+  #[test]
+  fn keybinding_config_deserialize_multiple_bindings() {
+    let toml_str = r#"copy = ["ctrl-shift-c", "ctrl-insert"]"#;
+    let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
+
+    assert_eq!(
+      config.copy.iter().collect::<Vec<_>>(),
+      vec!["ctrl-shift-c", "ctrl-insert"]
+    );
+    assert!(config.copy.matches(true, true, false, false, "c"));
+    assert!(config.copy.matches(true, false, false, false, "insert"));
+  }
+
+  #[test]
+  fn keybinding_list_displays_multiple_bindings() {
+    let bindings = KeybindingList::from_vec(vec!["ctrl-shift-c".into(), "ctrl-insert".into()]);
+    assert_eq!(bindings.display_text(), "Ctrl+Shift+C / Ctrl+Insert");
+  }
+
+  #[test]
+  fn keybinding_list_serializes_single_binding_as_string() {
+    let bindings = KeybindingList::new("ctrl-shift-c");
+    assert_eq!(toml::to_string(&bindings).unwrap().trim(), "\"ctrl-shift-c\"");
   }
 
   #[test]

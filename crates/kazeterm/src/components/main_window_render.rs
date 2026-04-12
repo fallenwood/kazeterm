@@ -1,4 +1,3 @@
-use config::ParsedKeybinding;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
@@ -40,7 +39,7 @@ impl Render for MainWindow {
     let local_profiles = config.get_local_profiles_with_shells();
     let container_profiles = config.get_container_profiles_with_shells();
     let ssh_hosts = ::config::Config::get_ssh_hosts();
-    let new_tab_shortcut = ParsedKeybinding::parse(&config.keybindings.new_tab).display_text();
+    let new_tab_shortcut = config.keybindings.new_tab.display_text();
     let profile_shortcuts: Vec<String> = [
       &config.keybindings.new_tab_profile_1,
       &config.keybindings.new_tab_profile_2,
@@ -53,10 +52,9 @@ impl Render for MainWindow {
       &config.keybindings.new_tab_profile_9,
     ]
     .iter()
-    .map(|s| ParsedKeybinding::parse(s).display_text())
+    .map(|binding| binding.display_text())
     .collect();
-    let toggle_tab_bar_shortcut =
-      ParsedKeybinding::parse(&config.keybindings.toggle_tab_bar).display_text();
+    let toggle_tab_bar_shortcut = config.keybindings.toggle_tab_bar.display_text();
 
     // Get current window bounds to detect resize
     let current_bounds = window.bounds();
@@ -130,38 +128,23 @@ impl Render for MainWindow {
         let mods = &e.keystroke.modifiers;
         let key = &e.keystroke.key;
 
-        let kb_next = ParsedKeybinding::parse(&keybindings.next_tab);
-        let kb_prev = ParsedKeybinding::parse(&keybindings.previous_tab);
-        let kb_search = ParsedKeybinding::parse(&keybindings.toggle_search);
-        let kb_split_h = ParsedKeybinding::parse(&keybindings.split_horizontal);
-        let kb_split_v = ParsedKeybinding::parse(&keybindings.split_vertical);
-        let kb_close_pane = ParsedKeybinding::parse(&keybindings.close_pane);
-        let kb_focus_next_pane = ParsedKeybinding::parse(&keybindings.focus_next_pane);
-        let kb_focus_prev_pane = ParsedKeybinding::parse(&keybindings.focus_previous_pane);
-        let kb_swap_panes = ParsedKeybinding::parse(&keybindings.swap_split_panes);
-        let kb_fullscreen = ParsedKeybinding::parse(&keybindings.toggle_fullscreen);
-        let kb_toggle_tab_bar = ParsedKeybinding::parse(&keybindings.toggle_tab_bar);
-        let kb_new_tab = ParsedKeybinding::parse(&keybindings.new_tab);
-        let kb_new_tab_profiles: Vec<ParsedKeybinding> = (1..=9)
-          .map(|i| {
-            let field = match i {
-              1 => &keybindings.new_tab_profile_1,
-              2 => &keybindings.new_tab_profile_2,
-              3 => &keybindings.new_tab_profile_3,
-              4 => &keybindings.new_tab_profile_4,
-              5 => &keybindings.new_tab_profile_5,
-              6 => &keybindings.new_tab_profile_6,
-              7 => &keybindings.new_tab_profile_7,
-              8 => &keybindings.new_tab_profile_8,
-              9 => &keybindings.new_tab_profile_9,
-              _ => unreachable!(),
-            };
-            ParsedKeybinding::parse(field)
-          })
-          .collect();
+        let kb_new_tab_profiles = [
+          &keybindings.new_tab_profile_1,
+          &keybindings.new_tab_profile_2,
+          &keybindings.new_tab_profile_3,
+          &keybindings.new_tab_profile_4,
+          &keybindings.new_tab_profile_5,
+          &keybindings.new_tab_profile_6,
+          &keybindings.new_tab_profile_7,
+          &keybindings.new_tab_profile_8,
+          &keybindings.new_tab_profile_9,
+        ];
         let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
 
-        if kb_next.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        if keybindings
+          .next_tab
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           if tab_switcher_popup {
             this.show_tab_switcher(true, window, cx);
           } else {
@@ -169,7 +152,10 @@ impl Render for MainWindow {
             let next_ix = (current_ix + 1) % this.items.len();
             this.set_active_tab(next_ix, window, cx);
           }
-        } else if kb_prev.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .previous_tab
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           if tab_switcher_popup {
             this.show_tab_switcher(false, window, cx);
           } else {
@@ -181,27 +167,56 @@ impl Render for MainWindow {
             };
             this.set_active_tab(prev_ix, window, cx);
           }
-        } else if kb_search.matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        } else if keybindings
+          .toggle_search
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
           || (e.keystroke.key == "Escape" && this.search_visible)
         {
           this.toggle_search(window, cx);
-        } else if kb_split_h.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .split_horizontal
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.split_pane_horizontal(window, cx);
-        } else if kb_split_v.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .split_vertical
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.split_pane_vertical(window, cx);
-        } else if kb_close_pane.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .close_pane
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.close_active_pane(window, cx);
-        } else if kb_focus_next_pane.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .focus_next_pane
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.focus_next_pane(window, cx);
-        } else if kb_focus_prev_pane.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .focus_previous_pane
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.focus_prev_pane(window, cx);
-        } else if kb_swap_panes.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .swap_split_panes
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.swap_split_panes(window, cx);
-        } else if kb_fullscreen.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .toggle_fullscreen
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           window.toggle_fullscreen();
-        } else if kb_toggle_tab_bar.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .toggle_tab_bar
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.toggle_tab_bar(cx);
-        } else if kb_new_tab.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+        } else if keybindings
+          .new_tab
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
           this.insert_new_tab(window, cx);
         } else {
           // Check profile-specific new tab shortcuts (Ctrl+Shift+1..9)

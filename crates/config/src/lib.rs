@@ -27,7 +27,7 @@ pub mod migration;
 pub use migration::CURRENT_CONFIG_VERSION;
 
 mod keybinding;
-pub use keybinding::{KeybindingConfig, ParsedKeybinding};
+pub use keybinding::{KeybindingConfig, KeybindingList, ParsedKeybinding};
 
 pub mod alacritty_import;
 

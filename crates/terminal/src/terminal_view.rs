@@ -524,8 +524,7 @@ impl TerminalView {
     ];
 
     for binding in &passthrough_bindings {
-      let kb = config::ParsedKeybinding::parse(binding);
-      if kb.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
+      if binding.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
         return;
       }
     }

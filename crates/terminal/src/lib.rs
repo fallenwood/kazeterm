@@ -45,11 +45,9 @@ pub fn init(cx: &mut App, keybindings: &KeybindingConfig) {
 ///
 /// This is also called during hot-reload to update bindings.
 pub fn bind_terminal_keys(cx: &mut App, keybindings: &KeybindingConfig) {
-  cx.bind_keys([
+  let mut bindings = vec![
     KeyBinding::new("tab", SendTab, Some("Terminal")),
     KeyBinding::new("shift-tab", SendTabPrev, Some("Terminal")),
-    KeyBinding::new(&keybindings.copy, Copy, Some("Terminal")),
-    KeyBinding::new(&keybindings.paste, Paste, Some("Terminal")),
     // Page up/down are context-dependent and not customizable
     KeyBinding::new("pageup", SendPageUp, Some("Terminal && screen == alt")),
     KeyBinding::new("pagedown", SendPageDown, Some("Terminal && screen == alt")),
@@ -61,8 +59,38 @@ pub fn bind_terminal_keys(cx: &mut App, keybindings: &KeybindingConfig) {
     ),
     KeyBinding::new("shift-pageup", ScrollPageUp, Some("Terminal")),
     KeyBinding::new("shift-pagedown", ScrollPageDown, Some("Terminal")),
-    KeyBinding::new(&keybindings.zoom_in, ZoomIn, Some("Terminal")),
-    KeyBinding::new(&keybindings.zoom_out, ZoomOut, Some("Terminal")),
-    KeyBinding::new(&keybindings.zoom_reset, ZoomReset, Some("Terminal")),
-  ]);
+  ];
+
+  bindings.extend(
+    keybindings
+      .copy
+      .iter()
+      .map(|binding| KeyBinding::new(binding, Copy, Some("Terminal"))),
+  );
+  bindings.extend(
+    keybindings
+      .paste
+      .iter()
+      .map(|binding| KeyBinding::new(binding, Paste, Some("Terminal"))),
+  );
+  bindings.extend(
+    keybindings
+      .zoom_in
+      .iter()
+      .map(|binding| KeyBinding::new(binding, ZoomIn, Some("Terminal"))),
+  );
+  bindings.extend(
+    keybindings
+      .zoom_out
+      .iter()
+      .map(|binding| KeyBinding::new(binding, ZoomOut, Some("Terminal"))),
+  );
+  bindings.extend(
+    keybindings
+      .zoom_reset
+      .iter()
+      .map(|binding| KeyBinding::new(binding, ZoomReset, Some("Terminal"))),
+  );
+
+  cx.bind_keys(bindings);
 }

@@ -1,4 +1,4 @@
-use config::ParsedKeybinding;
+use config::KeybindingList;
 use gpui::*;
 use gpui_component::{
   Icon, IconName,
@@ -8,9 +8,9 @@ use terminal::TerminalView;
 
 use super::main_window::MainWindow;
 
-/// Format a config keybinding string for display in menu items.
-fn kb_hint(keybinding: &str) -> String {
-  ParsedKeybinding::parse(keybinding).display_text()
+/// Format configured keybindings for display in menu items.
+fn kb_hint(keybinding: &KeybindingList) -> String {
+  keybinding.display_text()
 }
 
 pub(super) fn build_terminal_context_menu(
