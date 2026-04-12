@@ -133,6 +133,16 @@ impl TerminalElement {
             terminal.mouse_move(e, cx);
           })
         }
+
+        // Track hover state for split pane border highlighting
+        let hovered_now = hitbox.is_hovered(window);
+        let was_hovered = terminal_view.read(cx).is_hovered;
+        if hovered_now != was_hovered {
+          terminal_view.update(cx, |view, cx| {
+            view.is_hovered = hovered_now;
+            cx.notify();
+          });
+        }
       }
     });
 

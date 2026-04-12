@@ -282,6 +282,7 @@ impl SplitPane {
   pub fn render(
     &self,
     active_pane_id: Option<PaneId>,
+    has_splits: bool,
     path: Vec<bool>,
     window: &mut Window,
     cx: &mut Context<MainWindow>,
@@ -293,12 +294,40 @@ impl SplitPane {
           .map(|c| c.right_click_context_menu)
           .unwrap_or(false);
 
+        let is_active = active_pane_id.is_some_and(|active| active == *id);
         let is_inactive = active_pane_id.is_some_and(|active| active != *id);
         terminal.update(cx, |tv, _| {
           tv.is_inactive_pane = is_inactive;
         });
 
-        let base = div().size_full().child(terminal.clone());
+        let colors = cx.global::<SettingsStore>().theme().colors().clone();
+        let pane_id = ElementId::from(("split-pane-terminal", id.0));
+
+        let is_hovered = terminal.read(cx).is_hovered;
+
+        let border_color = if has_splits && is_active {
+          colors.border_focused
+        } else if has_splits && is_hovered {
+          colors.border_variant
+        } else if has_splits {
+          colors.border_transparent
+        } else {
+          colors.border_transparent
+        };
+
+        let base = if has_splits {
+          div()
+            .id(pane_id)
+            .size_full()
+            .border_2()
+            .border_color(border_color)
+            .child(terminal.clone())
+        } else {
+          div()
+            .id(pane_id)
+            .size_full()
+            .child(terminal.clone())
+        };
 
         if right_click_context_menu {
           let terminal = terminal.clone();
@@ -335,8 +364,8 @@ impl SplitPane {
         let mut second_path = path.clone();
         second_path.push(true);
 
-        let first_element = first.render(active_pane_id, first_path, window, cx);
-        let second_element = second.render(active_pane_id, second_path, window, cx);
+        let first_element = first.render(active_pane_id, has_splits, first_path, window, cx);
+        let second_element = second.render(active_pane_id, has_splits, second_path, window, cx);
 
         let path_id = path_to_usize(&path);
         let container_id = ElementId::from(("split-container", path_id));
@@ -606,6 +635,9 @@ impl SplitContainer {
   }
 
   pub fn render(&self, window: &mut Window, cx: &mut Context<MainWindow>) -> AnyElement {
-    self.root.render(self.active_pane_id, vec![], window, cx)
+    let has_splits = matches!(self.root, SplitPane::Split { .. });
+    self
+      .root
+      .render(self.active_pane_id, has_splits, vec![], window, cx)
   }
 }

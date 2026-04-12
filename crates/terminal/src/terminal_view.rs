@@ -78,6 +78,8 @@ pub struct TerminalView {
   /// Whether this terminal is in an inactive (unfocused) split pane.
   /// When true, colors are desaturated to visually distinguish it.
   pub is_inactive_pane: bool,
+  /// Whether the mouse cursor is currently over this terminal view.
+  pub is_hovered: bool,
   /// Scrollbar drag state: stores (offset from thumb top to click, last mouse Y in pixels)
   pub scrollbar_drag_state: Option<(f32, f32)>,
   _subscriptions: Vec<gpui::Subscription>,
@@ -173,6 +175,7 @@ impl TerminalView {
       scrollbar_drag_state: None,
       index,
       is_inactive_pane: false,
+      is_hovered: false,
       _subscriptions: vec![focus_in, focus_out],
       _terminal_subscriptions: terminal_subscriptions,
       momentum_scroll_task: Task::ready(()),
