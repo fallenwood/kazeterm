@@ -296,7 +296,7 @@ impl SettingsStore {
 
       let config = app.global::<config::Config>();
       theme.font_family = config.ui_font_family.clone().into();
-      theme.font_size = gpui::px(config.font_size);
+      theme.font_size = gpui::px(config.ui_font_size);
       theme.mono_font_family = config.font_family.clone().into();
       theme.mono_font_size = gpui::px(config.font_size);
     });
