@@ -413,7 +413,7 @@ fn migrate_v20260412_3_to_20260414_1(value: &mut Value) {
   }
 }
 
-/// Move theme/theme_mode from [appearance] to [colors], and bold_is_bright from [terminal] to [colors].
+/// Move theme/theme_mode from [appearance] to [colors], and bold_as_bright from [terminal] to [colors].
 fn migrate_v20260414_1_to_20260414_2(value: &mut Value) {
   if let Value::Table(table) = value {
     // Move theme and theme_mode from appearance to colors
@@ -434,14 +434,14 @@ fn migrate_v20260414_1_to_20260414_2(value: &mut Value) {
       }
     }
 
-    // Move bold_is_bright from terminal to colors
+    // Move bold_as_bright from terminal to colors
     if let Some(Value::Table(terminal)) = table.get_mut("terminal") {
-      if let Some(v) = terminal.remove("bold_is_bright") {
+      if let Some(v) = terminal.remove("bold_as_bright") {
         let colors = table
           .entry("colors")
           .or_insert_with(|| Value::Table(toml::map::Map::new()));
         if let Value::Table(colors_table) = colors {
-          colors_table.insert("bold_is_bright".to_string(), v);
+          colors_table.insert("bold_as_bright".to_string(), v);
         }
       }
     }

@@ -25,7 +25,7 @@ impl TerminalElement {
     text_style: &TextStyle,
     hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
     minimum_contrast: f32,
-    bold_is_bright: bool,
+    bold_as_bright: bool,
     cx: &App,
   ) -> (Vec<LayoutRect>, Vec<BatchedTextRun>) {
     let theme = cx.theme();
@@ -59,7 +59,7 @@ impl TerminalElement {
         }
 
         // Bold-as-bright: promote standard named colors to their bright variant
-        if bold_is_bright
+        if bold_as_bright
           && cell
             .flags
             .intersects(alacritty_terminal::term::cell::Flags::BOLD)

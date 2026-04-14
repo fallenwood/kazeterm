@@ -81,7 +81,7 @@ impl Element for TerminalElement {
         let config = cx.global::<::config::Config>();
         let zoom_state = cx.global::<themeing::ZoomState>();
         let minimap_enabled = config.terminal.minimap_enabled;
-        let bold_is_bright = config.colors.bold_is_bright;
+        let bold_as_bright = config.colors.bold_as_bright;
 
         let font_family = gpui::SharedString::from(config.font.family.clone());
         let line_height_multiplier = 1.18_f32;
@@ -217,7 +217,7 @@ impl Element for TerminalElement {
             .as_ref()
             .map(|last_hovered_word| (link_style, &last_hovered_word.word_match)),
           minimum_contrast,
-          bold_is_bright,
+          bold_as_bright,
           cx,
         );
 

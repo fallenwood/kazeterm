@@ -40,7 +40,7 @@ pub struct ColorsConfig {
   pub theme: String,
   pub theme_mode: ThemeMode,
   /// Use bright ANSI colors for bold text instead of only increasing font weight.
-  pub bold_is_bright: bool,
+  pub bold_as_bright: bool,
 }
 
 impl Default for ColorsConfig {
@@ -48,7 +48,7 @@ impl Default for ColorsConfig {
     Self {
       theme: "one".to_string(),
       theme_mode: ThemeMode::default(),
-      bold_is_bright: false,
+      bold_as_bright: false,
     }
   }
 }

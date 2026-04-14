@@ -183,7 +183,7 @@ mod tests {
       colors: ColorsConfig {
         theme: "one".into(),
         theme_mode: ThemeMode::Dark,
-        bold_is_bright: false,
+        bold_as_bright: false,
       },
       appearance: AppearanceConfig {
         themes_path: None,
