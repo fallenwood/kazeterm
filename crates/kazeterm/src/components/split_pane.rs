@@ -291,7 +291,7 @@ impl SplitPane {
       SplitPane::Terminal { id, terminal } => {
         let right_click_context_menu = cx
           .try_global::<config::Config>()
-          .map(|c| c.right_click_context_menu)
+          .map(|c| c.terminal.right_click_context_menu)
           .unwrap_or(false);
 
         let is_active = active_pane_id.is_some_and(|active| active == *id);
@@ -355,7 +355,7 @@ impl SplitPane {
         let direction = *direction;
         let divider_width = cx
           .try_global::<config::Config>()
-          .map(|config| config.get_split_pane_divider_width())
+          .map(|config| config.pane.get_divider_width())
           .unwrap_or(6.0);
         let colors = cx.global::<SettingsStore>().theme().colors().clone();
 

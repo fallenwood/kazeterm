@@ -17,7 +17,7 @@ impl MainWindow {
   pub(crate) fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.search_visible = !self.search_visible;
     if self.search_visible {
-      let font_size = cx.global::<::config::Config>().font_size;
+      let font_size = cx.global::<::config::Config>().font.size;
       if let Some(terminal) = self.active_terminal() {
         self.search_bar.update(cx, |search_bar, _cx| {
           search_bar.set_terminal_view(terminal);

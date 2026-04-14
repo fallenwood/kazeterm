@@ -15,17 +15,17 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
   use std::sync::Arc;
 
   // Determine if we should use dark mode
-  let is_system = matches!(config.theme_mode, ThemeMode::System);
-  let is_dark = match config.theme_mode {
+  let is_system = matches!(config.colors.theme_mode, ThemeMode::System);
+  let is_dark = match config.colors.theme_mode {
     ThemeMode::Light => false,
     ThemeMode::Dark => true,
     ThemeMode::System => system_is_dark,
   };
 
   // Load theme from assets by name
-  let (theme_name, mut palette) = config::load_theme(&config.theme, is_dark);
+  let (theme_name, mut palette) = config::load_theme(&config.colors.theme, is_dark);
 
-  let opacity = config.get_background_opacity();
+  let opacity = config.appearance.get_background_opacity();
   if opacity < 1.0 {
     palette.border = apply_background_opacity(palette.border, opacity);
     palette.border_variant = apply_background_opacity(palette.border_variant, opacity);
@@ -61,7 +61,7 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
 
   themeing::SettingsStore {
     active_theme: Arc::new(themeing::Theme {
-      id: config.theme.clone(),
+      id: config.colors.theme.clone(),
       name: SharedString::from(theme_name),
       styles: themeing::ThemeStyles { colors: palette },
     }),

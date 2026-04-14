@@ -35,20 +35,20 @@ const DEFAULT_TAB_TITLE_CHANGE_DELAY: Duration = Duration::from_millis(200);
 /// Returns the cursor blink interval from config, or the default constant.
 fn cursor_blink_interval(cx: &gpui::App) -> Duration {
   cx.try_global::<config::Config>()
-    .map(|c| c.get_cursor_blink_interval())
+    .map(|c| c.cursor.get_blink_interval())
     .unwrap_or(CURSOR_BLINK_INTERVAL)
 }
 
 fn tab_title_change_delay(cx: &gpui::App) -> Duration {
   cx.try_global::<config::Config>()
-    .map(|c| c.get_tab_title_change_delay())
+    .map(|c| c.tab.get_title_change_delay())
     .unwrap_or(DEFAULT_TAB_TITLE_CHANGE_DELAY)
 }
 
 /// Returns whether cursor blinking is enabled from config.
 fn cursor_blink_enabled(cx: &gpui::App) -> bool {
   cx.try_global::<config::Config>()
-    .map(|c| c.cursor_blink)
+    .map(|c| c.cursor.blink)
     .unwrap_or(true)
 }
 

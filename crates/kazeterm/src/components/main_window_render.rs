@@ -33,7 +33,7 @@ impl Render for MainWindow {
     let search_visible = self.search_visible;
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
-    let vertical_tabs = config.vertical_tabs;
+    let vertical_tabs = config.tab.vertical;
     let tab_bar_visible = self.tab_bar_visible;
     let setting_store = cx.global::<SettingsStore>();
     let local_profiles = config.get_local_profiles_with_shells();
@@ -139,7 +139,7 @@ impl Render for MainWindow {
           &keybindings.new_tab_profile_8,
           &keybindings.new_tab_profile_9,
         ];
-        let tab_switcher_popup = cx.global::<config::Config>().tab_switcher_popup;
+        let tab_switcher_popup = cx.global::<config::Config>().tab.switcher_popup;
 
         if keybindings
           .next_tab

@@ -80,7 +80,7 @@ fn init_theme_system(config: &Config) {
   ::config::register_embedded_theme_lister(crate::assets::embedded_theme_lister);
 
   // Set custom themes path if configured
-  if let Some(ref themes_path) = config.themes_path {
+  if let Some(ref themes_path) = config.appearance.themes_path {
     let path = PathBuf::from(themes_path);
     if path.exists() && path.is_dir() {
       tracing::info!("Using custom themes path: {}", path.display());
@@ -170,11 +170,11 @@ fn detect_system_dark_mode() -> bool {
 /// Open a new Kazeterm window using the current global config.
 fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
   let config = cx.global::<Config>().clone();
-  let window_width = config.window_width;
-  let window_height = config.window_height;
-  let start_maximized = config.start_maximized;
-  let background_opacity = config.get_background_opacity();
-  let background_blur = config.background_blur;
+  let window_width = config.window.width;
+  let window_height = config.window.height;
+  let start_maximized = config.window.start_maximized;
+  let background_opacity = config.appearance.get_background_opacity();
+  let background_blur = config.appearance.background_blur;
 
   cx.spawn(async move |cx| {
     let window_background = if background_opacity < 1.0 {

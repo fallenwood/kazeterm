@@ -295,7 +295,7 @@ impl MainWindow {
       // If no tabs left, either close the window or insert a new tab
       if self.items.is_empty() {
         let config = cx.global::<::config::Config>();
-        if config.close_on_last_tab {
+        if config.tab.close_on_last {
           window.remove_window();
         } else {
           self.insert_new_tab(window, cx);
@@ -413,14 +413,17 @@ pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -
 
 #[cfg(test)]
 mod tests {
-  use config::{Config, Profile};
+  use config::{Config, Profile, TerminalConfig};
 
   use super::resolve_tab_launch;
 
   #[test]
   fn resolve_profile_launch_uses_default_profile_args() {
     let config = Config {
-      default_profile: Some("login-shell".to_string()),
+      terminal: TerminalConfig {
+        default_profile: Some("login-shell".to_string()),
+        ..TerminalConfig::default()
+      },
       profiles: vec![Profile {
         name: "login-shell".to_string(),
         shell: "bash".to_string(),

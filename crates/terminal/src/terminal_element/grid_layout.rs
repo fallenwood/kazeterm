@@ -25,6 +25,7 @@ impl TerminalElement {
     text_style: &TextStyle,
     hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
     minimum_contrast: f32,
+    bold_as_bright: bool,
     cx: &App,
   ) -> (Vec<LayoutRect>, Vec<BatchedTextRun>) {
     let theme = cx.theme();
@@ -55,6 +56,15 @@ impl TerminalElement {
           .contains(alacritty_terminal::term::cell::Flags::INVERSE)
         {
           std::mem::swap(&mut fg, &mut bg);
+        }
+
+        // Bold-as-bright: promote standard named colors to their bright variant
+        if bold_as_bright
+          && cell
+            .flags
+            .intersects(alacritty_terminal::term::cell::Flags::BOLD)
+        {
+          fg = to_bright_named(fg);
         }
 
         if !matches!(bg, Color::Named(NamedColor::Background)) {
@@ -227,5 +237,24 @@ impl TerminalElement {
     }
 
     result
+  }
+}
+
+/// Promote a standard named ANSI color (0–7) to its bright variant (8–15).
+/// Non-standard named colors, indexed colors, and true colors are returned unchanged.
+fn to_bright_named(color: Color) -> Color {
+  match color {
+    Color::Named(n) => Color::Named(match n {
+      NamedColor::Black => NamedColor::BrightBlack,
+      NamedColor::Red => NamedColor::BrightRed,
+      NamedColor::Green => NamedColor::BrightGreen,
+      NamedColor::Yellow => NamedColor::BrightYellow,
+      NamedColor::Blue => NamedColor::BrightBlue,
+      NamedColor::Magenta => NamedColor::BrightMagenta,
+      NamedColor::Cyan => NamedColor::BrightCyan,
+      NamedColor::White => NamedColor::BrightWhite,
+      other => other,
+    }),
+    other => other,
   }
 }
