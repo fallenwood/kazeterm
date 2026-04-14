@@ -205,7 +205,7 @@ impl Terminal {
     // copy_on_select: auto-copy selection to clipboard when mouse is released
     if cx
       .try_global::<config::Config>()
-      .is_some_and(|c| c.copy_on_select)
+      .is_some_and(|c| c.terminal.copy_on_select)
     {
       self
         .events

@@ -282,10 +282,10 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
     FileChangeType::Config => {
       // Reload the entire config (which includes theme settings)
       let new_config = Config::load();
-      tracing::info!("Reloaded config: theme={}", new_config.theme);
+      tracing::info!("Reloaded config: theme={}", new_config.appearance.theme);
 
       // Update the themes path if it changed
-      if let Some(themes_path) = &new_config.themes_path {
+      if let Some(themes_path) = &new_config.appearance.themes_path {
         let path = PathBuf::from(themes_path);
         if path.exists() && path.is_dir() {
           ::config::set_custom_themes_path(path);
@@ -327,7 +327,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       // Re-initialize gpui-component theme
       themeing::SettingsStore::init_gpui_component_theme(cx);
 
-      tracing::info!("Theme reloaded successfully: {}", config.theme);
+      tracing::info!("Theme reloaded successfully: {}", config.appearance.theme);
     }
   }
 }
@@ -361,9 +361,9 @@ pub fn watch_additional_path(path: PathBuf) {
 /// `background_blur` is enabled) so the desktop behind it is visible.
 /// When fully opaque, the window is set back to opaque mode.
 fn update_window_background_appearance(cx: &mut App, config: &Config) {
-  let opacity = config.get_background_opacity();
+  let opacity = config.appearance.get_background_opacity();
   let appearance = if opacity < 1.0 {
-    if config.background_blur {
+    if config.appearance.background_blur {
       WindowBackgroundAppearance::Blurred
     } else {
       WindowBackgroundAppearance::Transparent

@@ -215,13 +215,13 @@ pub fn import_alacritty_config_str(
 pub fn apply_import(config: &mut Config, result: AlacrittyImportResult) {
   let patch = result.config_patch;
   if let Some(v) = patch.font_family {
-    config.font_family = v;
+    config.font.family = v;
   }
   if let Some(v) = patch.font_size {
-    config.font_size = v;
+    config.font.size = v;
   }
   if let Some(v) = patch.background_opacity {
-    config.background_opacity = v;
+    config.appearance.background_opacity = v;
   }
   if let Some(profile) = patch.shell_profile {
     // Replace or add an "Alacritty" profile
@@ -232,31 +232,31 @@ pub fn apply_import(config: &mut Config, result: AlacrittyImportResult) {
     }
   }
   if let Some(v) = patch.scrollback_lines {
-    config.scrollback_lines = v;
+    config.terminal.scrollback_lines = v;
   }
   if let Some(v) = patch.cursor_shape {
-    config.cursor_shape = v;
+    config.cursor.shape = v;
   }
   if let Some(v) = patch.cursor_blink {
-    config.cursor_blink = v;
+    config.cursor.blink = v;
   }
   if let Some(v) = patch.cursor_blink_interval {
-    config.cursor_blink_interval = v;
+    config.cursor.blink_interval = v;
   }
   if let Some(v) = patch.osc52 {
-    config.osc52 = v;
+    config.terminal.osc52 = v;
   }
   if let Some(v) = patch.copy_on_select {
-    config.copy_on_select = v;
+    config.terminal.copy_on_select = v;
   }
   if !patch.env.is_empty() {
-    config.env = patch.env;
+    config.terminal.env = patch.env;
   }
   if let Some(v) = patch.working_directory {
-    config.working_directory = Some(v);
+    config.terminal.working_directory = Some(v);
   }
   if let Some(ref theme_file) = result.theme {
-    config.theme = theme_name_to_id(&theme_file.name);
+    config.appearance.theme = theme_name_to_id(&theme_file.name);
   }
 }
 
@@ -538,10 +538,10 @@ foreground = "#ffffff"
     let mut config = Config::default();
     apply_import(&mut config, result);
 
-    assert_eq!(config.font_family, "Fira Code");
-    assert_eq!(config.font_size, 16.0);
-    assert!((config.background_opacity - 0.85).abs() < 0.001);
-    assert_eq!(config.theme, "alacritty-import");
+    assert_eq!(config.font.family, "Fira Code");
+    assert_eq!(config.font.size, 16.0);
+    assert!((config.appearance.background_opacity - 0.85).abs() < 0.001);
+    assert_eq!(config.appearance.theme, "alacritty-import");
   }
 
   #[test]
@@ -685,13 +685,13 @@ working_directory = "/tmp"
     let mut config = Config::default();
     apply_import(&mut config, result);
 
-    assert_eq!(config.scrollback_lines, 5000);
-    assert_eq!(config.cursor_shape, "underline");
-    assert_eq!(config.cursor_blink, false);
-    assert_eq!(config.cursor_blink_interval, 600);
-    assert_eq!(config.osc52, "copy_paste");
-    assert_eq!(config.copy_on_select, true);
-    assert_eq!(config.env.get("MY_VAR").map(|s| s.as_str()), Some("test"));
-    assert_eq!(config.working_directory.as_deref(), Some("/tmp"));
+    assert_eq!(config.terminal.scrollback_lines, 5000);
+    assert_eq!(config.cursor.shape, "underline");
+    assert_eq!(config.cursor.blink, false);
+    assert_eq!(config.cursor.blink_interval, 600);
+    assert_eq!(config.terminal.osc52, "copy_paste");
+    assert_eq!(config.terminal.copy_on_select, true);
+    assert_eq!(config.terminal.env.get("MY_VAR").map(|s| s.as_str()), Some("test"));
+    assert_eq!(config.terminal.working_directory.as_deref(), Some("/tmp"));
   }
 }

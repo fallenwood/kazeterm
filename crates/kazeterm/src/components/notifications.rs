@@ -16,7 +16,7 @@ impl MainWindow {
     reason: NotificationReason,
     cx: &mut Context<Self>,
   ) {
-    let threshold_secs = cx.global::<config::Config>().long_running_threshold_secs;
+    let threshold_secs = cx.global::<config::Config>().notification.long_running_threshold_secs;
     let idle_duration = terminal_view
       .read(cx)
       .terminal()
@@ -24,7 +24,7 @@ impl MainWindow {
       .last_input_time
       .elapsed();
 
-    let interval_secs = cx.global::<config::Config>().notification_interval_secs;
+    let interval_secs = cx.global::<config::Config>().notification.interval_secs;
     let interval_ok = match self.last_notification_time {
       Some(last) => last.elapsed() >= std::time::Duration::from_secs(interval_secs),
       None => true,

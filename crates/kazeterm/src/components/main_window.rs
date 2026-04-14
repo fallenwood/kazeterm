@@ -125,7 +125,7 @@ impl MainWindow {
 
     // Try to restore previous workspace
     let config = cx.global::<::config::Config>();
-    if config.restore_workspace {
+    if config.window.restore_workspace {
       if let Some(state) = WorkspaceState::load() {
         main_window.restore_workspace(state, window, cx);
         WorkspaceState::delete();

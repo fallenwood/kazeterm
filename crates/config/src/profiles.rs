@@ -79,7 +79,7 @@ impl Config {
       return None;
     }
 
-    if let Some(ref default_name) = self.default_profile {
+    if let Some(ref default_name) = self.terminal.default_profile {
       tracing::debug!("Looking for default profile: {}", default_name);
       if let Some(profile) = self.profiles.iter().find(|p| &p.name == default_name) {
         return Some(profile);
@@ -154,9 +154,10 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-  use std::collections::HashMap;
-
-  use crate::{CURRENT_CONFIG_VERSION, Config, KeybindingConfig, Profile, ThemeMode};
+  use crate::{
+    CURRENT_CONFIG_VERSION, AppearanceConfig, Config, CursorConfig, FontConfig, KeybindingConfig,
+    NotificationConfig, PaneConfig, Profile, TabConfig, TerminalConfig, ThemeMode, WindowConfig,
+  };
 
   #[test]
   fn get_profile_helpers() {
@@ -178,44 +179,39 @@ mod tests {
     let config = Config {
       version: CURRENT_CONFIG_VERSION.to_string(),
       imports: vec![],
-      theme: "one".into(),
-      theme_mode: ThemeMode::Dark,
-      themes_path: None,
-      default_profile: Some("two".into()),
+      appearance: AppearanceConfig {
+        theme: "one".into(),
+        theme_mode: ThemeMode::Dark,
+        themes_path: None,
+        background_opacity: 1.0,
+        background_blur: false,
+      },
+      font: FontConfig {
+        size: 12.0,
+        family: "Cascadia Code".into(),
+        #[cfg(target_os = "windows")]
+        ui_family: "Segoe UI".into(),
+        #[cfg(not(target_os = "windows"))]
+        ui_family: "Noto Sans".into(),
+        ui_size: 12.0,
+      },
+      window: WindowConfig {
+        width: 100.0,
+        height: 50.0,
+        start_maximized: false,
+        restore_workspace: true,
+      },
+      tab: TabConfig::default(),
+      pane: PaneConfig::default(),
+      terminal: TerminalConfig {
+        default_profile: Some("two".into()),
+        ..TerminalConfig::default()
+      },
+      cursor: CursorConfig::default(),
+      notification: NotificationConfig::default(),
       profiles: profiles.clone(),
-      font_size: 12.0,
-      font_family: "Cascadia Code".into(),
-      #[cfg(target_os = "windows")]
-      ui_font_family: "Segoe UI".into(),
-      #[cfg(not(target_os = "windows"))]
-      ui_font_family: "Noto Sans".into(),
-      ui_font_size: 12.0,
-      window_width: 100.0,
-      window_height: 50.0,
-      split_pane_divider_width: 6.0,
-      inactive_pane_opacity: 0.6,
-      start_maximized: false,
-      container_profiles: vec![],
-      minimap_enabled: false,
-      vertical_tabs: false,
-      close_on_last_tab: true,
-      tab_switcher_popup: true,
-      background_opacity: 1.0,
-      background_blur: false,
       keybindings: KeybindingConfig::default(),
-      long_running_threshold_secs: 10,
-      notification_interval_secs: 0,
-      tab_title_change_delay_ms: 200,
-      scrollback_lines: 10_000,
-      cursor_shape: "block".into(),
-      cursor_blink: true,
-      cursor_blink_interval: 750,
-      osc52: "copy_only".into(),
-      copy_on_select: false,
-      right_click_context_menu: true,
-      restore_workspace: true,
-      env: HashMap::new(),
-      working_directory: None,
+      container_profiles: vec![],
     };
 
     // get_profile

@@ -36,138 +36,33 @@ pub use profiles::Profile;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
-pub struct Config {
-  /// Config file version in YYYYMMDD.Rev format (e.g., "20260220.1")
-  pub version: String,
-  /// Additional config files to merge after the main `kazeterm.toml`.
-  /// Imported files override the base config, and later imports override earlier ones.
-  #[serde(default)]
-  pub imports: Vec<String>,
+pub struct AppearanceConfig {
   pub theme: String,
   pub theme_mode: ThemeMode,
-  /// Custom themes directory path
-  /// Themes in this directory take priority over embedded themes
+  /// Custom themes directory path.
+  /// Themes in this directory take priority over embedded themes.
   pub themes_path: Option<String>,
-  pub default_profile: Option<String>,
-  #[serde(default)]
-  pub profiles: Vec<Profile>,
-  pub font_size: f32,
-  pub font_family: String,
-  pub ui_font_family: String,
-  pub ui_font_size: f32,
-  pub window_width: f32,
-  pub window_height: f32,
-  /// Width of split pane divider drag handles in pixels.
-  pub split_pane_divider_width: f32,
-  /// Opacity applied to inactive (unfocused) split panes to visually distinguish them.
-  /// 0.0 = fully transparent, 1.0 = no dimming. Default is 0.6.
-  pub inactive_pane_opacity: f32,
-  /// Open the main window maximized on application startup.
-  pub start_maximized: bool,
-  #[serde(skip)]
-  pub container_profiles: Vec<Profile>,
-  /// Enable the terminal minimap (shows a zoomed-out preview of scrollback)
-  pub minimap_enabled: bool,
-  /// Render tabs vertically in a left sidebar instead of horizontally at the top
-  pub vertical_tabs: bool,
-  /// Close the application when the last tab is closed
-  /// When false (default), a new tab is created instead
-  pub close_on_last_tab: bool,
-  /// Show a tab switcher popup when using Ctrl+Tab / Ctrl+Shift+Tab
-  /// When false, tabs switch directly without showing a popup
-  pub tab_switcher_popup: bool,
-  /// Window background opacity (0.0 = fully transparent, 1.0 = fully opaque)
-  /// Values between 0.0 and 1.0 allow seeing through the terminal window
+  /// Window background opacity (0.0 = fully transparent, 1.0 = fully opaque).
+  /// Values between 0.0 and 1.0 allow seeing through the terminal window.
   pub background_opacity: f32,
   /// Blur the desktop background behind the window instead of plain transparency.
   /// Only takes effect when background_opacity < 1.0. Not supported on all platforms.
   pub background_blur: bool,
-  /// Custom keyboard shortcuts
-  pub keybindings: KeybindingConfig,
-  /// Minimum idle time (in seconds) since last input before a command completion
-  /// triggers a native OS notification. Set to 0 to notify on every prompt return.
-  pub long_running_threshold_secs: u64,
-  /// Minimum interval (in seconds) between consecutive OS notifications.
-  /// Prevents notification spam from rapid command completions.
-  /// Set to 0 to allow every notification. Default is 5 seconds.
-  pub notification_interval_secs: u64,
-  /// Delay before applying terminal-driven tab title changes, in milliseconds.
-  /// Helps avoid rapid title churn from shells or apps that update the title frequently.
-  pub tab_title_change_delay_ms: u64,
-  /// Maximum number of lines in the scrollback buffer.
-  /// Higher values use more memory. Default is 10000.
-  pub scrollback_lines: u32,
-  /// Default cursor shape: "block", "underline", or "beam"
-  pub cursor_shape: String,
-  /// Whether the cursor blinks
-  pub cursor_blink: bool,
-  /// Cursor blink interval in milliseconds
-  pub cursor_blink_interval: u64,
-  /// OSC 52 clipboard access mode: "disabled", "copy_only", "paste_only", "copy_paste"
-  pub osc52: String,
-  /// Automatically copy selected text to the clipboard
-  pub copy_on_select: bool,
-  /// Show a context menu on right-click instead of the default copy/paste behavior
-  pub right_click_context_menu: bool,
-  /// Additional environment variables to set for the terminal shell
-  #[serde(default)]
-  pub env: HashMap<String, String>,
-  /// Default working directory for new terminals.
-  /// Per-profile working_directory takes priority over this setting.
-  pub working_directory: Option<String>,
-  /// Automatically restore the previous workspace (tabs, splits, working directories)
-  /// on application launch. Default: true.
-  pub restore_workspace: bool,
 }
 
-impl Default for Config {
+impl Default for AppearanceConfig {
   fn default() -> Self {
     Self {
-      version: CURRENT_CONFIG_VERSION.to_string(),
-      imports: Vec::new(),
       theme: "one".to_string(),
       theme_mode: ThemeMode::default(),
       themes_path: None,
-      default_profile: None,
-      profiles: profiles::default_profiles(),
-      font_size: 18.0,
-      font_family: "Cascadia Code NF".to_string(),
-      #[cfg(target_os = "windows")]
-      ui_font_family: "Segoe UI".to_string(),
-      #[cfg(not(target_os = "windows"))]
-      ui_font_family: "Noto Sans".to_string(),
-      ui_font_size: 18.0,
-      window_width: 800.0,
-      window_height: 600.0,
-      split_pane_divider_width: 6.0,
-      inactive_pane_opacity: 0.6,
-      start_maximized: false,
-      container_profiles: profiles::detect_container_profiles(),
-      minimap_enabled: false,
-      vertical_tabs: false,
-      close_on_last_tab: true,
-      tab_switcher_popup: true,
       background_opacity: 1.0,
       background_blur: false,
-      keybindings: KeybindingConfig::default(),
-      long_running_threshold_secs: 10,
-      notification_interval_secs: 0,
-      tab_title_change_delay_ms: 200,
-      scrollback_lines: 10_000,
-      cursor_shape: "block".to_string(),
-      cursor_blink: true,
-      cursor_blink_interval: 750,
-      osc52: "copy_only".to_string(),
-      copy_on_select: false,
-      right_click_context_menu: true,
-      env: HashMap::new(),
-      working_directory: None,
-      restore_workspace: true,
     }
   }
 }
 
-impl Config {
+impl AppearanceConfig {
   /// Get the background opacity clamped to valid range [0.0, 1.0]
   pub fn get_background_opacity(&self) -> f32 {
     #[cfg(target_os = "linux")]
@@ -181,31 +76,260 @@ impl Config {
       (self.background_opacity / 2.0).clamp(0.0, 1.0)
     }
   }
+}
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct FontConfig {
+  pub size: f32,
+  pub family: String,
+  pub ui_family: String,
+  pub ui_size: f32,
+}
+
+impl Default for FontConfig {
+  fn default() -> Self {
+    Self {
+      size: 18.0,
+      family: "Cascadia Code NF".to_string(),
+      #[cfg(target_os = "windows")]
+      ui_family: "Segoe UI".to_string(),
+      #[cfg(not(target_os = "windows"))]
+      ui_family: "Noto Sans".to_string(),
+      ui_size: 18.0,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct WindowConfig {
+  pub width: f32,
+  pub height: f32,
+  /// Open the main window maximized on application startup.
+  pub start_maximized: bool,
+  /// Automatically restore the previous workspace (tabs, splits, working directories)
+  /// on application launch. Default: true.
+  pub restore_workspace: bool,
+}
+
+impl Default for WindowConfig {
+  fn default() -> Self {
+    Self {
+      width: 800.0,
+      height: 600.0,
+      start_maximized: false,
+      restore_workspace: true,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct TabConfig {
+  /// Render tabs vertically in a left sidebar instead of horizontally at the top.
+  pub vertical: bool,
+  /// Close the application when the last tab is closed.
+  /// When false, a new tab is created instead.
+  pub close_on_last: bool,
+  /// Show a tab switcher popup when using Ctrl+Tab / Ctrl+Shift+Tab.
+  /// When false, tabs switch directly without showing a popup.
+  pub switcher_popup: bool,
+  /// Delay before applying terminal-driven tab title changes, in milliseconds.
+  /// Helps avoid rapid title churn from shells or apps that update the title frequently.
+  pub title_change_delay_ms: u64,
+}
+
+impl Default for TabConfig {
+  fn default() -> Self {
+    Self {
+      vertical: false,
+      close_on_last: true,
+      switcher_popup: true,
+      title_change_delay_ms: 200,
+    }
+  }
+}
+
+impl TabConfig {
+  /// Get the tab title change delay as Duration, clamped to [0, 5000] ms.
+  pub fn get_title_change_delay(&self) -> std::time::Duration {
+    std::time::Duration::from_millis(self.title_change_delay_ms.clamp(0, 5_000))
+  }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct PaneConfig {
+  /// Width of split pane divider drag handles in pixels.
+  pub divider_width: f32,
+  /// Opacity applied to inactive (unfocused) split panes to visually distinguish them.
+  /// 0.0 = fully transparent, 1.0 = no dimming. Default is 0.6.
+  pub inactive_opacity: f32,
+}
+
+impl Default for PaneConfig {
+  fn default() -> Self {
+    Self {
+      divider_width: 6.0,
+      inactive_opacity: 0.6,
+    }
+  }
+}
+
+impl PaneConfig {
+  /// Get split pane divider width clamped to a reasonable range in pixels.
+  pub fn get_divider_width(&self) -> f32 {
+    self.divider_width.clamp(1.0, 32.0)
+  }
+
+  /// Get inactive pane opacity clamped to [0.0, 1.0].
+  pub fn get_inactive_opacity(&self) -> f32 {
+    self.inactive_opacity.clamp(0.0, 1.0)
+  }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct TerminalConfig {
+  /// Maximum number of lines in the scrollback buffer.
+  /// Higher values use more memory. Default is 10000.
+  pub scrollback_lines: u32,
+  /// OSC 52 clipboard access mode: "disabled", "copy_only", "paste_only", "copy_paste"
+  pub osc52: String,
+  /// Automatically copy selected text to the clipboard.
+  pub copy_on_select: bool,
+  /// Show a context menu on right-click instead of the default copy/paste behavior.
+  pub right_click_context_menu: bool,
+  /// Enable the terminal minimap (shows a zoomed-out preview of scrollback).
+  pub minimap_enabled: bool,
+  /// Default working directory for new terminals.
+  /// Per-profile working_directory takes priority over this setting.
+  pub working_directory: Option<String>,
+  /// Default profile name for new terminals.
+  pub default_profile: Option<String>,
+  /// Additional environment variables to set for the terminal shell.
+  #[serde(default)]
+  pub env: HashMap<String, String>,
+}
+
+impl Default for TerminalConfig {
+  fn default() -> Self {
+    Self {
+      scrollback_lines: 10_000,
+      osc52: "copy_only".to_string(),
+      copy_on_select: false,
+      right_click_context_menu: true,
+      minimap_enabled: false,
+      working_directory: None,
+      default_profile: None,
+      env: HashMap::new(),
+    }
+  }
+}
+
+impl TerminalConfig {
   /// Get scrollback lines clamped to [0, 100_000]
   pub fn get_scrollback_lines(&self) -> usize {
     (self.scrollback_lines as usize).min(100_000)
   }
+}
 
-  /// Get split pane divider width clamped to a reasonable range in pixels.
-  pub fn get_split_pane_divider_width(&self) -> f32 {
-    self.split_pane_divider_width.clamp(1.0, 32.0)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct CursorConfig {
+  /// Default cursor shape: "block", "underline", or "beam"
+  pub shape: String,
+  /// Whether the cursor blinks.
+  pub blink: bool,
+  /// Cursor blink interval in milliseconds.
+  pub blink_interval: u64,
+}
+
+impl Default for CursorConfig {
+  fn default() -> Self {
+    Self {
+      shape: "block".to_string(),
+      blink: true,
+      blink_interval: 750,
+    }
   }
+}
 
-  /// Get inactive pane opacity clamped to [0.0, 1.0].
-  pub fn get_inactive_pane_opacity(&self) -> f32 {
-    self.inactive_pane_opacity.clamp(0.0, 1.0)
-  }
-
+impl CursorConfig {
   /// Get cursor blink interval as Duration, clamped to [10, 10000] ms
-  pub fn get_cursor_blink_interval(&self) -> std::time::Duration {
-    std::time::Duration::from_millis(self.cursor_blink_interval.clamp(10, 10_000))
+  pub fn get_blink_interval(&self) -> std::time::Duration {
+    std::time::Duration::from_millis(self.blink_interval.clamp(10, 10_000))
   }
+}
 
-  /// Get the tab title change delay as Duration, clamped to [0, 5000] ms.
-  pub fn get_tab_title_change_delay(&self) -> std::time::Duration {
-    std::time::Duration::from_millis(self.tab_title_change_delay_ms.clamp(0, 5_000))
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct NotificationConfig {
+  /// Minimum idle time (in seconds) since last input before a command completion
+  /// triggers a native OS notification. Set to 0 to notify on every prompt return.
+  pub long_running_threshold_secs: u64,
+  /// Minimum interval (in seconds) between consecutive OS notifications.
+  /// Prevents notification spam from rapid command completions.
+  /// Set to 0 to allow every notification.
+  pub interval_secs: u64,
+}
+
+impl Default for NotificationConfig {
+  fn default() -> Self {
+    Self {
+      long_running_threshold_secs: 10,
+      interval_secs: 0,
+    }
   }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Config {
+  /// Config file version in YYYYMMDD.Rev format (e.g., "20260220.1")
+  pub version: String,
+  /// Additional config files to merge after the main `kazeterm.toml`.
+  /// Imported files override the base config, and later imports override earlier ones.
+  #[serde(default)]
+  pub imports: Vec<String>,
+  pub appearance: AppearanceConfig,
+  pub font: FontConfig,
+  pub window: WindowConfig,
+  pub tab: TabConfig,
+  pub pane: PaneConfig,
+  pub terminal: TerminalConfig,
+  pub cursor: CursorConfig,
+  pub notification: NotificationConfig,
+  #[serde(default)]
+  pub profiles: Vec<Profile>,
+  /// Custom keyboard shortcuts
+  pub keybindings: KeybindingConfig,
+  #[serde(skip)]
+  pub container_profiles: Vec<Profile>,
+}
+
+impl Default for Config {
+  fn default() -> Self {
+    Self {
+      version: CURRENT_CONFIG_VERSION.to_string(),
+      imports: Vec::new(),
+      appearance: AppearanceConfig::default(),
+      font: FontConfig::default(),
+      window: WindowConfig::default(),
+      tab: TabConfig::default(),
+      pane: PaneConfig::default(),
+      terminal: TerminalConfig::default(),
+      cursor: CursorConfig::default(),
+      notification: NotificationConfig::default(),
+      profiles: profiles::default_profiles(),
+      keybindings: KeybindingConfig::default(),
+      container_profiles: profiles::detect_container_profiles(),
+    }
+  }
+}
+
+impl Config {
 
   pub fn load() -> Self {
     let config_path = Self::get_config_file_path_impl();
@@ -623,12 +747,14 @@ mod tests {
       format!(
         r#"version = "{}"
 imports = ["./kazeterm.windows.toml"]
+
+[appearance]
 background_opacity = 1.0
 
 [keybindings]
 copy = "ctrl-shift-c"
 
-[env]
+[terminal.env]
 BASE = "from-base"
 "#,
         CURRENT_CONFIG_VERSION,
@@ -637,12 +763,13 @@ BASE = "from-base"
     .unwrap();
     std::fs::write(
       &overlay_path,
-      r#"background_opacity = 0.4
+      r#"[appearance]
+background_opacity = 0.4
 
 [keybindings]
 paste = "ctrl-alt-v"
 
-[env]
+[terminal.env]
 BASE = "from-overlay"
 EXTRA = "present"
 "#,
@@ -651,11 +778,11 @@ EXTRA = "present"
 
     let config = Config::load_from_path(&base_path).unwrap();
 
-    assert_eq!(config.background_opacity, 0.4);
+    assert_eq!(config.appearance.background_opacity, 0.4);
     assert_eq!(config.keybindings.copy, "ctrl-shift-c");
     assert_eq!(config.keybindings.paste, "ctrl-alt-v");
-    assert_eq!(config.env.get("BASE").unwrap(), "from-overlay");
-    assert_eq!(config.env.get("EXTRA").unwrap(), "present");
+    assert_eq!(config.terminal.env.get("BASE").unwrap(), "from-overlay");
+    assert_eq!(config.terminal.env.get("EXTRA").unwrap(), "present");
 
     std::fs::remove_dir_all(dir).unwrap();
   }
@@ -688,7 +815,7 @@ imports = ["./layer.toml"]
     )
     .unwrap();
     std::fs::write(&overlay_path, "imports = [\"./layer.local.toml\"]\n").unwrap();
-    std::fs::write(&nested_path, "background_opacity = 0.7\n").unwrap();
+    std::fs::write(&nested_path, "[appearance]\nbackground_opacity = 0.7\n").unwrap();
 
     let mut paths = vec![base_path.clone()];
     let mut visited = HashSet::from([Config::normalize_path(&base_path)]);

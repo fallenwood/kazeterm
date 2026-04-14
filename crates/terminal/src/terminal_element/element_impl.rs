@@ -67,7 +67,7 @@ impl Element for TerminalElement {
     let inactive = self.inactive;
     let inactive_opacity = cx
       .try_global::<::config::Config>()
-      .map(|c| c.get_inactive_pane_opacity())
+      .map(|c| c.pane.get_inactive_opacity())
       .unwrap_or(0.6);
     self.interactivity.prepaint(
       global_id,
@@ -80,11 +80,11 @@ impl Element for TerminalElement {
         let hitbox = hitbox.unwrap();
         let config = cx.global::<::config::Config>();
         let zoom_state = cx.global::<themeing::ZoomState>();
-        let minimap_enabled = config.minimap_enabled;
+        let minimap_enabled = config.terminal.minimap_enabled;
 
-        let font_family = gpui::SharedString::from(config.font_family.clone());
+        let font_family = gpui::SharedString::from(config.font.family.clone());
         let line_height_multiplier = 1.18_f32;
-        let effective_font_size = zoom_state.effective_font_size(config.font_size);
+        let effective_font_size = zoom_state.effective_font_size(config.font.size);
         let font_size = AbsoluteLength::from(Pixels::from(effective_font_size));
         let font_weight = FontWeight::NORMAL;
         let font_features = FontFeatures::default();
@@ -370,7 +370,7 @@ impl Element for TerminalElement {
 
       let right_click_context_menu = cx
         .try_global::<config::Config>()
-        .map(|c| c.right_click_context_menu)
+        .map(|c| c.terminal.right_click_context_menu)
         .unwrap_or(false);
 
       self.register_mouse_listeners(

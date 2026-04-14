@@ -13,14 +13,14 @@ use terminal::{PtyProcessInfo, TerminalBounds, TerminalEventListener, TerminalVi
 use crate::components::MainWindow;
 
 fn parse_cursor_style(config: &config::Config) -> AlacCursorStyle {
-  let shape = match config.cursor_shape.as_str() {
+  let shape = match config.cursor.shape.as_str() {
     "underline" => CursorShape::Underline,
     "beam" => CursorShape::Beam,
     _ => CursorShape::Block,
   };
   AlacCursorStyle {
     shape,
-    blinking: config.cursor_blink,
+    blinking: config.cursor.blink,
   }
 }
 
@@ -57,7 +57,7 @@ fn new_terminal(
   env.insert("COLORTERM".to_string(), "truecolor".to_string());
 
   // Merge user-specified env vars (these can override defaults above)
-  for (key, value) in &app_config.env {
+  for (key, value) in &app_config.terminal.env {
     env.insert(key.clone(), value.clone());
   }
 
@@ -133,9 +133,9 @@ fn new_terminal(
 
   let term = Term::new(
     Config {
-      scrolling_history: app_config.get_scrollback_lines(),
+      scrolling_history: app_config.terminal.get_scrollback_lines(),
       default_cursor_style: parse_cursor_style(app_config),
-      osc52: parse_osc52(&app_config.osc52),
+      osc52: parse_osc52(&app_config.terminal.osc52),
       ..Config::default()
     },
     &TerminalBounds::default(),
@@ -260,6 +260,7 @@ pub fn new_terminal_window_with_shell(
   // Use global working_directory as fallback if no per-profile working directory
   let working_directory = working_directory.or_else(|| {
     app_config
+      .terminal
       .working_directory
       .as_ref()
       .map(|wd| PathBuf::from(wd))
