@@ -184,6 +184,7 @@ mod tests {
         theme: "one".into(),
         theme_mode: ThemeMode::Dark,
         bold_as_bright: false,
+        minimum_contrast: 45.0,
       },
       appearance: AppearanceConfig {
         themes_path: None,
