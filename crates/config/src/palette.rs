@@ -144,135 +144,201 @@ pub struct Palette {
   pub link_text_hover: Hsla,
 }
 
+impl Palette {
+  /// Derive all computed UI colors from the primary colors already set.
+  ///
+  /// Primary colors that should be set before calling:
+  /// - `background`, `text`, `text_accent`, `border` (4 core colors)
+  /// - All `terminal_ansi_*` base + bright + dim colors
+  ///
+  /// This method computes: border variants, surface/element backgrounds,
+  /// text variants, search highlights, terminal fg variants, scrollbar colors,
+  /// link hover, and terminal cursor.
+  pub(crate) fn derive_ui_colors(&mut self, is_dark: bool) {
+    let bg = self.background;
+    let fg = self.text;
+    let accent = self.text_accent;
+
+    // Border variants
+    self.border_variant = if is_dark {
+      dim(self.border)
+    } else {
+      brighten(self.border)
+    };
+    self.border_focused = {
+      let mut c = accent;
+      c.s *= 0.5;
+      c.l = c.l * 0.8 + 0.5 * 0.2;
+      c
+    };
+    self.border_selected = accent;
+    self.border_transparent = hsla(0.0, 0.0, 0.0, 0.0);
+    self.border_disabled = if is_dark {
+      dim(dim(bg))
+    } else {
+      brighten(brighten(bg))
+    };
+
+    // Surface and element backgrounds
+    if is_dark {
+      self.surface_background = dim(bg);
+      self.elevated_surface_background = brighten(bg);
+      self.element_background = dim(bg);
+      self.element_hover = brighten(bg);
+      self.element_active = brighten(brighten(bg));
+      self.element_selected = brighten(brighten(bg));
+      self.element_disabled = dim(dim(bg));
+      self.title_bar_background = brighten(bg);
+      self.title_bar_inactive_background = dim(bg);
+      self.tab_inactive_background = slightly_brighten(bg);
+      self.scrollbar_track_background = brighten(bg);
+      self.scrollbar_thumb_background = brighten(brighten(brighten(bg)));
+    } else {
+      self.surface_background = brighten(bg);
+      self.elevated_surface_background = dim(bg);
+      self.element_background = brighten(bg);
+      self.element_hover = dim(bg);
+      self.element_active = dim(dim(bg));
+      self.element_selected = dim(dim(bg));
+      self.element_disabled = brighten(brighten(bg));
+      self.title_bar_background = dim(bg);
+      self.title_bar_inactive_background = brighten(bg);
+      self.tab_inactive_background = slightly_dim(bg);
+      self.scrollbar_track_background = dim(bg);
+      self.scrollbar_thumb_background = dim(dim(dim(bg)));
+    }
+    self.tab_active_background = bg;
+
+    // Selection background from accent with alpha
+    self.element_selection_background = {
+      let mut c = accent;
+      c.a = 0.43;
+      c
+    };
+
+    // Text variants
+    self.text_muted = fg;
+    self.text_placeholder = blend(fg, bg, 0.5);
+    self.text_disabled = blend(fg, bg, 0.65);
+
+    // Search colors derived from theme colors
+    self.search_match_background = {
+      let mut c = self.terminal_ansi_yellow;
+      c.a = 0.6;
+      c
+    };
+    self.search_highlight_background = {
+      let mut c = accent;
+      c.a = 0.4;
+      c
+    };
+
+    // Terminal base colors
+    self.terminal_background = bg;
+    self.terminal_foreground = fg;
+    self.terminal_ansi_background = bg;
+    self.terminal_bright_foreground = brighten(fg);
+    self.terminal_dim_foreground = dim(fg);
+    self.terminal_cursor = accent;
+
+    // Link hover
+    self.link_text_hover = brighten(accent);
+  }
+}
+
 impl Default for Palette {
   fn default() -> Self {
-    let background = rgb_u8(40, 44, 51);
-    let surface_background = rgb_u8(36, 40, 59);
-    let elevated_surface_background = rgb_u8(47, 51, 77);
-    let element_background = rgb_u8(36, 40, 59);
-    let element_hover = rgb_u8(47, 51, 77);
-    let element_active = rgb_u8(59, 66, 97);
-    let element_selected = rgb_u8(59, 66, 97);
-    let element_selection_background = rgba_u8(122, 162, 247, 110);
-    let element_disabled = rgb_u8(22, 23, 33);
-    let accent = rgb_u8(116, 173, 232);
-    let accent_bright = rgb_u8(142, 178, 255);
-    let border = rgb_u8(70, 75, 87);
-    let border_variant = rgb_u8(36, 40, 59);
-    let border_disabled = rgb_u8(31, 35, 52);
-    let border_transparent = rgba_u8(0, 0, 0, 0);
-    let text = rgb_u8(220, 224, 229);
-    let text_muted = rgb_u8(220, 224, 229);
-    let text_placeholder = rgb_u8(86, 95, 137);
-    let text_disabled = rgb_u8(65, 72, 104);
-    let text_accent = accent;
-    let title_bar_background = rgb_u8(47, 52, 62);
-    let title_bar_inactive_background = rgb_u8(22, 25, 37);
-    let tab_inactive_background = rgb_u8(43, 48, 57); // Between title_bar_background and background
-    let tab_active_background = background;
-    let search_match_background = hsla(30.0 / 360.0, 1.0, 0.5, 0.8);
-    let search_highlight_background = hsla(60.0 / 360.0, 1.0, 0.5, 0.6);
-    let terminal_background = background;
-    let terminal_foreground = text;
-    let terminal_bright_foreground = rgb_u8(250, 250, 250);
-    let terminal_dim_foreground = text_muted;
-    let terminal_ansi_background = background;
-    let terminal_ansi_black = rgb_u8(40, 44, 51);
-    let terminal_ansi_bright_black = rgb_u8(82, 85, 97);
-    let terminal_ansi_dim_black = rgb_u8(15, 16, 22);
-    let terminal_ansi_red = rgb_u8(208, 114, 119);
-    let terminal_ansi_bright_red = rgb_u8(103, 58, 60);
-    let terminal_ansi_dim_red = rgb_u8(179, 86, 103);
-    let terminal_ansi_green = rgb_u8(161, 193, 129);
-    let terminal_ansi_bright_green = rgb_u8(79, 100, 65);
-    let terminal_ansi_dim_green = rgb_u8(114, 149, 78);
-    let terminal_ansi_yellow = rgb_u8(222, 193, 132);
-    let terminal_ansi_bright_yellow = rgb_u8(229, 192, 123);
-    let terminal_ansi_dim_yellow = rgb_u8(163, 127, 75);
-    let terminal_ansi_blue = rgb_u8(116, 173, 232);
-    let terminal_ansi_bright_blue = rgb_u8(56, 83, 120);
-    let terminal_ansi_dim_blue = rgb_u8(89, 118, 179);
-    let terminal_ansi_magenta = rgb_u8(180, 119, 207);
-    let terminal_ansi_bright_magenta = rgb_u8(214, 180, 228);
-    let terminal_ansi_dim_magenta = rgb_u8(136, 112, 179);
-    let terminal_ansi_cyan = rgb_u8(110, 180, 191);
-    let terminal_ansi_bright_cyan = rgb_u8(58, 86, 91);
-    let terminal_ansi_dim_cyan = rgb_u8(90, 149, 184);
-    let terminal_ansi_white = rgb_u8(220, 224, 229);
-    let terminal_ansi_bright_white = rgb_u8(250, 250, 250);
-    let terminal_ansi_dim_white = text_muted;
-    let terminal_cursor = accent;
-    let scrollbar_track_background = rgb_u8(47, 52, 62);
-    let scrollbar_thumb_background = rgb_u8(100, 110, 130);
-    let link_text_hover = accent_bright;
+    // One theme base colors
+    let background = rgb_u8(40, 44, 51); // #282C33
+    let foreground = rgb_u8(220, 224, 229); // #DCE0E5
+    let accent = rgb_u8(116, 173, 232); // #74ADE8
+    let border_color = rgb_u8(70, 75, 87); // #464B57
 
-    Palette {
-      border,
-      border_variant,
-      border_focused: {
-        // Derive from accent: reduce saturation and shift lightness toward grey
-        let mut c = accent;
-        c.s *= 0.5;
-        c.l = c.l * 0.8 + 0.5 * 0.2;
-        c
-      },
-      border_selected: accent,
-      border_transparent,
-      border_disabled,
-      elevated_surface_background,
-      surface_background,
+    // One theme ANSI colors
+    let ansi_black = background;
+    let ansi_red = rgb_u8(208, 114, 119);
+    let ansi_green = rgb_u8(161, 193, 129);
+    let ansi_yellow = rgb_u8(222, 193, 132);
+    let ansi_blue = accent;
+    let ansi_magenta = rgb_u8(180, 119, 207);
+    let ansi_cyan = rgb_u8(110, 180, 191);
+    let ansi_white = foreground;
+
+    // One theme explicit bright overrides (only black and white)
+    let bright_black = rgb_u8(82, 85, 97);
+    let bright_white = rgb_u8(250, 250, 250);
+
+    // Build palette with primary + ANSI colors, then derive all computed colors
+    let mut palette = Palette {
+      // 4 core colors
       background,
-      element_background,
-      element_hover,
-      element_active,
-      element_selected,
-      element_selection_background,
-      element_disabled,
-      text,
-      text_muted,
-      text_placeholder,
-      text_disabled,
-      text_accent,
-      title_bar_background,
-      title_bar_inactive_background,
-      tab_inactive_background,
-      tab_active_background,
-      search_match_background,
-      search_highlight_background,
-      terminal_background,
-      terminal_foreground,
-      terminal_bright_foreground,
-      terminal_dim_foreground,
-      terminal_ansi_background,
-      terminal_ansi_black,
-      terminal_ansi_bright_black,
-      terminal_ansi_dim_black,
-      terminal_ansi_red,
-      terminal_ansi_bright_red,
-      terminal_ansi_dim_red,
-      terminal_ansi_green,
-      terminal_ansi_bright_green,
-      terminal_ansi_dim_green,
-      terminal_ansi_yellow,
-      terminal_ansi_bright_yellow,
-      terminal_ansi_dim_yellow,
-      terminal_ansi_blue,
-      terminal_ansi_bright_blue,
-      terminal_ansi_dim_blue,
-      terminal_ansi_magenta,
-      terminal_ansi_bright_magenta,
-      terminal_ansi_dim_magenta,
-      terminal_ansi_cyan,
-      terminal_ansi_bright_cyan,
-      terminal_ansi_dim_cyan,
-      terminal_ansi_white,
-      terminal_ansi_bright_white,
-      terminal_ansi_dim_white,
-      terminal_cursor,
-      scrollbar_track_background,
-      scrollbar_thumb_background,
-      link_text_hover,
-    }
+      text: foreground,
+      text_accent: accent,
+      border: border_color,
+
+      // Placeholder values — derive_ui_colors() will overwrite these
+      border_variant: border_color,
+      border_focused: accent,
+      border_selected: accent,
+      border_transparent: hsla(0.0, 0.0, 0.0, 0.0),
+      border_disabled: background,
+      elevated_surface_background: background,
+      surface_background: background,
+      element_background: background,
+      element_hover: background,
+      element_active: background,
+      element_selected: background,
+      element_selection_background: accent,
+      element_disabled: background,
+      text_muted: foreground,
+      text_placeholder: foreground,
+      text_disabled: foreground,
+      title_bar_background: background,
+      title_bar_inactive_background: background,
+      tab_inactive_background: background,
+      tab_active_background: background,
+      search_match_background: hsla(0.0, 0.0, 0.0, 0.0),
+      search_highlight_background: hsla(0.0, 0.0, 0.0, 0.0),
+      terminal_background: background,
+      terminal_foreground: foreground,
+      terminal_bright_foreground: foreground,
+      terminal_dim_foreground: foreground,
+      terminal_ansi_background: background,
+      scrollbar_track_background: background,
+      scrollbar_thumb_background: background,
+      link_text_hover: accent,
+
+      // ANSI terminal colors with derived bright/dim variants
+      terminal_ansi_black: ansi_black,
+      terminal_ansi_bright_black: bright_black,
+      terminal_ansi_dim_black: dim(ansi_black),
+      terminal_ansi_red: ansi_red,
+      terminal_ansi_bright_red: brighten(ansi_red),
+      terminal_ansi_dim_red: dim(ansi_red),
+      terminal_ansi_green: ansi_green,
+      terminal_ansi_bright_green: brighten(ansi_green),
+      terminal_ansi_dim_green: dim(ansi_green),
+      terminal_ansi_yellow: ansi_yellow,
+      terminal_ansi_bright_yellow: brighten(ansi_yellow),
+      terminal_ansi_dim_yellow: dim(ansi_yellow),
+      terminal_ansi_blue: ansi_blue,
+      terminal_ansi_bright_blue: brighten(ansi_blue),
+      terminal_ansi_dim_blue: dim(ansi_blue),
+      terminal_ansi_magenta: ansi_magenta,
+      terminal_ansi_bright_magenta: brighten(ansi_magenta),
+      terminal_ansi_dim_magenta: dim(ansi_magenta),
+      terminal_ansi_cyan: ansi_cyan,
+      terminal_ansi_bright_cyan: brighten(ansi_cyan),
+      terminal_ansi_dim_cyan: dim(ansi_cyan),
+      terminal_ansi_white: ansi_white,
+      terminal_ansi_bright_white: bright_white,
+      terminal_ansi_dim_white: dim(ansi_white),
+      terminal_cursor: accent,
+    };
+
+    // Derive all computed UI colors from base colors
+    palette.derive_ui_colors(true);
+    palette
   }
 }
 
@@ -288,6 +354,56 @@ fn rgba_u8(r: u8, g: u8, b: u8, a: u8) -> Hsla {
 
 fn rgb_u8(r: u8, g: u8, b: u8) -> Hsla {
   rgba_u8(r, g, b, 255)
+}
+
+/// Brighten a color by increasing lightness
+pub(crate) fn brighten(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l + 0.1).min(1.0),
+    a: color.a,
+  }
+}
+
+/// Dim a color by decreasing lightness
+pub(crate) fn dim(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l - 0.1).max(0.0),
+    a: color.a,
+  }
+}
+
+/// Slightly brighten a color (half of brighten)
+pub(crate) fn slightly_brighten(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l + 0.05).min(1.0),
+    a: color.a,
+  }
+}
+
+/// Slightly dim a color (half of dim)
+pub(crate) fn slightly_dim(color: Hsla) -> Hsla {
+  Hsla {
+    h: color.h,
+    s: color.s,
+    l: (color.l - 0.05).max(0.0),
+    a: color.a,
+  }
+}
+
+/// Blend two colors by linear interpolation in HSL space
+pub(crate) fn blend(a: Hsla, b: Hsla, t: f32) -> Hsla {
+  Hsla {
+    h: a.h + (b.h - a.h) * t,
+    s: a.s + (b.s - a.s) * t,
+    l: a.l + (b.l - a.l) * t,
+    a: a.a + (b.a - a.a) * t,
+  }
 }
 
 #[cfg(test)]
