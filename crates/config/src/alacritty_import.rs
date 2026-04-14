@@ -256,7 +256,7 @@ pub fn apply_import(config: &mut Config, result: AlacrittyImportResult) {
     config.terminal.working_directory = Some(v);
   }
   if let Some(ref theme_file) = result.theme {
-    config.appearance.theme = theme_name_to_id(&theme_file.name);
+    config.colors.theme = theme_name_to_id(&theme_file.name);
   }
 }
 
@@ -541,7 +541,7 @@ foreground = "#ffffff"
     assert_eq!(config.font.family, "Fira Code");
     assert_eq!(config.font.size, 16.0);
     assert!((config.appearance.background_opacity - 0.85).abs() < 0.001);
-    assert_eq!(config.appearance.theme, "alacritty-import");
+    assert_eq!(config.colors.theme, "alacritty-import");
   }
 
   #[test]

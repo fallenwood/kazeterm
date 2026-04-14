@@ -155,8 +155,9 @@ impl Config {
 #[cfg(test)]
 mod tests {
   use crate::{
-    CURRENT_CONFIG_VERSION, AppearanceConfig, Config, CursorConfig, FontConfig, KeybindingConfig,
-    NotificationConfig, PaneConfig, Profile, TabConfig, TerminalConfig, ThemeMode, WindowConfig,
+    CURRENT_CONFIG_VERSION, AppearanceConfig, ColorsConfig, Config, CursorConfig, FontConfig,
+    KeybindingConfig, NotificationConfig, PaneConfig, Profile, TabConfig, TerminalConfig,
+    ThemeMode, WindowConfig,
   };
 
   #[test]
@@ -179,9 +180,12 @@ mod tests {
     let config = Config {
       version: CURRENT_CONFIG_VERSION.to_string(),
       imports: vec![],
-      appearance: AppearanceConfig {
+      colors: ColorsConfig {
         theme: "one".into(),
         theme_mode: ThemeMode::Dark,
+        bold_is_bright: false,
+      },
+      appearance: AppearanceConfig {
         themes_path: None,
         background_opacity: 1.0,
         background_blur: false,

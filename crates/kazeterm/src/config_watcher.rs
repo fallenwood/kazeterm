@@ -282,7 +282,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
     FileChangeType::Config => {
       // Reload the entire config (which includes theme settings)
       let new_config = Config::load();
-      tracing::info!("Reloaded config: theme={}", new_config.appearance.theme);
+      tracing::info!("Reloaded config: theme={}", new_config.colors.theme);
 
       // Update the themes path if it changed
       if let Some(themes_path) = &new_config.appearance.themes_path {
@@ -327,7 +327,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       // Re-initialize gpui-component theme
       themeing::SettingsStore::init_gpui_component_theme(cx);
 
-      tracing::info!("Theme reloaded successfully: {}", config.appearance.theme);
+      tracing::info!("Theme reloaded successfully: {}", config.colors.theme);
     }
   }
 }

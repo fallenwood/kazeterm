@@ -36,9 +36,26 @@ pub use profiles::Profile;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
-pub struct AppearanceConfig {
+pub struct ColorsConfig {
   pub theme: String,
   pub theme_mode: ThemeMode,
+  /// Use bright ANSI colors for bold text instead of only increasing font weight.
+  pub bold_is_bright: bool,
+}
+
+impl Default for ColorsConfig {
+  fn default() -> Self {
+    Self {
+      theme: "one".to_string(),
+      theme_mode: ThemeMode::default(),
+      bold_is_bright: false,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct AppearanceConfig {
   /// Custom themes directory path.
   /// Themes in this directory take priority over embedded themes.
   pub themes_path: Option<String>,
@@ -53,8 +70,6 @@ pub struct AppearanceConfig {
 impl Default for AppearanceConfig {
   fn default() -> Self {
     Self {
-      theme: "one".to_string(),
-      theme_mode: ThemeMode::default(),
       themes_path: None,
       background_opacity: 1.0,
       background_blur: false,
@@ -203,8 +218,6 @@ pub struct TerminalConfig {
   pub right_click_context_menu: bool,
   /// Enable the terminal minimap (shows a zoomed-out preview of scrollback).
   pub minimap_enabled: bool,
-  /// Use bright ANSI colors for bold text instead of only increasing font weight.
-  pub bold_is_bright: bool,
   /// Default working directory for new terminals.
   /// Per-profile working_directory takes priority over this setting.
   pub working_directory: Option<String>,
@@ -223,7 +236,6 @@ impl Default for TerminalConfig {
       copy_on_select: false,
       right_click_context_menu: true,
       minimap_enabled: false,
-      bold_is_bright: false,
       working_directory: None,
       default_profile: None,
       env: HashMap::new(),
@@ -296,6 +308,7 @@ pub struct Config {
   /// Imported files override the base config, and later imports override earlier ones.
   #[serde(default)]
   pub imports: Vec<String>,
+  pub colors: ColorsConfig,
   pub appearance: AppearanceConfig,
   pub font: FontConfig,
   pub window: WindowConfig,
@@ -317,6 +330,7 @@ impl Default for Config {
     Self {
       version: CURRENT_CONFIG_VERSION.to_string(),
       imports: Vec::new(),
+      colors: ColorsConfig::default(),
       appearance: AppearanceConfig::default(),
       font: FontConfig::default(),
       window: WindowConfig::default(),

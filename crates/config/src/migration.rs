@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260414.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260414.2";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -99,6 +99,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260412.3",
       to_version: "20260414.1",
       migrate: migrate_v20260412_3_to_20260414_1,
+    },
+    Migration {
+      from_version: "20260414.1",
+      to_version: "20260414.2",
+      migrate: migrate_v20260414_1_to_20260414_2,
     },
   ]
 }
@@ -408,6 +413,46 @@ fn migrate_v20260412_3_to_20260414_1(value: &mut Value) {
   }
 }
 
+/// Move theme/theme_mode from [appearance] to [colors], and bold_is_bright from [terminal] to [colors].
+fn migrate_v20260414_1_to_20260414_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    // Move theme and theme_mode from appearance to colors
+    if let Some(Value::Table(appearance)) = table.get_mut("appearance") {
+      let theme = appearance.remove("theme");
+      let theme_mode = appearance.remove("theme_mode");
+
+      let colors = table
+        .entry("colors")
+        .or_insert_with(|| Value::Table(toml::map::Map::new()));
+      if let Value::Table(colors_table) = colors {
+        if let Some(v) = theme {
+          colors_table.insert("theme".to_string(), v);
+        }
+        if let Some(v) = theme_mode {
+          colors_table.insert("theme_mode".to_string(), v);
+        }
+      }
+    }
+
+    // Move bold_is_bright from terminal to colors
+    if let Some(Value::Table(terminal)) = table.get_mut("terminal") {
+      if let Some(v) = terminal.remove("bold_is_bright") {
+        let colors = table
+          .entry("colors")
+          .or_insert_with(|| Value::Table(toml::map::Map::new()));
+        if let Value::Table(colors_table) = colors {
+          colors_table.insert("bold_is_bright".to_string(), v);
+        }
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260414.2".to_string()),
+    );
+  }
+}
+
 /// Apply all necessary migrations to bring the config up to `CURRENT_CONFIG_VERSION`.
 /// Returns `true` if any migrations were applied, `false` if the config was already current.
 pub fn apply_migrations(value: &mut Value) -> bool {
@@ -471,7 +516,7 @@ font_family = "Cascadia Code NF"
       r#"
 version = "{}"
 
-[appearance]
+[colors]
 theme = "one"
 
 [font]
@@ -533,7 +578,7 @@ vertical_tabs = false
       CURRENT_CONFIG_VERSION
     );
     // Original fields are migrated to nested tables
-    assert_eq!(get_nested(&config, "appearance", "theme").unwrap().as_str().unwrap(), "one");
+    assert_eq!(get_nested(&config, "colors", "theme").unwrap().as_str().unwrap(), "one");
     assert_eq!(get_nested(&config, "font", "size").unwrap().as_float().unwrap(), 18.0);
   }
 
@@ -792,7 +837,7 @@ start_maximized = false
     apply_migrations(&mut raw);
     let config: crate::Config = raw.try_into().unwrap();
     assert_eq!(config.version, CURRENT_CONFIG_VERSION);
-    assert_eq!(config.appearance.theme, "one");
+    assert_eq!(config.colors.theme, "one");
     assert_eq!(config.font.size, 18.0);
     assert_eq!(config.pane.divider_width, 6.0);
     assert!(!config.window.start_maximized);
