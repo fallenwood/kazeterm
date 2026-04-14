@@ -218,6 +218,9 @@ pub struct TerminalConfig {
   pub right_click_context_menu: bool,
   /// Enable the terminal minimap (shows a zoomed-out preview of scrollback).
   pub minimap_enabled: bool,
+  /// Minimum APCA contrast between foreground and background colors.
+  /// Set to 0 to disable contrast enforcement. Default is 45.
+  pub minimum_contrast: f32,
   /// Default working directory for new terminals.
   /// Per-profile working_directory takes priority over this setting.
   pub working_directory: Option<String>,
@@ -236,6 +239,7 @@ impl Default for TerminalConfig {
       copy_on_select: false,
       right_click_context_menu: true,
       minimap_enabled: false,
+      minimum_contrast: 45.0,
       working_directory: None,
       default_profile: None,
       env: HashMap::new(),
