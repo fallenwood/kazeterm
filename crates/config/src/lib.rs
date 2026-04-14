@@ -203,6 +203,8 @@ pub struct TerminalConfig {
   pub right_click_context_menu: bool,
   /// Enable the terminal minimap (shows a zoomed-out preview of scrollback).
   pub minimap_enabled: bool,
+  /// Use bright ANSI colors for bold text instead of only increasing font weight.
+  pub bold_is_bright: bool,
   /// Default working directory for new terminals.
   /// Per-profile working_directory takes priority over this setting.
   pub working_directory: Option<String>,
@@ -221,6 +223,7 @@ impl Default for TerminalConfig {
       copy_on_select: false,
       right_click_context_menu: true,
       minimap_enabled: false,
+      bold_is_bright: false,
       working_directory: None,
       default_profile: None,
       env: HashMap::new(),
