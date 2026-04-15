@@ -220,6 +220,8 @@ pub struct TerminalConfig {
   pub copy_on_select: bool,
   /// Show a context menu on right-click instead of the default copy/paste behavior.
   pub right_click_context_menu: bool,
+  /// Enable Ctrl+Scroll to zoom (change font size). Default is true.
+  pub ctrl_scroll_zoom: bool,
   /// Enable the terminal minimap (shows a zoomed-out preview of scrollback).
   pub minimap_enabled: bool,
   /// Default working directory for new terminals.
@@ -239,6 +241,7 @@ impl Default for TerminalConfig {
       osc52: "copy_only".to_string(),
       copy_on_select: false,
       right_click_context_menu: true,
+      ctrl_scroll_zoom: true,
       minimap_enabled: false,
       working_directory: None,
       default_profile: None,

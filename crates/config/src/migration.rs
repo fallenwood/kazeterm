@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260414.2";
+pub const CURRENT_CONFIG_VERSION: &str = "20260415.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -104,6 +104,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260414.1",
       to_version: "20260414.2",
       migrate: migrate_v20260414_1_to_20260414_2,
+    },
+    Migration {
+      from_version: "20260414.2",
+      to_version: "20260415.1",
+      migrate: migrate_v20260414_2_to_20260415_1,
     },
   ]
 }
@@ -457,6 +462,25 @@ fn migrate_v20260414_1_to_20260414_2(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260414.2".to_string()),
+    );
+  }
+}
+
+/// Add ctrl_scroll_zoom configuration to [terminal].
+fn migrate_v20260414_2_to_20260415_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    let terminal = table
+      .entry("terminal")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(terminal_table) = terminal {
+      if !terminal_table.contains_key("ctrl_scroll_zoom") {
+        terminal_table.insert("ctrl_scroll_zoom".to_string(), Value::Boolean(true));
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260415.1".to_string()),
     );
   }
 }

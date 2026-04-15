@@ -288,16 +288,24 @@ impl TerminalView {
   ) {
     // Ctrl+Scroll / pinch-to-zoom
     if event.modifiers.control {
-      const ZOOM_SENSITIVITY: f32 = 0.03;
-      let delta = f32::from(event.delta.pixel_delta(gpui::px(1.0)).y);
-      let zoom_delta = delta * ZOOM_SENSITIVITY;
-      if zoom_delta != 0.0 {
-        themeing::ZoomState::update_global(cx, |zoom: &mut themeing::ZoomState, _| {
-          zoom.zoom_by(zoom_delta);
-        });
+      let ctrl_scroll_zoom = cx
+        .try_global::<config::Config>()
+        .map(|c| c.terminal.ctrl_scroll_zoom)
+        .unwrap_or(true);
+      if !ctrl_scroll_zoom {
+        // Pass scroll event to terminal as regular scroll
+      } else {
+        const ZOOM_SENSITIVITY: f32 = 0.03;
+        let delta = f32::from(event.delta.pixel_delta(gpui::px(1.0)).y);
+        let zoom_delta = delta * ZOOM_SENSITIVITY;
+        if zoom_delta != 0.0 {
+          themeing::ZoomState::update_global(cx, |zoom: &mut themeing::ZoomState, _| {
+            zoom.zoom_by(zoom_delta);
+          });
+        }
+        cx.notify();
+        return;
       }
-      cx.notify();
-      return;
     }
 
     // Stop any existing momentum when new touch starts
