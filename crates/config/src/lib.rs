@@ -259,6 +259,8 @@ pub struct TerminalConfig {
   pub osc52: String,
   /// Automatically copy selected text to the clipboard.
   pub copy_on_select: bool,
+  /// Hide the mouse pointer while sending keyboard input to the terminal.
+  pub hide_mouse_when_typing: bool,
   /// Show a context menu on right-click instead of the default copy/paste behavior.
   pub right_click_context_menu: bool,
   /// Enable Ctrl+Scroll to zoom (change font size). Default is true.
@@ -281,6 +283,7 @@ impl Default for TerminalConfig {
       scrollback_lines: 10_000,
       osc52: "copy_only".to_string(),
       copy_on_select: false,
+      hide_mouse_when_typing: false,
       right_click_context_menu: true,
       ctrl_scroll_zoom: true,
       minimap_enabled: false,

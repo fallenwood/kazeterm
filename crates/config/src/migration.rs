@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260415.2";
+pub const CURRENT_CONFIG_VERSION: &str = "20260415.3";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -114,6 +114,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260415.1",
       to_version: "20260415.2",
       migrate: migrate_v20260415_1_to_20260415_2,
+    },
+    Migration {
+      from_version: "20260415.2",
+      to_version: "20260415.3",
+      migrate: migrate_v20260415_2_to_20260415_3,
     },
   ]
 }
@@ -518,6 +523,25 @@ fn migrate_v20260415_1_to_20260415_2(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260415.2".to_string()),
+    );
+  }
+}
+
+/// Add hide_mouse_when_typing configuration to [terminal].
+fn migrate_v20260415_2_to_20260415_3(value: &mut Value) {
+  if let Value::Table(table) = value {
+    let terminal = table
+      .entry("terminal")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(terminal_table) = terminal {
+      if !terminal_table.contains_key("hide_mouse_when_typing") {
+        terminal_table.insert("hide_mouse_when_typing".to_string(), Value::Boolean(false));
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260415.3".to_string()),
     );
   }
 }
@@ -952,6 +976,7 @@ start_maximized = false
     assert!((config.pane.inactive_opacity - 0.6).abs() < 0.001);
     assert_eq!(config.tab.label_min_width, 60.0);
     assert_eq!(config.tab.label_max_width, 200.0);
+    assert!(!config.terminal.hide_mouse_when_typing);
   }
 
   #[test]
@@ -1043,6 +1068,35 @@ title_change_delay_ms = 200
         .as_float()
         .unwrap(),
       200.0
+    );
+  }
+
+  #[test]
+  fn migrate_20260415_2_adds_hide_mouse_when_typing() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260415.2"
+
+[terminal]
+scrollback_lines = 10000
+osc52 = "copy_only"
+copy_on_select = false
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      get_nested(&config, "terminal", "hide_mouse_when_typing")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
+      false
     );
   }
 }

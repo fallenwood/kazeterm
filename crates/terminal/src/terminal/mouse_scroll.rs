@@ -33,6 +33,7 @@ impl Terminal {
   }
 
   pub fn mouse_move(&mut self, e: &gpui::MouseMoveEvent, cx: &mut Context<Self>) {
+    self.note_mouse_activity();
     let position = e.position - self.last_content.terminal_bounds.bounds.origin;
     let mut should_clear_last_hovered_word = false;
 
@@ -108,6 +109,7 @@ impl Terminal {
   }
 
   pub fn mouse_down(&mut self, e: &gpui::MouseDownEvent, _cx: &mut Context<Self>) {
+    self.note_mouse_activity();
     let position = e.position - self.last_content.terminal_bounds.bounds.origin;
     let point = crate::mappings::mouse::grid_point(
       position,
@@ -171,6 +173,7 @@ impl Terminal {
   }
 
   pub fn mouse_up(&mut self, e: &gpui::MouseUpEvent, cx: &Context<Self>) {
+    self.note_mouse_activity();
     let position = e.position - self.last_content.terminal_bounds.bounds.origin;
     if self.mouse_mode(e.modifiers.shift) {
       let point = crate::mappings::mouse::grid_point(
@@ -253,6 +256,7 @@ impl Terminal {
 
   /// Scroll the terminal, returns true if momentum scrolling should start.
   pub fn scroll_wheel(&mut self, e: &gpui::ScrollWheelEvent, scroll_multiplier: f32) -> bool {
+    self.note_mouse_activity();
     let mouse_mode = self.mouse_mode(e.shift);
     let scroll_multiplier = if mouse_mode { 1. } else { scroll_multiplier };
 
@@ -358,6 +362,7 @@ impl Terminal {
     region: gpui::Bounds<Pixels>,
     cx: &mut Context<Self>,
   ) {
+    self.note_mouse_activity();
     let position = e.position - self.last_content.terminal_bounds.bounds.origin;
     if !self.mouse_mode(e.modifiers.shift) {
       self.selection_phase = SelectionPhase::Selecting;

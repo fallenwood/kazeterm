@@ -24,6 +24,7 @@ struct AlacrittyConfig {
   scrolling: AlacrittyScrolling,
   cursor: AlaccrityCursor,
   selection: AlacrittySelection,
+  mouse: AlacrittyMouse,
   #[serde(default)]
   env: HashMap<String, String>,
   general: AlacrittyGeneral,
@@ -137,6 +138,12 @@ struct AlacrittySelection {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
+struct AlacrittyMouse {
+  hide_when_typing: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 struct AlacrittyGeneral {
   working_directory: Option<String>,
 }
@@ -165,6 +172,7 @@ pub struct AlacrittyConfigPatch {
   pub cursor_blink_interval: Option<u64>,
   pub osc52: Option<String>,
   pub copy_on_select: Option<bool>,
+  pub hide_mouse_when_typing: Option<bool>,
   pub env: HashMap<String, String>,
   pub working_directory: Option<String>,
 }
@@ -248,6 +256,9 @@ pub fn apply_import(config: &mut Config, result: AlacrittyImportResult) {
   }
   if let Some(v) = patch.copy_on_select {
     config.terminal.copy_on_select = v;
+  }
+  if let Some(v) = patch.hide_mouse_when_typing {
+    config.terminal.hide_mouse_when_typing = v;
   }
   if !patch.env.is_empty() {
     config.terminal.env = patch.env;
@@ -356,6 +367,7 @@ fn build_config_patch(alacritty: &AlacrittyConfig) -> AlacrittyConfigPatch {
     cursor_blink_interval: alacritty.cursor.blink_interval,
     osc52,
     copy_on_select: alacritty.selection.save_to_clipboard,
+    hide_mouse_when_typing: alacritty.mouse.hide_when_typing,
     env: alacritty.env.clone(),
     working_directory,
   }
@@ -606,6 +618,16 @@ save_to_clipboard = true
   }
 
   #[test]
+  fn parse_mouse_hide_when_typing() {
+    let toml = r##"
+[mouse]
+hide_when_typing = true
+"##;
+    let result = import_alacritty_config_str(toml).unwrap();
+    assert_eq!(result.config_patch.hide_mouse_when_typing, Some(true));
+  }
+
+  #[test]
   fn parse_osc52() {
     let toml = r##"
 [terminal]
@@ -675,6 +697,9 @@ osc52 = "CopyPaste"
 [selection]
 save_to_clipboard = true
 
+[mouse]
+hide_when_typing = true
+
 [env]
 MY_VAR = "test"
 
@@ -691,6 +716,7 @@ working_directory = "/tmp"
     assert_eq!(config.cursor.blink_interval, 600);
     assert_eq!(config.terminal.osc52, "copy_paste");
     assert_eq!(config.terminal.copy_on_select, true);
+    assert!(config.terminal.hide_mouse_when_typing);
     assert_eq!(
       config.terminal.env.get("MY_VAR").map(|s| s.as_str()),
       Some("test")

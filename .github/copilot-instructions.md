@@ -96,6 +96,7 @@ All fields have defaults via `#[serde(default)]` on Config:
 | `cursor_blink_interval` | u64 | 750 | Blink interval (ms) |
 | `osc52` | String | `"copy_only"` | OSC 52 mode |
 | `copy_on_select` | bool | false | Auto-copy selection |
+| `hide_mouse_when_typing` | bool | false | Hide mouse pointer after terminal input until it moves again |
 | `env` | HashMap<String,String> | empty | Extra env vars |
 | `working_directory` | Option<String> | None | Default working dir |
 

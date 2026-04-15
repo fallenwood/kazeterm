@@ -78,6 +78,9 @@ pub struct Terminal {
   pub selection_phase: SelectionPhase,
   pub last_mouse: Option<(AlacPoint, Direction)>,
   pub last_mouse_move_time: std::time::Instant,
+  /// Tracks the last time the user moved, clicked, or scrolled the mouse over the terminal.
+  /// Used with `last_input_time` to hide the pointer while typing.
+  pub last_mouse_activity_time: std::time::Instant,
   pub hyperlink_regex_searches: RegexSearches,
   pub last_hyperlink_search_position: Option<gpui::Point<Pixels>>,
   pub child_exited: Option<ExitStatus>,
@@ -138,6 +141,7 @@ impl Terminal {
       selection_phase: SelectionPhase::Ended,
       last_mouse: None,
       last_mouse_move_time: std::time::Instant::now(),
+      last_mouse_activity_time: std::time::Instant::now(),
       hyperlink_regex_searches: RegexSearches::default(),
       last_hyperlink_search_position: None,
       child_exited: None,
@@ -220,6 +224,18 @@ impl Terminal {
       self.pty_info.pid()
     );
     cwd
+  }
+
+  pub(crate) fn note_mouse_activity(&mut self) {
+    self.last_mouse_activity_time = std::time::Instant::now();
+  }
+
+  pub(crate) fn should_hide_mouse_cursor(&self, hide_mouse_when_typing: bool) -> bool {
+    should_hide_mouse_cursor(
+      hide_mouse_when_typing,
+      self.last_input_time,
+      self.last_mouse_activity_time,
+    )
   }
 
   pub fn last_content(&self) -> &TerminalContent {
@@ -751,4 +767,44 @@ fn content_index_for_mouse(pos: gpui::Point<Pixels>, terminal_bounds: &TerminalB
   let row = (pos.y / terminal_bounds.line_height()).round() as usize;
   let clamped_row = cmp::min(row, terminal_bounds.screen_lines() - 1);
   clamped_row * terminal_bounds.columns() + clamped_col
+}
+
+fn should_hide_mouse_cursor(
+  hide_mouse_when_typing: bool,
+  last_input_time: std::time::Instant,
+  last_mouse_activity_time: std::time::Instant,
+) -> bool {
+  hide_mouse_when_typing && last_input_time > last_mouse_activity_time
+}
+
+#[cfg(test)]
+mod tests {
+  use std::time::{Duration, Instant};
+
+  use super::should_hide_mouse_cursor;
+
+  #[test]
+  fn hide_mouse_cursor_when_input_is_newer_than_mouse_activity() {
+    let base = Instant::now();
+    assert!(should_hide_mouse_cursor(
+      true,
+      base + Duration::from_millis(1),
+      base
+    ));
+  }
+
+  #[test]
+  fn keep_mouse_cursor_visible_when_option_disabled_or_mouse_moved_after_input() {
+    let base = Instant::now();
+    assert!(!should_hide_mouse_cursor(
+      false,
+      base + Duration::from_millis(1),
+      base
+    ));
+    assert!(!should_hide_mouse_cursor(
+      true,
+      base,
+      base + Duration::from_millis(1)
+    ));
+  }
 }

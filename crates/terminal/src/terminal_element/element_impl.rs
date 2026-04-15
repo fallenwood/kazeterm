@@ -370,10 +370,15 @@ impl Element for TerminalElement {
           .map(|cursor| cursor.bounding_rect(origin)),
       };
 
-      let right_click_context_menu = cx
+      let (right_click_context_menu, hide_mouse_when_typing) = cx
         .try_global::<config::Config>()
-        .map(|c| c.terminal.right_click_context_menu)
-        .unwrap_or(false);
+        .map(|c| {
+          (
+            c.terminal.right_click_context_menu,
+            c.terminal.hide_mouse_when_typing,
+          )
+        })
+        .unwrap_or((false, false));
 
       self.register_mouse_listeners(
         layout.mode,
@@ -383,7 +388,15 @@ impl Element for TerminalElement {
         right_click_context_menu,
         window,
       );
-      if window.modifiers().secondary()
+      let hide_mouse_cursor = self.focused
+        && self
+          .terminal
+          .read(cx)
+          .should_hide_mouse_cursor(hide_mouse_when_typing);
+
+      if hide_mouse_cursor {
+        window.set_cursor_style(gpui::CursorStyle::None, &layout.hitbox);
+      } else if window.modifiers().secondary()
         && bounds.contains(&window.mouse_position())
         && self.terminal_view.read(cx).hover.is_some()
       {
