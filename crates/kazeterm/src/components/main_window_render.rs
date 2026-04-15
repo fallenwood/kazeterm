@@ -218,6 +218,11 @@ impl Render for MainWindow {
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.insert_new_tab(window, cx);
+        } else if keybindings
+          .quit
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
+          this.show_close_confirm_dialog(window, cx);
         } else {
           // Check profile-specific new tab shortcuts (Ctrl+Shift+1..9)
           let profiles = cx.global::<config::Config>().get_local_profile_names();
