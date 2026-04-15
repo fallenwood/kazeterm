@@ -3,8 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const GENERATED_CONFIG_HEADER: &str =
-  "# Kazeterm Configuration\n# Generated automatically\n\n";
+const GENERATED_CONFIG_HEADER: &str = "# Kazeterm Configuration\n# Generated automatically\n\n";
+const DEFAULT_TAB_LABEL_MIN_WIDTH: f32 = 60.0;
+const DEFAULT_TAB_LABEL_MAX_WIDTH: f32 = 200.0;
+const MIN_TAB_LABEL_WIDTH: f32 = 24.0;
+const MAX_TAB_LABEL_WIDTH: f32 = 480.0;
+const VERTICAL_TABBAR_WIDTH_PADDING: f32 = 24.0;
 
 pub mod palette;
 pub use palette::Palette;
@@ -157,6 +161,10 @@ pub struct TabConfig {
   /// Delay before applying terminal-driven tab title changes, in milliseconds.
   /// Helps avoid rapid title churn from shells or apps that update the title frequently.
   pub title_change_delay_ms: u64,
+  /// Minimum width of a tab item in pixels before the title truncates.
+  pub label_min_width: f32,
+  /// Maximum width of a tab item in pixels before extra space is left to the tab bar.
+  pub label_max_width: f32,
 }
 
 impl Default for TabConfig {
@@ -166,6 +174,8 @@ impl Default for TabConfig {
       close_on_last: true,
       switcher_popup: true,
       title_change_delay_ms: 200,
+      label_min_width: DEFAULT_TAB_LABEL_MIN_WIDTH,
+      label_max_width: DEFAULT_TAB_LABEL_MAX_WIDTH,
     }
   }
 }
@@ -174,6 +184,37 @@ impl TabConfig {
   /// Get the tab title change delay as Duration, clamped to [0, 5000] ms.
   pub fn get_title_change_delay(&self) -> std::time::Duration {
     std::time::Duration::from_millis(self.title_change_delay_ms.clamp(0, 5_000))
+  }
+
+  fn normalized_label_widths(&self) -> (f32, f32) {
+    let min = self
+      .label_min_width
+      .clamp(MIN_TAB_LABEL_WIDTH, MAX_TAB_LABEL_WIDTH);
+    let max = self
+      .label_max_width
+      .clamp(MIN_TAB_LABEL_WIDTH, MAX_TAB_LABEL_WIDTH);
+
+    if min <= max { (min, max) } else { (max, min) }
+  }
+
+  /// Get the minimum tab item width in pixels, normalized against the configured max width.
+  pub fn get_label_min_width(&self) -> f32 {
+    self.normalized_label_widths().0
+  }
+
+  /// Get the maximum tab item width in pixels, normalized against the configured min width.
+  pub fn get_label_max_width(&self) -> f32 {
+    self.normalized_label_widths().1
+  }
+
+  /// Get the minimum vertical tab bar width in pixels, including its fixed controls padding.
+  pub fn get_vertical_tabbar_min_width(&self) -> f32 {
+    self.get_label_min_width() + VERTICAL_TABBAR_WIDTH_PADDING
+  }
+
+  /// Get the maximum initial vertical tab bar width in pixels, including its fixed controls padding.
+  pub fn get_vertical_tabbar_max_width(&self) -> f32 {
+    self.get_label_max_width() + VERTICAL_TABBAR_WIDTH_PADDING
   }
 }
 
@@ -354,7 +395,6 @@ impl Default for Config {
 }
 
 impl Config {
-
   pub fn load() -> Self {
     let config_path = Self::get_config_file_path_impl();
 
@@ -456,7 +496,12 @@ impl Config {
     let migrated = migration::apply_migrations(&mut raw);
     let mut merged = raw.clone();
     let mut visited = HashSet::from([Self::normalize_path(path)]);
-    Self::apply_imports(&mut merged, path, &Self::extract_imports(&raw), &mut visited);
+    Self::apply_imports(
+      &mut merged,
+      path,
+      &Self::extract_imports(&raw),
+      &mut visited,
+    );
 
     let mut config: Config = merged.try_into()?;
     config.container_profiles = profiles::detect_container_profiles();
@@ -465,7 +510,10 @@ impl Config {
       tracing::info!("Config migrated to version {}", config.version);
       match Self::create_migration_backup(path, &original_content) {
         Ok(backup_path) => {
-          tracing::info!("Created migrated config backup at: {}", backup_path.display());
+          tracing::info!(
+            "Created migrated config backup at: {}",
+            backup_path.display()
+          );
         }
         Err(error) => {
           tracing::error!(
@@ -498,10 +546,7 @@ impl Config {
     Ok(raw)
   }
 
-  fn save_raw_to_path(
-    path: &Path,
-    config: &toml::Value,
-  ) -> Result<(), Box<dyn std::error::Error>> {
+  fn save_raw_to_path(path: &Path, config: &toml::Value) -> Result<(), Box<dyn std::error::Error>> {
     let config_str = toml::to_string_pretty(config)?;
     let content = format!("{}{}", GENERATED_CONFIG_HEADER, config_str);
     std::fs::write(path, content)?;
@@ -513,7 +558,9 @@ impl Config {
     original_content: &str,
   ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let parent = path.parent().ok_or_else(|| {
-      std::io::Error::other("Could not create config backup because the config has no parent directory")
+      std::io::Error::other(
+        "Could not create config backup because the config has no parent directory",
+      )
     })?;
     let stem = path
       .file_stem()
@@ -857,6 +904,20 @@ imports = ["./layer.toml"]
   }
 
   #[test]
+  fn tab_label_widths_are_clamped_and_sorted() {
+    let config = TabConfig {
+      label_min_width: 320.0,
+      label_max_width: 80.0,
+      ..TabConfig::default()
+    };
+
+    assert_eq!(config.get_label_min_width(), 80.0);
+    assert_eq!(config.get_label_max_width(), 320.0);
+    assert_eq!(config.get_vertical_tabbar_min_width(), 104.0);
+    assert_eq!(config.get_vertical_tabbar_max_width(), 344.0);
+  }
+
+  #[test]
   fn load_from_path_creates_backup_when_migrating() {
     let dir = test_dir("migration-backup");
     let base_path = dir.join("kazeterm.toml");
@@ -880,14 +941,15 @@ inactive_pane_opacity = 0.6
           && path
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| {
-              name.starts_with("kazeterm.backup.") && name.ends_with(".toml")
-            })
+            .is_some_and(|name| name.starts_with("kazeterm.backup.") && name.ends_with(".toml"))
       })
       .collect::<Vec<_>>();
 
     assert_eq!(backup_paths.len(), 1);
-    assert_eq!(std::fs::read_to_string(&backup_paths[0]).unwrap(), original_content);
+    assert_eq!(
+      std::fs::read_to_string(&backup_paths[0]).unwrap(),
+      original_content
+    );
 
     let updated_content = std::fs::read_to_string(&base_path).unwrap();
     assert!(updated_content.contains(&format!("version = \"{}\"", CURRENT_CONFIG_VERSION)));

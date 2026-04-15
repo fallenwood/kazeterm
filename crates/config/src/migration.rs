@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260415.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260415.2";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -109,6 +109,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260414.2",
       to_version: "20260415.1",
       migrate: migrate_v20260414_2_to_20260415_1,
+    },
+    Migration {
+      from_version: "20260415.1",
+      to_version: "20260415.2",
+      migrate: migrate_v20260415_1_to_20260415_2,
     },
   ]
 }
@@ -247,7 +252,10 @@ fn migrate_v20260407_1_to_20260411_1(value: &mut Value) {
     // Add new_tab and new_tab_profile_N keybindings to existing keybindings section
     if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
       if !kb.contains_key("new_tab") {
-        kb.insert("new_tab".to_string(), Value::String("ctrl-shift-t".to_string()));
+        kb.insert(
+          "new_tab".to_string(),
+          Value::String("ctrl-shift-t".to_string()),
+        );
       }
       for i in 1..=9 {
         let key = format!("new_tab_profile_{}", i);
@@ -319,10 +327,7 @@ fn migrate_v20260412_1_to_20260412_2(value: &mut Value) {
 fn migrate_v20260412_2_to_20260412_3(value: &mut Value) {
   if let Value::Table(table) = value {
     if !table.contains_key("tab_title_change_delay_ms") {
-      table.insert(
-        "tab_title_change_delay_ms".to_string(),
-        Value::Integer(200),
-      );
+      table.insert("tab_title_change_delay_ms".to_string(), Value::Integer(200));
     }
     table.insert(
       "version".to_string(),
@@ -386,7 +391,12 @@ fn migrate_v20260412_3_to_20260414_1(value: &mut Value) {
     move_key_rename(table, "vertical_tabs", "vertical", "tab");
     move_key_rename(table, "close_on_last_tab", "close_on_last", "tab");
     move_key_rename(table, "tab_switcher_popup", "switcher_popup", "tab");
-    move_key_rename(table, "tab_title_change_delay_ms", "title_change_delay_ms", "tab");
+    move_key_rename(
+      table,
+      "tab_title_change_delay_ms",
+      "title_change_delay_ms",
+      "tab",
+    );
 
     // [pane]
     move_key_rename(table, "split_pane_divider_width", "divider_width", "pane");
@@ -409,7 +419,12 @@ fn migrate_v20260412_3_to_20260414_1(value: &mut Value) {
 
     // [notification]
     move_key(table, "long_running_threshold_secs", "notification");
-    move_key_rename(table, "notification_interval_secs", "interval_secs", "notification");
+    move_key_rename(
+      table,
+      "notification_interval_secs",
+      "interval_secs",
+      "notification",
+    );
 
     table.insert(
       "version".to_string(),
@@ -481,6 +496,28 @@ fn migrate_v20260414_2_to_20260415_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260415.1".to_string()),
+    );
+  }
+}
+
+/// Add configurable tab label min/max widths to [tab].
+fn migrate_v20260415_1_to_20260415_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    let tab = table
+      .entry("tab")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(tab_table) = tab {
+      if !tab_table.contains_key("label_min_width") {
+        tab_table.insert("label_min_width".to_string(), Value::Float(60.0));
+      }
+      if !tab_table.contains_key("label_max_width") {
+        tab_table.insert("label_max_width".to_string(), Value::Float(200.0));
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260415.2".to_string()),
     );
   }
 }
@@ -610,8 +647,20 @@ vertical_tabs = false
       CURRENT_CONFIG_VERSION
     );
     // Original fields are migrated to nested tables
-    assert_eq!(get_nested(&config, "colors", "theme").unwrap().as_str().unwrap(), "one");
-    assert_eq!(get_nested(&config, "font", "size").unwrap().as_float().unwrap(), 18.0);
+    assert_eq!(
+      get_nested(&config, "colors", "theme")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      "one"
+    );
+    assert_eq!(
+      get_nested(&config, "font", "size")
+        .unwrap()
+        .as_float()
+        .unwrap(),
+      18.0
+    );
   }
 
   #[test]
@@ -624,7 +673,10 @@ vertical_tabs = false
       CURRENT_CONFIG_VERSION
     );
     assert_eq!(
-      get_nested(&config, "tab", "vertical").unwrap().as_bool().unwrap(),
+      get_nested(&config, "tab", "vertical")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
       false
     );
   }
@@ -690,10 +742,19 @@ background_opacity = 0.9
       10_000
     );
     assert_eq!(
-      get_nested(&config, "cursor", "shape").unwrap().as_str().unwrap(),
+      get_nested(&config, "cursor", "shape")
+        .unwrap()
+        .as_str()
+        .unwrap(),
       "block"
     );
-    assert_eq!(get_nested(&config, "cursor", "blink").unwrap().as_bool().unwrap(), true);
+    assert_eq!(
+      get_nested(&config, "cursor", "blink")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
+      true
+    );
     assert_eq!(
       get_nested(&config, "cursor", "blink_interval")
         .unwrap()
@@ -701,9 +762,18 @@ background_opacity = 0.9
         .unwrap(),
       750
     );
-    assert_eq!(get_nested(&config, "terminal", "osc52").unwrap().as_str().unwrap(), "copy_only");
     assert_eq!(
-      get_nested(&config, "terminal", "copy_on_select").unwrap().as_bool().unwrap(),
+      get_nested(&config, "terminal", "osc52")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      "copy_only"
+    );
+    assert_eq!(
+      get_nested(&config, "terminal", "copy_on_select")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
       false
     );
   }
@@ -743,7 +813,10 @@ background_opacity = 0.8
       CURRENT_CONFIG_VERSION
     );
     assert_eq!(
-      get_nested(&config, "appearance", "background_blur").unwrap().as_bool().unwrap(),
+      get_nested(&config, "appearance", "background_blur")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
       false
     );
   }
@@ -831,7 +904,10 @@ font_size = 18.0
       CURRENT_CONFIG_VERSION
     );
     assert_eq!(
-      get_nested(&config, "window", "start_maximized").unwrap().as_bool().unwrap(),
+      get_nested(&config, "window", "start_maximized")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
       false
     );
   }
@@ -874,6 +950,8 @@ start_maximized = false
     assert_eq!(config.pane.divider_width, 6.0);
     assert!(!config.window.start_maximized);
     assert!((config.pane.inactive_opacity - 0.6).abs() < 0.001);
+    assert_eq!(config.tab.label_min_width, 60.0);
+    assert_eq!(config.tab.label_max_width, 200.0);
   }
 
   #[test]
@@ -921,6 +999,50 @@ inactive_pane_opacity = 0.6
       config.get("version").unwrap().as_str().unwrap(),
       CURRENT_CONFIG_VERSION
     );
-    assert!(config.get("imports").unwrap().as_array().unwrap().is_empty());
+    assert!(
+      config
+        .get("imports")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty()
+    );
+  }
+
+  #[test]
+  fn migrate_20260415_1_adds_tab_label_widths() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260415.1"
+
+[tab]
+vertical = false
+close_on_last = true
+switcher_popup = true
+title_change_delay_ms = 200
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      get_nested(&config, "tab", "label_min_width")
+        .unwrap()
+        .as_float()
+        .unwrap(),
+      60.0
+    );
+    assert_eq!(
+      get_nested(&config, "tab", "label_max_width")
+        .unwrap()
+        .as_float()
+        .unwrap(),
+      200.0
+    );
   }
 }

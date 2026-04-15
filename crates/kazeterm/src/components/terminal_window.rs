@@ -158,9 +158,8 @@ fn new_terminal(
     }
   };
 
-  let pty =
-    alacritty_terminal::tty::new(&pty_options, TerminalBounds::default().into(), 1)
-      .map_err(|e| format!("Could not start shell '{}': {}", shell_program, e))?;
+  let pty = alacritty_terminal::tty::new(&pty_options, TerminalBounds::default().into(), 1)
+    .map_err(|e| format!("Could not start shell '{}': {}", shell_program, e))?;
 
   #[cfg(unix)]
   let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {

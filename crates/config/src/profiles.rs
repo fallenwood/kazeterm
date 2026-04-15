@@ -155,7 +155,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
   use crate::{
-    CURRENT_CONFIG_VERSION, AppearanceConfig, ColorsConfig, Config, CursorConfig, FontConfig,
+    AppearanceConfig, CURRENT_CONFIG_VERSION, ColorsConfig, Config, CursorConfig, FontConfig,
     KeybindingConfig, NotificationConfig, PaneConfig, Profile, TabConfig, TerminalConfig,
     ThemeMode, WindowConfig,
   };

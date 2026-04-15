@@ -16,7 +16,10 @@ impl MainWindow {
     reason: NotificationReason,
     cx: &mut Context<Self>,
   ) {
-    let threshold_secs = cx.global::<config::Config>().notification.long_running_threshold_secs;
+    let threshold_secs = cx
+      .global::<config::Config>()
+      .notification
+      .long_running_threshold_secs;
     let idle_duration = terminal_view
       .read(cx)
       .terminal()

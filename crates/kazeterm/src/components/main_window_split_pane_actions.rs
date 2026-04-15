@@ -40,12 +40,7 @@ impl MainWindow {
     let (shell, shell_args) = self
       .active_tab_item_mut()
       .map(|item| (item.shell_path.clone(), item.shell_args.clone()))
-      .unwrap_or_else(|| {
-        (
-          cx.global::<::config::Config>().get_shell().clone(),
-          vec![],
-        )
-      });
+      .unwrap_or_else(|| (cx.global::<::config::Config>().get_shell().clone(), vec![]));
 
     // Create a new terminal with the same shell
     let index = self

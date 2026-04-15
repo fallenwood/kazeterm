@@ -52,8 +52,9 @@ fn resolve_tab_launch(
   if let Some(profile) = config.get_default_profile() {
     let shell = profile.shell.clone();
     let shell_name = shell_name_for(&shell);
-    let working_directory =
-      get_working_directory_pathbuf(working_directory.or_else(|| profile.working_directory.clone()));
+    let working_directory = get_working_directory_pathbuf(
+      working_directory.or_else(|| profile.working_directory.clone()),
+    );
 
     return (
       shell,

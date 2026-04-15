@@ -1,8 +1,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputState};
 use gpui_component::input::Escape as InputEscape;
+use gpui_component::input::{Input, InputState};
 use gpui_component::{ActiveTheme, IconName, Sizable};
 use terminal::TerminalView;
 
@@ -290,31 +290,39 @@ impl Render for SearchBar {
       .py_0p5()
       .px_1p5()
       .cursor_grab()
-      .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, e: &MouseDownEvent, _, cx| {
-        this.drag_offset = Some(e.position);
-        cx.stop_propagation();
-      }))
+      .on_mouse_down(
+        gpui::MouseButton::Left,
+        cx.listener(|this, e: &MouseDownEvent, _, cx| {
+          this.drag_offset = Some(e.position);
+          cx.stop_propagation();
+        }),
+      )
       .on_drag(DragSearchBar(entity_id), |drag, _, _, cx| {
         cx.stop_propagation();
         cx.new(|_| drag.clone())
       })
-      .on_drag_move(cx.listener(|this, e: &DragMoveEvent<DragSearchBar>, _, cx| {
-        let drag = e.drag(cx);
-        if cx.entity_id() != drag.0 {
-          return;
-        }
-        if let Some(start) = this.drag_offset {
-          let delta = e.event.position - start;
-          this.position.x += delta.x;
-          this.position.y += delta.y;
-          this.drag_offset = Some(e.event.position);
-          cx.notify();
-        }
-      }))
-      .on_mouse_up(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
-        this.drag_offset = None;
-        cx.stop_propagation();
-      }))
+      .on_drag_move(
+        cx.listener(|this, e: &DragMoveEvent<DragSearchBar>, _, cx| {
+          let drag = e.drag(cx);
+          if cx.entity_id() != drag.0 {
+            return;
+          }
+          if let Some(start) = this.drag_offset {
+            let delta = e.event.position - start;
+            this.position.x += delta.x;
+            this.position.y += delta.y;
+            this.drag_offset = Some(e.event.position);
+            cx.notify();
+          }
+        }),
+      )
+      .on_mouse_up(
+        gpui::MouseButton::Left,
+        cx.listener(|this, _, _, cx| {
+          this.drag_offset = None;
+          cx.stop_propagation();
+        }),
+      )
       .on_action(cx.listener(|this, _: &InputEscape, _window, cx| {
         this.close(cx);
       }))

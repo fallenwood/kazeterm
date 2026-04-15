@@ -9,15 +9,12 @@ use gpui_component::{
 };
 use themeing::SettingsStore;
 
-use super::main_window::{MainWindow, TAB_LABEL_MAX_WIDTH, VERTICAL_TABBAR_MIN_WIDTH};
+use super::main_window::MainWindow;
 use super::menu_builder::{build_new_tab_menu, build_tab_context_menu};
 use super::terminal_tab_bar::{TerminalTab, TerminalTabBar};
+use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
-use crate::components::{
-  dragged_tab::{DraggedTab, DraggedTabView},
-  main_window::TAB_LABEL_MIN_WIDTH,
-};
 
 #[derive(Clone)]
 struct ResizeVerticalTabbar(pub EntityId);
@@ -34,6 +31,9 @@ impl Render for MainWindow {
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
     let vertical_tabs = config.tab.vertical;
+    let tab_label_min_width = config.tab.get_label_min_width();
+    let tab_label_max_width = config.tab.get_label_max_width();
+    let vertical_tabbar_min_width = config.tab.get_vertical_tabbar_min_width();
     let tab_bar_visible = self.tab_bar_visible;
     let setting_store = cx.global::<SettingsStore>();
     let local_profiles = config.get_local_profiles_with_shells();
@@ -392,8 +392,8 @@ impl Render for MainWindow {
                                         .pl_2p5()
                                         .pr_1()
                                         .items_center()
-                                        .min_w(px(TAB_LABEL_MIN_WIDTH))
-                                        .max_w(px(TAB_LABEL_MAX_WIDTH))
+                                        .min_w(px(tab_label_min_width))
+                                        .max_w(px(tab_label_max_width))
                                         // Background styling
                                         .when(is_selected, |this| {
                                           this
@@ -853,13 +853,13 @@ impl Render for MainWindow {
                     .w(px(6.0))
                     .cursor(CursorStyle::ResizeLeftRight)
                     .on_drag_move(cx.listener(
-                      |this, e: &DragMoveEvent<ResizeVerticalTabbar>, window, cx| {
+                      move |this, e: &DragMoveEvent<ResizeVerticalTabbar>, window, cx| {
                         let ResizeVerticalTabbar(entity_id) = e.drag(cx);
                         if cx.entity_id() != *entity_id {
                           return;
                         }
 
-                        let min_width = px(VERTICAL_TABBAR_MIN_WIDTH);
+                        let min_width = px(vertical_tabbar_min_width);
                         let max_width = (window.bounds().size.width - px(160.0)).max(min_width);
                         let next_width = e.event.position.x.max(min_width).min(max_width);
                         if this.vertical_tabbar_width != next_width {

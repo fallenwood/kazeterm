@@ -134,10 +134,11 @@ impl PtyProcessInfo {
 
   fn refresh(&mut self) -> Option<&Process> {
     let pid = self.pid_getter.pid()?;
-    if self
-      .system
-      .refresh_processes_specifics(sysinfo::ProcessesToUpdate::Some(&[pid]), false, self.refresh_kind)
-      == 1
+    if self.system.refresh_processes_specifics(
+      sysinfo::ProcessesToUpdate::Some(&[pid]),
+      false,
+      self.refresh_kind,
+    ) == 1
     {
       self.system.process(pid)
     } else {

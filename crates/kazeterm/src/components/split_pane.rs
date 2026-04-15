@@ -323,10 +323,7 @@ impl SplitPane {
             .border_color(border_color)
             .child(terminal.clone())
         } else {
-          div()
-            .id(pane_id)
-            .size_full()
-            .child(terminal.clone())
+          div().id(pane_id).size_full().child(terminal.clone())
         };
 
         if right_click_context_menu {

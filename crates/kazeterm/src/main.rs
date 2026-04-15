@@ -9,8 +9,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use gpui::{
-  App, AppContext, Application, KeyBinding, Point, Size, WindowAppearance, WindowBackgroundAppearance,
-  WindowOptions, actions, px,
+  App, AppContext, Application, KeyBinding, Point, Size, WindowAppearance,
+  WindowBackgroundAppearance, WindowOptions, actions, px,
 };
 #[cfg(target_os = "macos")]
 use gpui::{Menu, MenuItem};
@@ -27,7 +27,10 @@ mod config;
 mod config_watcher;
 pub mod event_system;
 
-actions!(kazeterm, [NewWindow, Quit, Hide, HideOthers, ShowAll, Minimize, Zoom]);
+actions!(
+  kazeterm,
+  [NewWindow, Quit, Hide, HideOthers, ShowAll, Minimize, Zoom]
+);
 
 /// Command-line arguments for Kazeterm
 #[derive(Parser, Debug)]

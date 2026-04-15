@@ -179,12 +179,7 @@ impl MainWindow {
     }
   }
 
-  fn restore_tab(
-    &mut self,
-    tab_state: &TabState,
-    window: &mut Window,
-    cx: &mut Context<Self>,
-  ) {
+  fn restore_tab(&mut self, tab_state: &TabState, window: &mut Window, cx: &mut Context<Self>) {
     let mut next_pane_id: usize = 0;
     let (root_pane, subscriptions) = match Self::build_split_pane(
       &tab_state.pane_tree,

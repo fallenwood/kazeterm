@@ -236,7 +236,10 @@ fn sync_theme_watch(
   if let Some(current_path) = watched_theme_path.as_ref()
     && desired_theme_path.as_ref() != Some(current_path)
   {
-    tracing::info!("Stopped watching themes directory: {}", current_path.display());
+    tracing::info!(
+      "Stopped watching themes directory: {}",
+      current_path.display()
+    );
     watcher.unwatch(current_path)?;
     *watched_theme_path = None;
   }

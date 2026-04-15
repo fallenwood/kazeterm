@@ -34,9 +34,9 @@ impl KeybindingList {
   }
 
   pub fn matches(&self, control: bool, shift: bool, alt: bool, platform: bool, key: &str) -> bool {
-    self.iter().any(|binding| {
-      ParsedKeybinding::parse(binding).matches(control, shift, alt, platform, key)
-    })
+    self
+      .iter()
+      .any(|binding| ParsedKeybinding::parse(binding).matches(control, shift, alt, platform, key))
   }
 
   pub fn display_text(&self) -> String {

@@ -14,10 +14,6 @@ use crate::components::workspace_state::WorkspaceState;
 
 pub(crate) use super::main_window_tab_item::TabItem;
 
-pub(crate) const TAB_LABEL_MIN_WIDTH: f32 = 60.0;
-pub(crate) const TAB_LABEL_MAX_WIDTH: f32 = 200.0;
-pub(crate) const VERTICAL_TABBAR_MIN_WIDTH: f32 = TAB_LABEL_MIN_WIDTH + 24.0;
-pub(crate) const VERTICAL_TABBAR_MAX_WIDTH: f32 = TAB_LABEL_MAX_WIDTH + 24.0;
 const VERTICAL_TABBAR_WIDTH_RATIO: f32 = 0.175;
 
 pub struct MainWindow {
@@ -90,6 +86,10 @@ impl MainWindow {
 
     let search_bar = cx.new(|cx| SearchBar::new(window, cx));
     let search_bar_subscription = cx.subscribe_in(&search_bar, window, Self::on_search_bar_event);
+    let config = cx.global::<::config::Config>();
+    let vertical_tabbar_width = (window.bounds().size.width * VERTICAL_TABBAR_WIDTH_RATIO)
+      .max(px(config.tab.get_vertical_tabbar_min_width()))
+      .min(px(config.tab.get_vertical_tabbar_max_width()));
 
     let appearance_subscription = window.observe_window_appearance(|window, cx| {
       let config = cx.global::<::config::Config>().clone();
@@ -120,9 +120,7 @@ impl MainWindow {
       tab_switcher_visible: false,
       tab_switcher: None,
       tab_switcher_selection: 0,
-      vertical_tabbar_width: (window.bounds().size.width * VERTICAL_TABBAR_WIDTH_RATIO)
-        .max(px(VERTICAL_TABBAR_MIN_WIDTH))
-        .min(px(VERTICAL_TABBAR_MAX_WIDTH)),
+      vertical_tabbar_width,
       last_known_ctrl_state: false,
       rename_dialog: None,
       _rename_dialog_subscription: None,

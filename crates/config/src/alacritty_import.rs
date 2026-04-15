@@ -691,7 +691,10 @@ working_directory = "/tmp"
     assert_eq!(config.cursor.blink_interval, 600);
     assert_eq!(config.terminal.osc52, "copy_paste");
     assert_eq!(config.terminal.copy_on_select, true);
-    assert_eq!(config.terminal.env.get("MY_VAR").map(|s| s.as_str()), Some("test"));
+    assert_eq!(
+      config.terminal.env.get("MY_VAR").map(|s| s.as_str()),
+      Some("test")
+    );
     assert_eq!(config.terminal.working_directory.as_deref(), Some("/tmp"));
   }
 }
