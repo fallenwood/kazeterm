@@ -52,8 +52,8 @@ impl AlacMouseButton {
   fn from_button(e: MouseButton) -> Self {
     match e {
       gpui::MouseButton::Left => AlacMouseButton::LeftButton,
-      gpui::MouseButton::Right => AlacMouseButton::MiddleButton,
-      gpui::MouseButton::Middle => AlacMouseButton::RightButton,
+      gpui::MouseButton::Right => AlacMouseButton::RightButton,
+      gpui::MouseButton::Middle => AlacMouseButton::MiddleButton,
       gpui::MouseButton::Navigate(_) => AlacMouseButton::Other,
     }
   }
