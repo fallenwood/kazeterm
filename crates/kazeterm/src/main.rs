@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use gpui::{
-  App, AppContext, Application, MenuItem, KeyBinding, Point, Size, WindowAppearance, WindowBackgroundAppearance,
+  App, AppContext, Application, KeyBinding, Point, Size, WindowAppearance, WindowBackgroundAppearance,
   WindowOptions, actions, px,
 };
 #[cfg(target_os = "macos")]
