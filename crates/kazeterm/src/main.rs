@@ -9,8 +9,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use gpui::{
-  App, AppContext, Application, KeyBinding, Point, Size, WindowBackgroundAppearance, WindowOptions,
-  actions, px,
+  App, AppContext, Application, MenuItem, KeyBinding, Point, Size, WindowAppearance, WindowBackgroundAppearance,
+  WindowOptions, actions, px,
 };
 #[cfg(target_os = "macos")]
 use gpui::{Menu, MenuItem};
@@ -125,48 +125,12 @@ fn init_theme_system(config: &Config) {
   }
 }
 
-/// Detect system dark mode preference
-/// TODO: Implement proper system detection for each platform
-fn detect_system_dark_mode() -> bool {
-  #[cfg(target_os = "windows")]
-  {
-    // Check Windows registry for dark mode setting
-    use windows::Win32::System::Registry::{
-      HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegOpenKeyExW, RegQueryValueExW,
-    };
-    use windows::core::w;
-
-    unsafe {
-      let mut key = HKEY_CURRENT_USER;
-      let subkey = w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
-      let value_name = w!("AppsUseLightTheme");
-
-      if RegOpenKeyExW(HKEY_CURRENT_USER, subkey, Some(0), KEY_READ, &mut key).is_ok() {
-        let mut data: u32 = 1;
-        let mut data_size = std::mem::size_of::<u32>() as u32;
-        let mut value_type = REG_DWORD;
-
-        if RegQueryValueExW(
-          key,
-          value_name,
-          None,
-          Some(&mut value_type),
-          Some(&mut data as *mut u32 as *mut u8),
-          Some(&mut data_size),
-        )
-        .is_ok()
-        {
-          // If AppsUseLightTheme is 0, dark mode is enabled
-          return data == 0;
-        }
-      }
-    }
-    true // Default to dark mode
-  }
-  #[cfg(not(target_os = "windows"))]
-  {
-    true // Default to dark mode on other platforms
-  }
+/// Detect system dark mode preference using GPUI's cross-platform appearance API.
+pub(crate) fn system_is_dark(cx: &App) -> bool {
+  matches!(
+    cx.window_appearance(),
+    WindowAppearance::Dark | WindowAppearance::VibrantDark
+  )
 }
 
 /// Open a new Kazeterm window using the current global config.
@@ -283,7 +247,7 @@ fn main() {
 
     cx.set_global(crate::config::create_settings_store(
       &config,
-      detect_system_dark_mode(),
+      system_is_dark(cx),
     ));
     cx.set_global(config.clone());
 
