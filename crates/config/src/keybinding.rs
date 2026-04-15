@@ -187,7 +187,7 @@ impl Default for KeybindingConfig {
       quit: if cfg!(target_os = "macos") {
         KeybindingList::new("cmd-q")
       } else {
-        KeybindingList::new("alt-f4")
+        KeybindingList::new("ctrl-shift-q")
       },
     }
   }
