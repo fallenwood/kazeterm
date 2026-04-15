@@ -541,6 +541,7 @@ impl TerminalView {
       &keybindings.focus_next_pane,
       &keybindings.focus_previous_pane,
       &keybindings.swap_split_panes,
+      &keybindings.new_window,
       &keybindings.quit,
     ];
 

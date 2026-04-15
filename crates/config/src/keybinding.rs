@@ -147,6 +147,8 @@ pub struct KeybindingConfig {
   pub new_tab_profile_8: KeybindingList,
   /// Open a new tab with profile 9
   pub new_tab_profile_9: KeybindingList,
+  /// Open a new window
+  pub new_window: KeybindingList,
   /// Quit the application
   pub quit: KeybindingList,
 }
@@ -184,6 +186,11 @@ impl Default for KeybindingConfig {
       new_tab_profile_7: KeybindingList::new("ctrl-shift-7"),
       new_tab_profile_8: KeybindingList::new("ctrl-shift-8"),
       new_tab_profile_9: KeybindingList::new("ctrl-shift-9"),
+      new_window: if cfg!(target_os = "macos") {
+        KeybindingList::new("cmd-n")
+      } else {
+        KeybindingList::new("ctrl-shift-n")
+      },
       quit: if cfg!(target_os = "macos") {
         KeybindingList::new("cmd-q")
       } else {

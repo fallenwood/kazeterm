@@ -9,9 +9,11 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use gpui::{
-  App, AppContext, Application, MenuItem, Point, Size, WindowAppearance, WindowBackgroundAppearance,
+  App, AppContext, Application, KeyBinding, Point, Size, WindowAppearance, WindowBackgroundAppearance,
   WindowOptions, actions, px,
 };
+#[cfg(target_os = "macos")]
+use gpui::{Menu, MenuItem};
 use themeing::SettingsStore;
 
 use crate::assets::Assets;
@@ -25,7 +27,7 @@ mod config;
 mod config_watcher;
 pub mod event_system;
 
-actions!(kazeterm, [NewWindow, Quit]);
+actions!(kazeterm, [NewWindow, Quit, Hide, HideOthers, ShowAll, Minimize, Zoom]);
 
 /// Command-line arguments for Kazeterm
 #[derive(Parser, Debug)]
@@ -227,6 +229,17 @@ fn main() {
 
   let app = Application::new().with_assets(Assets);
 
+  // On macOS, clicking the dock icon while no windows are open should open a new window.
+  // `on_reopen` is invoked by `applicationShouldHandleReopen:hasVisibleWindows:`.
+  {
+    let reopen_event_config = event_source_config.clone();
+    app.on_reopen(move |cx| {
+      if cx.windows().is_empty() {
+        open_kazeterm_window(reopen_event_config.clone(), cx);
+      }
+    });
+  }
+
   app.run(move |cx: &mut App| {
     Assets.load_fonts(cx).unwrap();
     gpui_component::init(cx);
@@ -258,6 +271,78 @@ fn main() {
       cx.on_action(move |_: &NewWindow, cx: &mut App| {
         open_kazeterm_window(event_config.clone(), cx);
       });
+    }
+    cx.on_action(|_: &Quit, cx: &mut App| {
+      cx.quit();
+    });
+
+    // Register new-window keybinding from config (all platforms)
+    {
+      let keybindings = &config.keybindings;
+      let mut bindings: Vec<KeyBinding> = Vec::new();
+      bindings.extend(
+        keybindings
+          .new_window
+          .iter()
+          .map(|binding| KeyBinding::new(binding, NewWindow, None)),
+      );
+      cx.bind_keys(bindings);
+    }
+
+    // Register macOS system actions
+    #[cfg(target_os = "macos")]
+    {
+      cx.on_action(|_: &Hide, cx: &mut App| cx.hide());
+      cx.on_action(|_: &HideOthers, cx: &mut App| cx.hide_other_apps());
+      cx.on_action(|_: &ShowAll, cx: &mut App| cx.unhide_other_apps());
+      cx.on_action(|_: &Minimize, cx: &mut App| {
+        if let Some(window) = cx.active_window() {
+          window
+            .update(cx, |_, window, _cx| {
+              window.minimize_window();
+            })
+            .ok();
+        }
+      });
+      cx.on_action(|_: &Zoom, cx: &mut App| {
+        if let Some(window) = cx.active_window() {
+          window
+            .update(cx, |_, window, _cx| {
+              window.zoom_window();
+            })
+            .ok();
+        }
+      });
+
+      cx.bind_keys([
+        KeyBinding::new("cmd-h", Hide, None),
+        KeyBinding::new("cmd-alt-h", HideOthers, None),
+        KeyBinding::new("cmd-m", Minimize, None),
+      ]);
+
+      cx.set_menus(vec![
+        Menu {
+          name: "Kazeterm".into(),
+          items: vec![
+            MenuItem::os_submenu("Services", gpui::SystemMenuType::Services),
+            MenuItem::separator(),
+            MenuItem::action("Hide Kazeterm", Hide),
+            MenuItem::action("Hide Others", HideOthers),
+            MenuItem::action("Show All", ShowAll),
+            MenuItem::separator(),
+            MenuItem::action("Quit Kazeterm", Quit),
+          ],
+        },
+        Menu {
+          name: "Window".into(),
+          items: vec![
+            MenuItem::action("Minimize", Minimize),
+            MenuItem::action("Zoom", Zoom),
+            MenuItem::separator(),
+            MenuItem::action("New Window", NewWindow),
+          ],
+        },
+      ]);
     }
 
     // Set macOS dock menu (long-press on dock icon)
