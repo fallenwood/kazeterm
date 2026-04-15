@@ -58,6 +58,8 @@ pub struct MainWindow {
   pub(crate) last_notification_time: Option<std::time::Instant>,
   /// Whether the tab bar is currently visible
   pub(crate) tab_bar_visible: bool,
+  /// Subscription for system appearance changes (used by ThemeMode::System)
+  pub(crate) _appearance_subscription: gpui::Subscription,
 }
 
 impl MainWindow {
@@ -88,6 +90,19 @@ impl MainWindow {
 
     let search_bar = cx.new(|cx| SearchBar::new(window, cx));
     let search_bar_subscription = cx.subscribe_in(&search_bar, window, Self::on_search_bar_event);
+
+    let appearance_subscription = window.observe_window_appearance(|window, cx| {
+      let config = cx.global::<::config::Config>().clone();
+      if matches!(config.colors.theme_mode, ::config::ThemeMode::System) {
+        let is_dark = matches!(
+          window.appearance(),
+          gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
+        );
+        let settings = crate::config::create_settings_store(&config, is_dark);
+        cx.set_global(settings);
+        themeing::SettingsStore::init_gpui_component_theme(cx);
+      }
+    });
 
     let mut main_window = Self {
       focus_handle: cx.focus_handle(),
@@ -121,6 +136,7 @@ impl MainWindow {
       _shell_error_subscription: None,
       last_notification_time: None,
       tab_bar_visible: true,
+      _appearance_subscription: appearance_subscription,
     };
 
     // Try to restore previous workspace
