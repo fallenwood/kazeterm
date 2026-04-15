@@ -1,0 +1,17 @@
+{
+  "languageServers": {
+    "rust": {
+      "command": "rust-analyzer",
+      "filetypes": ["rust"],
+      "rootPatterns": ["Cargo.toml"],
+      "initializationOptions": {
+        "cargo": {
+          "loadOutDirsFromCheck": true
+        },
+        "procMacro": {
+          "enable": true
+        }
+      }
+    }
+  }
+}

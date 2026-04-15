@@ -293,7 +293,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       }
 
       // Detect system dark mode
-      let system_is_dark = crate::detect_system_dark_mode();
+      let system_is_dark = crate::system_is_dark(cx);
 
       // Create new settings store with updated theme
       let settings = create_settings_store(&new_config, system_is_dark);
@@ -316,7 +316,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
     FileChangeType::Theme => {
       // Only reload the theme, not the entire config
       let config = cx.global::<Config>().clone();
-      let system_is_dark = crate::detect_system_dark_mode();
+      let system_is_dark = crate::system_is_dark(cx);
 
       // Create new settings store with reloaded theme
       let settings = create_settings_store(&config, system_is_dark);
