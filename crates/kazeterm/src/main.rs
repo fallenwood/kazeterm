@@ -25,7 +25,7 @@ mod config;
 mod config_watcher;
 pub mod event_system;
 
-actions!(kazeterm, [NewWindow]);
+actions!(kazeterm, [NewWindow, Quit]);
 
 /// Command-line arguments for Kazeterm
 #[derive(Parser, Debug)]
@@ -262,7 +262,10 @@ fn main() {
 
     // Set macOS dock menu (long-press on dock icon)
     #[cfg(target_os = "macos")]
-    cx.set_dock_menu(vec![MenuItem::action("New Window", NewWindow)]);
+    cx.set_dock_menu(vec![
+      MenuItem::action("New Window", NewWindow),
+      MenuItem::action("Quit", Quit),
+    ]);
 
     open_kazeterm_window(event_source_config.clone(), cx);
   });
