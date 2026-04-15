@@ -126,8 +126,8 @@ To add a new config field:
 
 | Action | Default |
 |--------|---------|
-| copy | `ctrl-shift-c` |
-| paste | `ctrl-shift-v` |
+| copy | `ctrl-shift-c` (macOS: `cmd-c`) |
+| paste | `ctrl-shift-v` (macOS: `cmd-v`) |
 | zoom_in | `ctrl-=` |
 | zoom_out | `ctrl--` |
 | zoom_reset | `ctrl-0` |

@@ -156,8 +156,16 @@ pub struct KeybindingConfig {
 impl Default for KeybindingConfig {
   fn default() -> Self {
     Self {
-      copy: KeybindingList::new("ctrl-shift-c"),
-      paste: KeybindingList::new("ctrl-shift-v"),
+      copy: if cfg!(target_os = "macos") {
+        KeybindingList::new("cmd-c")
+      } else {
+        KeybindingList::new("ctrl-shift-c")
+      },
+      paste: if cfg!(target_os = "macos") {
+        KeybindingList::new("cmd-v")
+      } else {
+        KeybindingList::new("ctrl-shift-v")
+      },
       zoom_in: KeybindingList::new("ctrl-="),
       zoom_out: KeybindingList::new("ctrl--"),
       zoom_reset: KeybindingList::new("ctrl-0"),
@@ -294,7 +302,7 @@ impl ParsedKeybinding {
   pub fn display_text(&self) -> String {
     let mut parts: Vec<String> = Vec::new();
     if self.platform {
-      parts.push("Win".into());
+      parts.push(platform_modifier_label().into());
     }
     if self.control {
       parts.push("Ctrl".into());
@@ -307,6 +315,16 @@ impl ParsedKeybinding {
     }
     parts.push(display_key(&self.key));
     parts.join("+")
+  }
+}
+
+fn platform_modifier_label() -> &'static str {
+  if cfg!(target_os = "macos") {
+    "Cmd"
+  } else if cfg!(target_os = "windows") {
+    "Win"
+  } else {
+    "Super"
   }
 }
 
@@ -380,6 +398,32 @@ fn display_key(key: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  fn expected_default_copy_binding() -> &'static str {
+    if cfg!(target_os = "macos") {
+      "cmd-c"
+    } else {
+      "ctrl-shift-c"
+    }
+  }
+
+  fn expected_default_paste_binding() -> &'static str {
+    if cfg!(target_os = "macos") {
+      "cmd-v"
+    } else {
+      "ctrl-shift-v"
+    }
+  }
+
+  fn expected_platform_modifier_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+      "Cmd"
+    } else if cfg!(target_os = "windows") {
+      "Win"
+    } else {
+      "Super"
+    }
+  }
 
   #[test]
   fn parse_simple_key() {
@@ -525,7 +569,11 @@ mod tests {
   fn default_keybindings_parse_correctly() {
     let config = KeybindingConfig::default();
     let copy = ParsedKeybinding::parse(config.copy.first().unwrap());
-    assert!(copy.matches(true, true, false, false, "c"));
+    if cfg!(target_os = "macos") {
+      assert!(copy.matches(false, false, false, true, "c"));
+    } else {
+      assert!(copy.matches(true, true, false, false, "c"));
+    }
 
     let zoom_in = ParsedKeybinding::parse(config.zoom_in.first().unwrap());
     assert!(zoom_in.matches(true, false, false, false, "="));
@@ -538,8 +586,8 @@ mod tests {
   fn keybinding_config_deserialize_defaults() {
     let toml_str = "";
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(config.copy, "ctrl-shift-c");
-    assert_eq!(config.paste, "ctrl-shift-v");
+    assert_eq!(config.copy, expected_default_copy_binding());
+    assert_eq!(config.paste, expected_default_paste_binding());
   }
 
   #[test]
@@ -548,7 +596,7 @@ mod tests {
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(config.copy, "ctrl-c");
     // Non-specified fields use defaults
-    assert_eq!(config.paste, "ctrl-shift-v");
+    assert_eq!(config.paste, expected_default_paste_binding());
     assert_eq!(config.next_tab, "ctrl-tab");
   }
 
@@ -591,6 +639,15 @@ mod tests {
     let bindings = KeybindingList::new("ctrl-shift-c");
     let serialized = toml::to_string(&Wrapper { copy: bindings }).unwrap();
     assert_eq!(serialized.trim(), "copy = \"ctrl-shift-c\"");
+  }
+
+  #[test]
+  fn display_text_formats_platform_modifier_for_current_os() {
+    let kb = ParsedKeybinding::parse("cmd-c");
+    assert_eq!(
+      kb.display_text(),
+      format!("{}+C", expected_platform_modifier_label())
+    );
   }
 
   #[test]
