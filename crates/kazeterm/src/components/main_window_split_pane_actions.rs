@@ -36,11 +36,16 @@ impl MainWindow {
 
     let working_directory = self.active_terminal_working_directory(cx);
 
-    // Use the same shell as the source tab, not the default shell.
-    let shell = self
+    // Use the same shell and args as the source tab, not the default shell.
+    let (shell, shell_args) = self
       .active_tab_item_mut()
-      .map(|item| item.shell_path.clone())
-      .unwrap_or_else(|| cx.global::<::config::Config>().get_shell().clone());
+      .map(|item| (item.shell_path.clone(), item.shell_args.clone()))
+      .unwrap_or_else(|| {
+        (
+          cx.global::<::config::Config>().get_shell().clone(),
+          vec![],
+        )
+      });
 
     // Create a new terminal with the same shell
     let index = self
@@ -53,7 +58,7 @@ impl MainWindow {
       window,
       index,
       &shell,
-      vec![],
+      shell_args,
       working_directory_path,
       cx,
     ) {
