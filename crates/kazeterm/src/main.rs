@@ -9,10 +9,11 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use gpui::{
-  App, AppContext, Application, Point, Size, WindowBackgroundAppearance, WindowOptions, actions, px,
+  App, AppContext, Application, KeyBinding, Point, Size, WindowBackgroundAppearance, WindowOptions,
+  actions, px,
 };
 #[cfg(target_os = "macos")]
-use gpui::{KeyBinding, Menu, MenuItem};
+use gpui::{Menu, MenuItem};
 use themeing::SettingsStore;
 
 use crate::assets::Assets;
@@ -310,6 +311,19 @@ fn main() {
     cx.on_action(|_: &Quit, cx: &mut App| {
       cx.quit();
     });
+
+    // Register new-window keybinding from config (all platforms)
+    {
+      let keybindings = &config.keybindings;
+      let mut bindings: Vec<KeyBinding> = Vec::new();
+      bindings.extend(
+        keybindings
+          .new_window
+          .iter()
+          .map(|binding| KeyBinding::new(binding, NewWindow, None)),
+      );
+      cx.bind_keys(bindings);
+    }
 
     // Register macOS system actions
     #[cfg(target_os = "macos")]
