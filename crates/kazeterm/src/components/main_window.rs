@@ -16,6 +16,30 @@ pub(crate) use super::main_window_tab_item::TabItem;
 
 const VERTICAL_TABBAR_WIDTH_RATIO: f32 = 0.175;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct KeyDebugModifiers {
+  pub control: bool,
+  pub shift: bool,
+  pub alt: bool,
+  pub platform: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeyDebugPressedKey {
+  pub raw_key: String,
+  pub modifiers: KeyDebugModifiers,
+  pub action: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeyDebugRecentKey {
+  pub raw_key: String,
+  pub modifiers: KeyDebugModifiers,
+  pub shortcut: String,
+  pub action: Option<String>,
+  pub expires_at: std::time::Instant,
+}
+
 pub struct MainWindow {
   pub(crate) focus_handle: FocusHandle,
   pub(crate) active_tab_ix: Option<usize>,
@@ -34,7 +58,9 @@ pub struct MainWindow {
   pub(crate) tab_switcher: Option<Entity<TabSwitcher>>,
   pub(crate) tab_switcher_selection: usize,
   pub(crate) vertical_tabbar_width: Pixels,
-  pub(crate) last_known_ctrl_state: bool,
+  pub(crate) key_debug_modifiers: KeyDebugModifiers,
+  pub(crate) key_debug_pressed_keys: Vec<KeyDebugPressedKey>,
+  pub(crate) key_debug_recent_keys: Vec<KeyDebugRecentKey>,
   /// Tab rename dialog state
   pub(crate) rename_dialog: Option<Entity<TabRenameDialog>>,
   pub(crate) _rename_dialog_subscription: Option<gpui::Subscription>,
@@ -122,7 +148,9 @@ impl MainWindow {
       tab_switcher: None,
       tab_switcher_selection: 0,
       vertical_tabbar_width,
-      last_known_ctrl_state: false,
+      key_debug_modifiers: KeyDebugModifiers::default(),
+      key_debug_pressed_keys: Vec::new(),
+      key_debug_recent_keys: Vec::new(),
       rename_dialog: None,
       _rename_dialog_subscription: None,
       close_confirm_dialog: None,

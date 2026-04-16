@@ -146,6 +146,9 @@ pub struct WindowConfig {
   /// Automatically restore the previous workspace (tabs, splits, working directories)
   /// on application launch. Default: true.
   pub restore_workspace: bool,
+  /// Show a key debug overlay in the bottom-right corner of the main window.
+  /// The overlay lists actions that match the currently held modifiers.
+  pub key_debug_mode: bool,
 }
 
 impl Default for WindowConfig {
@@ -155,6 +158,7 @@ impl Default for WindowConfig {
       height: 600.0,
       start_maximized: false,
       restore_workspace: true,
+      key_debug_mode: false,
     }
   }
 }
