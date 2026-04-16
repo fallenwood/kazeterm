@@ -31,9 +31,10 @@ impl Render for MainWindow {
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
     let vertical_tabs = config.tab.vertical;
-    let tab_label_min_width = config.tab.get_label_min_width();
-    let tab_label_max_width = config.tab.get_label_max_width();
-    let vertical_tabbar_min_width = config.tab.get_vertical_tabbar_min_width();
+    let ui_font_size = config.font.ui_size;
+    let tab_label_min_width = config.tab.get_label_min_width(ui_font_size);
+    let tab_label_max_width = config.tab.get_label_max_width(ui_font_size);
+    let vertical_tabbar_min_width = config.tab.get_vertical_tabbar_min_width(ui_font_size);
     let tab_bar_visible = self.tab_bar_visible;
     let setting_store = cx.global::<SettingsStore>();
     let local_profiles = config.get_local_profiles_with_shells();

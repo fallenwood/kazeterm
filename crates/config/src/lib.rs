@@ -10,6 +10,18 @@ const MIN_TAB_LABEL_WIDTH: f32 = 24.0;
 const MAX_TAB_LABEL_WIDTH: f32 = 480.0;
 const VERTICAL_TABBAR_WIDTH_PADDING: f32 = 24.0;
 
+/// Approximate average character width as a fraction of the UI font size.
+/// Suitable for proportional fonts (e.g., Segoe UI, Noto Sans).
+const CHAR_WIDTH_RATIO: f32 = 0.55;
+
+/// Fixed pixel overhead inside each tab item (icon + close button + padding + gaps).
+/// Breakdown at default rem (16px):
+///   padding-left (0.625rem ≈ 10px) + padding-right (0.25rem ≈ 4px) = 14px
+///   shell icon: 14px, close button: ~16px
+///   2 inter-element gaps (0.375rem ≈ 6px each): 12px
+/// Total ≈ 56px
+const TAB_ITEM_FIXED_OVERHEAD_PX: f32 = 56.0;
+
 pub mod palette;
 pub use palette::Palette;
 
@@ -165,6 +177,14 @@ pub struct TabConfig {
   pub label_min_width: f32,
   /// Maximum width of a tab item in pixels before extra space is left to the tab bar.
   pub label_max_width: f32,
+  /// Minimum tab label width in characters. When non-zero, takes priority over `label_min_width`.
+  /// The pixel width is calculated as: chars × (ui_font_size × 0.55) + internal_padding.
+  /// Set to 0 to use the pixel-based `label_min_width` instead.
+  pub label_min_chars: u32,
+  /// Maximum tab label width in characters. When non-zero, takes priority over `label_max_width`.
+  /// The pixel width is calculated as: chars × (ui_font_size × 0.55) + internal_padding.
+  /// Set to 0 to use the pixel-based `label_max_width` instead.
+  pub label_max_chars: u32,
 }
 
 impl Default for TabConfig {
@@ -176,6 +196,8 @@ impl Default for TabConfig {
       title_change_delay_ms: 200,
       label_min_width: DEFAULT_TAB_LABEL_MIN_WIDTH,
       label_max_width: DEFAULT_TAB_LABEL_MAX_WIDTH,
+      label_min_chars: 0,
+      label_max_chars: 0,
     }
   }
 }
@@ -186,35 +208,48 @@ impl TabConfig {
     std::time::Duration::from_millis(self.title_change_delay_ms.clamp(0, 5_000))
   }
 
-  fn normalized_label_widths(&self) -> (f32, f32) {
-    let min = self
-      .label_min_width
-      .clamp(MIN_TAB_LABEL_WIDTH, MAX_TAB_LABEL_WIDTH);
-    let max = self
-      .label_max_width
-      .clamp(MIN_TAB_LABEL_WIDTH, MAX_TAB_LABEL_WIDTH);
+  /// Convert a character count to pixel width, accounting for font size and tab item chrome.
+  fn chars_to_pixels(chars: u32, ui_font_size: f32) -> f32 {
+    chars as f32 * (ui_font_size * CHAR_WIDTH_RATIO) + TAB_ITEM_FIXED_OVERHEAD_PX
+  }
+
+  fn normalized_label_widths(&self, ui_font_size: f32) -> (f32, f32) {
+    let min = if self.label_min_chars > 0 {
+      Self::chars_to_pixels(self.label_min_chars, ui_font_size)
+    } else {
+      self.label_min_width
+    }
+    .clamp(MIN_TAB_LABEL_WIDTH, MAX_TAB_LABEL_WIDTH);
+    let max = if self.label_max_chars > 0 {
+      Self::chars_to_pixels(self.label_max_chars, ui_font_size)
+    } else {
+      self.label_max_width
+    }
+    .clamp(MIN_TAB_LABEL_WIDTH, MAX_TAB_LABEL_WIDTH);
 
     if min <= max { (min, max) } else { (max, min) }
   }
 
-  /// Get the minimum tab item width in pixels, normalized against the configured max width.
-  pub fn get_label_min_width(&self) -> f32 {
-    self.normalized_label_widths().0
+  /// Get the minimum tab item width in pixels.
+  /// When `label_min_chars` is set, it takes priority and computes pixels from the character count.
+  pub fn get_label_min_width(&self, ui_font_size: f32) -> f32 {
+    self.normalized_label_widths(ui_font_size).0
   }
 
-  /// Get the maximum tab item width in pixels, normalized against the configured min width.
-  pub fn get_label_max_width(&self) -> f32 {
-    self.normalized_label_widths().1
+  /// Get the maximum tab item width in pixels.
+  /// When `label_max_chars` is set, it takes priority and computes pixels from the character count.
+  pub fn get_label_max_width(&self, ui_font_size: f32) -> f32 {
+    self.normalized_label_widths(ui_font_size).1
   }
 
   /// Get the minimum vertical tab bar width in pixels, including its fixed controls padding.
-  pub fn get_vertical_tabbar_min_width(&self) -> f32 {
-    self.get_label_min_width() + VERTICAL_TABBAR_WIDTH_PADDING
+  pub fn get_vertical_tabbar_min_width(&self, ui_font_size: f32) -> f32 {
+    self.get_label_min_width(ui_font_size) + VERTICAL_TABBAR_WIDTH_PADDING
   }
 
   /// Get the maximum initial vertical tab bar width in pixels, including its fixed controls padding.
-  pub fn get_vertical_tabbar_max_width(&self) -> f32 {
-    self.get_label_max_width() + VERTICAL_TABBAR_WIDTH_PADDING
+  pub fn get_vertical_tabbar_max_width(&self, ui_font_size: f32) -> f32 {
+    self.get_label_max_width(ui_font_size) + VERTICAL_TABBAR_WIDTH_PADDING
   }
 }
 
@@ -474,6 +509,27 @@ impl Config {
     unreachable!("Could not determine config file path because home/data directory is not found");
   }
 
+  /// Serialize a value to a pretty TOML string with 2-space indentation.
+  fn to_toml_pretty(value: &impl Serialize) -> Result<String, toml::ser::Error> {
+    let raw = toml::to_string_pretty(value)?;
+    // toml::to_string_pretty uses 4-space indent; collapse to 2-space.
+    Ok(
+      raw
+        .lines()
+        .map(|line| {
+          let stripped = line.trim_start_matches(' ');
+          let spaces = line.len() - stripped.len();
+          if spaces > 0 {
+            format!("{}{}", " ".repeat(spaces / 2), stripped)
+          } else {
+            line.to_string()
+          }
+        })
+        .collect::<Vec<_>>()
+        .join("\n"),
+    )
+  }
+
   /// Create a default config file at the specified path
   #[allow(unused)]
   fn create_default_config(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
@@ -484,7 +540,7 @@ impl Config {
 
     // Generate config from default
     let default_config = Self::default();
-    let config_str = toml::to_string_pretty(&default_config)?;
+    let config_str = Self::to_toml_pretty(&default_config)?;
 
     // Add header comment
     let content = format!("{}{}", GENERATED_CONFIG_HEADER, config_str);
@@ -550,7 +606,7 @@ impl Config {
   }
 
   fn save_raw_to_path(path: &Path, config: &toml::Value) -> Result<(), Box<dyn std::error::Error>> {
-    let config_str = toml::to_string_pretty(config)?;
+    let config_str = Self::to_toml_pretty(config)?;
     let content = format!("{}{}", GENERATED_CONFIG_HEADER, config_str);
     std::fs::write(path, content)?;
     Ok(())
@@ -914,10 +970,45 @@ imports = ["./layer.toml"]
       ..TabConfig::default()
     };
 
-    assert_eq!(config.get_label_min_width(), 80.0);
-    assert_eq!(config.get_label_max_width(), 320.0);
-    assert_eq!(config.get_vertical_tabbar_min_width(), 104.0);
-    assert_eq!(config.get_vertical_tabbar_max_width(), 344.0);
+    let ui_font_size = 18.0;
+    assert_eq!(config.get_label_min_width(ui_font_size), 80.0);
+    assert_eq!(config.get_label_max_width(ui_font_size), 320.0);
+    assert_eq!(config.get_vertical_tabbar_min_width(ui_font_size), 104.0);
+    assert_eq!(config.get_vertical_tabbar_max_width(ui_font_size), 344.0);
+  }
+
+  #[test]
+  fn tab_label_chars_override_pixel_widths() {
+    let config = TabConfig {
+      label_min_width: 60.0,
+      label_max_width: 200.0,
+      label_min_chars: 10,
+      label_max_chars: 30,
+      ..TabConfig::default()
+    };
+
+    let ui_font_size = 18.0;
+    // 10 chars: 10 * (18.0 * 0.55) + 56.0 = 10 * 9.9 + 56.0 = 155.0
+    assert!((config.get_label_min_width(ui_font_size) - 155.0).abs() < 0.01);
+    // 30 chars: 30 * (18.0 * 0.55) + 56.0 = 30 * 9.9 + 56.0 = 353.0
+    assert!((config.get_label_max_width(ui_font_size) - 353.0).abs() < 0.01);
+  }
+
+  #[test]
+  fn tab_label_chars_partial_override() {
+    let config = TabConfig {
+      label_min_width: 100.0,
+      label_max_width: 200.0,
+      label_min_chars: 5,
+      label_max_chars: 0,
+      ..TabConfig::default()
+    };
+
+    let ui_font_size = 18.0;
+    // 5 chars: 5 * 9.9 + 56.0 = 105.5
+    assert!((config.get_label_min_width(ui_font_size) - 105.5).abs() < 0.01);
+    // Falls back to pixel value
+    assert_eq!(config.get_label_max_width(ui_font_size), 200.0);
   }
 
   #[test]

@@ -87,9 +87,10 @@ impl MainWindow {
     let search_bar = cx.new(|cx| SearchBar::new(window, cx));
     let search_bar_subscription = cx.subscribe_in(&search_bar, window, Self::on_search_bar_event);
     let config = cx.global::<::config::Config>();
+    let ui_font_size = config.font.ui_size;
     let vertical_tabbar_width = (window.bounds().size.width * VERTICAL_TABBAR_WIDTH_RATIO)
-      .max(px(config.tab.get_vertical_tabbar_min_width()))
-      .min(px(config.tab.get_vertical_tabbar_max_width()));
+      .max(px(config.tab.get_vertical_tabbar_min_width(ui_font_size)))
+      .min(px(config.tab.get_vertical_tabbar_max_width(ui_font_size)));
 
     let appearance_subscription = window.observe_window_appearance(|window, cx| {
       let config = cx.global::<::config::Config>().clone();

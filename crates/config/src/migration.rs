@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260415.3";
+pub const CURRENT_CONFIG_VERSION: &str = "20260416.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -119,6 +119,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260415.2",
       to_version: "20260415.3",
       migrate: migrate_v20260415_2_to_20260415_3,
+    },
+    Migration {
+      from_version: "20260415.3",
+      to_version: "20260416.1",
+      migrate: migrate_v20260415_3_to_20260416_1,
     },
   ]
 }
@@ -542,6 +547,18 @@ fn migrate_v20260415_2_to_20260415_3(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260415.3".to_string()),
+    );
+  }
+}
+
+/// Add character-based tab label min/max widths to [tab].
+fn migrate_v20260415_3_to_20260416_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    // No new keys to insert: label_min_chars and label_max_chars default to None (absent).
+    // Existing label_min_width / label_max_width are preserved as the pixel fallback.
+    table.insert(
+      "version".to_string(),
+      Value::String("20260416.1".to_string()),
     );
   }
 }
