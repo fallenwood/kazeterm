@@ -205,6 +205,7 @@ mod tests {
         height: 50.0,
         start_maximized: false,
         restore_workspace: true,
+        key_debug_mode: false,
       },
       tab: TabConfig::default(),
       pane: PaneConfig::default(),

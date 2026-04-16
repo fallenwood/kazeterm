@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260416.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260416.2";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -124,6 +124,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260415.3",
       to_version: "20260416.1",
       migrate: migrate_v20260415_3_to_20260416_1,
+    },
+    Migration {
+      from_version: "20260416.1",
+      to_version: "20260416.2",
+      migrate: migrate_v20260416_1_to_20260416_2,
     },
   ]
 }
@@ -559,6 +564,25 @@ fn migrate_v20260415_3_to_20260416_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260416.1".to_string()),
+    );
+  }
+}
+
+/// Add window.key_debug_mode configuration support.
+fn migrate_v20260416_1_to_20260416_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    let window = table
+      .entry("window")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(window_table) = window
+      && !window_table.contains_key("key_debug_mode")
+    {
+      window_table.insert("key_debug_mode".to_string(), Value::Boolean(false));
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260416.2".to_string()),
     );
   }
 }
@@ -1110,6 +1134,36 @@ copy_on_select = false
     );
     assert_eq!(
       get_nested(&config, "terminal", "hide_mouse_when_typing")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
+      false
+    );
+  }
+
+  #[test]
+  fn migrate_20260416_1_adds_key_debug_mode() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260416.1"
+
+[window]
+width = 800.0
+height = 600.0
+start_maximized = false
+restore_workspace = true
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+      get_nested(&config, "window", "key_debug_mode")
         .unwrap()
         .as_bool()
         .unwrap(),

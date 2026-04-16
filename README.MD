@@ -22,6 +22,15 @@ imports = ["~/kazeterm.windows.toml"]
 
 Relative import paths are resolved from the file that declares them, and nested imports are supported.
 
+### Key debug overlay
+
+Enable the bottom-right shortcut inspector with:
+
+```toml
+[window]
+key_debug_mode = true
+```
+
 ## How to Build
 
 ### Environment Setup
