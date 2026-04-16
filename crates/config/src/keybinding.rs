@@ -155,55 +155,68 @@ pub struct KeybindingConfig {
 
 impl Default for KeybindingConfig {
   fn default() -> Self {
-    Self {
-      copy: if cfg!(target_os = "macos") {
-        KeybindingList::new("cmd-c")
-      } else {
-        KeybindingList::new("ctrl-shift-c")
-      },
-      paste: if cfg!(target_os = "macos") {
-        KeybindingList::new("cmd-v")
-      } else {
-        KeybindingList::new("ctrl-shift-v")
-      },
-      zoom_in: KeybindingList::new("ctrl-="),
-      zoom_out: KeybindingList::new("ctrl--"),
-      zoom_reset: KeybindingList::new("ctrl-0"),
-      next_tab: KeybindingList::new("ctrl-tab"),
-      previous_tab: KeybindingList::new("ctrl-shift-tab"),
-      toggle_search: KeybindingList::new("ctrl-shift-f"),
-      split_horizontal: KeybindingList::new("ctrl-shift-d"),
-      split_vertical: KeybindingList::new("ctrl-shift-e"),
-      close_pane: KeybindingList::new("ctrl-shift-w"),
-      focus_next_pane: KeybindingList::new("ctrl-shift-]"),
-      focus_previous_pane: KeybindingList::new("ctrl-shift-["),
-      swap_split_panes: KeybindingList::new("ctrl-shift-x"),
-      toggle_fullscreen: if cfg!(target_os = "macos") {
-        KeybindingList::new("f12")
-      } else {
-        KeybindingList::new("f11")
-      },
-      toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
-      new_tab: KeybindingList::new("ctrl-shift-t"),
-      new_tab_profile_1: KeybindingList::new("ctrl-shift-1"),
-      new_tab_profile_2: KeybindingList::new("ctrl-shift-2"),
-      new_tab_profile_3: KeybindingList::new("ctrl-shift-3"),
-      new_tab_profile_4: KeybindingList::new("ctrl-shift-4"),
-      new_tab_profile_5: KeybindingList::new("ctrl-shift-5"),
-      new_tab_profile_6: KeybindingList::new("ctrl-shift-6"),
-      new_tab_profile_7: KeybindingList::new("ctrl-shift-7"),
-      new_tab_profile_8: KeybindingList::new("ctrl-shift-8"),
-      new_tab_profile_9: KeybindingList::new("ctrl-shift-9"),
-      new_window: if cfg!(target_os = "macos") {
-        KeybindingList::new("cmd-n")
-      } else {
-        KeybindingList::new("ctrl-shift-n")
-      },
-      quit: if cfg!(target_os = "macos") {
-        KeybindingList::new("cmd-q")
-      } else {
-        KeybindingList::new("alt-f4")
-      },
+    if cfg!(target_os = "macos") {
+      Self {
+        copy: KeybindingList::new("cmd-c"),
+        paste: KeybindingList::new("cmd-v"),
+        zoom_in: KeybindingList::new("cmd-="),
+        zoom_out: KeybindingList::new("cmd--"),
+        zoom_reset: KeybindingList::new("cmd-0"),
+        next_tab: KeybindingList::new("ctrl-tab"),
+        previous_tab: KeybindingList::new("ctrl-shift-tab"),
+        toggle_search: KeybindingList::new("ctrl-shift-f"),
+        split_horizontal: KeybindingList::new("ctrl-shift-d"),
+        split_vertical: KeybindingList::new("ctrl-shift-e"),
+        close_pane: KeybindingList::new("ctrl-shift-w"),
+        focus_next_pane: KeybindingList::new("ctrl-shift-]"),
+        focus_previous_pane: KeybindingList::new("ctrl-shift-["),
+        swap_split_panes: KeybindingList::new("ctrl-shift-x"),
+        toggle_fullscreen: KeybindingList::new("f12"),
+        toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
+        new_tab: KeybindingList::new("cmd-t"),
+        new_tab_profile_1: KeybindingList::new("ctrl-shift-1"),
+        new_tab_profile_2: KeybindingList::new("ctrl-shift-2"),
+        new_tab_profile_3: KeybindingList::new("ctrl-shift-3"),
+        new_tab_profile_4: KeybindingList::new("ctrl-shift-4"),
+        new_tab_profile_5: KeybindingList::new("ctrl-shift-5"),
+        new_tab_profile_6: KeybindingList::new("ctrl-shift-6"),
+        new_tab_profile_7: KeybindingList::new("ctrl-shift-7"),
+        new_tab_profile_8: KeybindingList::new("ctrl-shift-8"),
+        new_tab_profile_9: KeybindingList::new("ctrl-shift-9"),
+        new_window: KeybindingList::new("cmd-n"),
+        quit: KeybindingList::new("cmd-q"),
+      }
+    } else {
+      Self {
+        copy: KeybindingList::new("ctrl-shift-c"),
+        paste: KeybindingList::new("ctrl-shift-v"),
+        zoom_in: KeybindingList::new("ctrl-="),
+        zoom_out: KeybindingList::new("ctrl--"),
+        zoom_reset: KeybindingList::new("ctrl-0"),
+        next_tab: KeybindingList::new("ctrl-tab"),
+        previous_tab: KeybindingList::new("ctrl-shift-tab"),
+        toggle_search: KeybindingList::new("ctrl-shift-f"),
+        split_horizontal: KeybindingList::new("ctrl-shift-d"),
+        split_vertical: KeybindingList::new("ctrl-shift-e"),
+        close_pane: KeybindingList::new("ctrl-shift-w"),
+        focus_next_pane: KeybindingList::new("ctrl-shift-]"),
+        focus_previous_pane: KeybindingList::new("ctrl-shift-["),
+        swap_split_panes: KeybindingList::new("ctrl-shift-x"),
+        toggle_fullscreen: KeybindingList::new("f11"),
+        toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
+        new_tab: KeybindingList::new("ctrl-shift-t"),
+        new_tab_profile_1: KeybindingList::new("ctrl-shift-1"),
+        new_tab_profile_2: KeybindingList::new("ctrl-shift-2"),
+        new_tab_profile_3: KeybindingList::new("ctrl-shift-3"),
+        new_tab_profile_4: KeybindingList::new("ctrl-shift-4"),
+        new_tab_profile_5: KeybindingList::new("ctrl-shift-5"),
+        new_tab_profile_6: KeybindingList::new("ctrl-shift-6"),
+        new_tab_profile_7: KeybindingList::new("ctrl-shift-7"),
+        new_tab_profile_8: KeybindingList::new("ctrl-shift-8"),
+        new_tab_profile_9: KeybindingList::new("ctrl-shift-9"),
+        new_window: KeybindingList::new("ctrl-shift-n"),
+        quit: KeybindingList::new("alt-f4"),
+      }
     }
   }
 }
@@ -415,6 +428,18 @@ mod tests {
     }
   }
 
+  fn expected_default_new_tab_binding() -> &'static str {
+    if cfg!(target_os = "macos") {
+      "cmd-t"
+    } else {
+      "ctrl-shift-t"
+    }
+  }
+
+  fn expected_default_new_tab_profile_binding(index: usize) -> String {
+    format!("ctrl-shift-{}", index)
+  }
+
   fn expected_platform_modifier_label() -> &'static str {
     if cfg!(target_os = "macos") {
       "Cmd"
@@ -576,10 +601,25 @@ mod tests {
     }
 
     let zoom_in = ParsedKeybinding::parse(config.zoom_in.first().unwrap());
-    assert!(zoom_in.matches(true, false, false, false, "="));
+    if cfg!(target_os = "macos") {
+      assert!(zoom_in.matches(false, false, false, true, "="));
+    } else {
+      assert!(zoom_in.matches(true, false, false, false, "="));
+    }
 
     let zoom_out = ParsedKeybinding::parse(config.zoom_out.first().unwrap());
-    assert!(zoom_out.matches(true, false, false, false, "-"));
+    if cfg!(target_os = "macos") {
+      assert!(zoom_out.matches(false, false, false, true, "-"));
+    } else {
+      assert!(zoom_out.matches(true, false, false, false, "-"));
+    }
+
+    let new_tab = ParsedKeybinding::parse(config.new_tab.first().unwrap());
+    if cfg!(target_os = "macos") {
+      assert!(new_tab.matches(false, false, false, true, "t"));
+    } else {
+      assert!(new_tab.matches(true, true, false, false, "t"));
+    }
   }
 
   #[test]
@@ -588,6 +628,14 @@ mod tests {
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(config.copy, expected_default_copy_binding());
     assert_eq!(config.paste, expected_default_paste_binding());
+    assert_eq!(
+      config.new_tab.first().unwrap(),
+      expected_default_new_tab_binding()
+    );
+    assert_eq!(
+      config.new_tab_profile_1.first().unwrap(),
+      expected_default_new_tab_profile_binding(1)
+    );
   }
 
   #[test]
