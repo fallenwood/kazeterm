@@ -3,35 +3,74 @@ use gpui_component::ActiveTheme;
 use gpui_component::button::{Button, ButtonVariants};
 
 /// Event emitted when the close confirmation dialog is resolved
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CloseConfirmEvent {
   /// User confirmed they want to close and save workspace
-  Confirm,
-  /// User wants to close without saving workspace
-  CloseWithoutSaving,
+  SaveAndClose,
+  /// User wants to close without saving workspace, or just close when restore is disabled
+  Close,
   /// User cancelled the close action
   Cancel,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CloseConfirmContent {
+  restore_workspace: bool,
+}
+
+impl CloseConfirmContent {
+  const fn new(restore_workspace: bool) -> Self {
+    Self { restore_workspace }
+  }
+
+  const fn description(self) -> &'static str {
+    if self.restore_workspace {
+      "Do you want to save the workspace before closing? Saved workspaces will be restored on next launch."
+    } else {
+      "Current tabs, splits, and working directories won't be restored on next launch."
+    }
+  }
+
+  const fn primary_action(self) -> CloseConfirmEvent {
+    if self.restore_workspace {
+      CloseConfirmEvent::SaveAndClose
+    } else {
+      CloseConfirmEvent::Close
+    }
+  }
+
+  const fn primary_button_label(self) -> &'static str {
+    if self.restore_workspace {
+      "Save & Close"
+    } else {
+      "Close"
+    }
+  }
+}
+
 pub struct CloseConfirmDialog {
   focus_handle: FocusHandle,
+  content: CloseConfirmContent,
 }
 
 impl EventEmitter<CloseConfirmEvent> for CloseConfirmDialog {}
 
 impl CloseConfirmDialog {
-  pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+  pub fn new(restore_workspace: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let focus_handle = cx.focus_handle();
     window.focus(&focus_handle);
-    Self { focus_handle }
+    Self {
+      focus_handle,
+      content: CloseConfirmContent::new(restore_workspace),
+    }
   }
 
-  fn confirm(&mut self, cx: &mut Context<Self>) {
-    cx.emit(CloseConfirmEvent::Confirm);
+  fn primary_action(&mut self, cx: &mut Context<Self>) {
+    cx.emit(self.content.primary_action());
   }
 
-  fn close_without_saving(&mut self, cx: &mut Context<Self>) {
-    cx.emit(CloseConfirmEvent::CloseWithoutSaving);
+  fn close(&mut self, cx: &mut Context<Self>) {
+    cx.emit(CloseConfirmEvent::Close);
   }
 
   fn cancel(&mut self, cx: &mut Context<Self>) {
@@ -48,6 +87,56 @@ impl Focusable for CloseConfirmDialog {
 impl Render for CloseConfirmDialog {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let theme = cx.theme();
+    let content = self.content;
+    let actions = if content.restore_workspace {
+      gpui_component::h_flex()
+        .gap_2()
+        .justify_end()
+        .child(
+          Button::new("cancel")
+            .ghost()
+            .label("Cancel")
+            .on_click(cx.listener(|this, _, _window, cx| {
+              this.cancel(cx);
+            })),
+        )
+        .child(
+          Button::new("close-without-saving")
+            .danger()
+            .label("Don't Save")
+            .on_click(cx.listener(|this, _, _window, cx| {
+              this.close(cx);
+            })),
+        )
+        .child(
+          Button::new("confirm")
+            .primary()
+            .label(content.primary_button_label())
+            .on_click(cx.listener(|this, _, _window, cx| {
+              this.primary_action(cx);
+            })),
+        )
+    } else {
+      gpui_component::h_flex()
+        .gap_2()
+        .justify_end()
+        .child(
+          Button::new("cancel")
+            .ghost()
+            .label("Cancel")
+            .on_click(cx.listener(|this, _, _window, cx| {
+              this.cancel(cx);
+            })),
+        )
+        .child(
+          Button::new("confirm")
+            .danger()
+            .label(content.primary_button_label())
+            .on_click(cx.listener(|this, _, _window, cx| {
+              this.primary_action(cx);
+            })),
+        )
+    };
 
     div()
       .absolute()
@@ -63,7 +152,7 @@ impl Render for CloseConfirmDialog {
         if e.keystroke.key == "escape" {
           this.cancel(cx);
         } else if e.keystroke.key == "enter" {
-          this.confirm(cx);
+          this.primary_action(cx);
         }
       }))
       .child(
@@ -93,38 +182,40 @@ impl Render for CloseConfirmDialog {
                 div()
                   .text_sm()
                   .text_color(theme.muted_foreground)
-                  .child("Do you want to save the workspace before closing? Saved workspaces will be restored on next launch."),
+                  .child(content.description()),
               )
-              .child(
-                gpui_component::h_flex()
-                  .gap_2()
-                  .justify_end()
-                  .child(
-                    Button::new("cancel")
-                      .ghost()
-                      .label("Cancel")
-                      .on_click(cx.listener(|this, _, _window, cx| {
-                        this.cancel(cx);
-                      })),
-                  )
-                  .child(
-                    Button::new("close-without-saving")
-                      .danger()
-                      .label("Don't Save")
-                      .on_click(cx.listener(|this, _, _window, cx| {
-                        this.close_without_saving(cx);
-                      })),
-                  )
-                  .child(
-                    Button::new("confirm")
-                      .primary()
-                      .label("Save & Close")
-                      .on_click(cx.listener(|this, _, _window, cx| {
-                        this.confirm(cx);
-                      })),
-                  ),
-              ),
+              .child(actions),
           ),
       )
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{CloseConfirmContent, CloseConfirmEvent};
+
+  #[test]
+  fn restore_workspace_enabled_keeps_save_prompt() {
+    let content = CloseConfirmContent::new(true);
+
+    assert_eq!(
+      content.description(),
+      "Do you want to save the workspace before closing? Saved workspaces will be restored on next launch."
+    );
+    assert_eq!(content.primary_action(), CloseConfirmEvent::SaveAndClose);
+    assert_eq!(content.primary_button_label(), "Save & Close");
+  }
+
+  #[test]
+  fn restore_workspace_disabled_uses_close_prompt() {
+    let content = CloseConfirmContent::new(false);
+
+    assert_eq!(
+      content.description(),
+      "Current tabs, splits, and working directories won't be restored on next launch."
+    );
+    assert!(!content.description().contains("save"));
+    assert_eq!(content.primary_action(), CloseConfirmEvent::Close);
+    assert_eq!(content.primary_button_label(), "Close");
   }
 }

@@ -68,7 +68,8 @@ impl MainWindow {
       return;
     }
 
-    let dialog = cx.new(|cx| CloseConfirmDialog::new(window, cx));
+    let restore_workspace = cx.global::<::config::Config>().window.restore_workspace;
+    let dialog = cx.new(|cx| CloseConfirmDialog::new(restore_workspace, window, cx));
     let subscription = cx.subscribe_in(&dialog, window, Self::on_close_confirm_event);
 
     self.close_confirm_dialog = Some(dialog);
@@ -84,7 +85,7 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     match event {
-      CloseConfirmEvent::Confirm => {
+      CloseConfirmEvent::SaveAndClose => {
         // Save workspace state before closing
         let state = self.capture_workspace_state(cx);
         state.save();
@@ -93,7 +94,7 @@ impl MainWindow {
         self._close_confirm_subscription = None;
         window.remove_window();
       }
-      CloseConfirmEvent::CloseWithoutSaving => {
+      CloseConfirmEvent::Close => {
         // Close without saving workspace state
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
