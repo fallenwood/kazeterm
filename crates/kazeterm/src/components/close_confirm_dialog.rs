@@ -27,7 +27,7 @@ impl CloseConfirmContent {
     if self.restore_workspace {
       "Do you want to save the workspace before closing? Saved workspaces will be restored on next launch."
     } else {
-      "Current tabs, splits, and working directories won't be restored on next launch."
+      "Are you sure to close the application?"
     }
   }
 
@@ -212,7 +212,7 @@ mod tests {
 
     assert_eq!(
       content.description(),
-      "Current tabs, splits, and working directories won't be restored on next launch."
+      "Are you sure to close the application?"
     );
     assert!(!content.description().contains("save"));
     assert_eq!(content.primary_action(), CloseConfirmEvent::Close);
