@@ -4,7 +4,7 @@ use std::process::ExitStatus;
 use gpui::{Context, Keystroke};
 use terminal_kernel::{
   event::Notify,
-  grid::{Dimensions as _, Scroll},
+  grid::Scroll,
   index::{Column, Point as AlacPoint},
 };
 
@@ -12,10 +12,9 @@ use super::{Event, InternalEvent, Terminal};
 
 impl Terminal {
   pub fn get_content(&self) -> String {
-    let term = self.term.lock_unfair();
-    let start = AlacPoint::new(term.topmost_line(), Column(0));
-    let end = AlacPoint::new(term.bottommost_line(), term.last_column());
-    term.bounds_to_string(start, end)
+    let start = AlacPoint::new(self.term.topmost_line(), Column(0));
+    let end = AlacPoint::new(self.term.bottommost_line(), self.term.last_column());
+    self.term.bounds_to_string(start, end)
   }
 
   pub fn input(&mut self, input: impl Into<Cow<'static, [u8]>>) {
@@ -31,11 +30,10 @@ impl Terminal {
 
   /// Copy selection to clipboard and immediately clear the selection.
   pub fn copy_and_clear_selection(&mut self, cx: &mut Context<Self>) {
-    let mut term = self.term.lock_unfair();
-    if let Some(txt) = term.selection_to_string() {
+    if let Some(txt) = self.term.selection_to_string() {
       cx.write_to_clipboard(gpui::ClipboardItem::new_string(txt));
     }
-    term.selection = None;
+    self.term.set_selection(None);
     self.last_content.selection = None;
     self.last_content.selection_text = None;
     cx.emit(Event::SelectionsChanged);
@@ -66,9 +64,8 @@ impl Terminal {
       let match_range = &self.last_content.search_matches[index - 1];
       let match_line = match_range.start().line;
 
-      let term = self.term.lock_unfair();
-      let display_offset = term.grid().display_offset();
-      let screen_lines = term.screen_lines() as i32;
+      let display_offset = self.term.display_offset();
+      let screen_lines = self.term.screen_lines() as i32;
 
       let match_line_i32 = match_line.0;
       let visible_top_line = -(display_offset as i32);
@@ -78,7 +75,6 @@ impl Terminal {
 
       if visual_line < 0 || visual_line >= screen_lines || visual_line > 10 {
         let scroll_delta = visual_line - target_line;
-        drop(term);
         if scroll_delta != 0 {
           self
             .events
@@ -107,10 +103,9 @@ impl Terminal {
       Some(state) => {
         self.search_state = Some(state);
         // Run the search immediately so results are available this frame.
-        let term = self.term.lock_unfair();
-        self.search_fingerprint = (term.history_size(), self.last_content.cursor.point);
+        self.search_fingerprint = (self.term.history_size(), self.last_content.cursor.point);
         self.last_content.search_matches =
-          Self::execute_search(&term, self.search_state.as_ref().unwrap());
+          Self::execute_search(&*self.term, self.search_state.as_ref().unwrap());
         let match_count = self.last_content.search_matches.len();
         self.last_content.current_search_match_index = if match_count > 0 { 1 } else { 0 };
         true
@@ -134,10 +129,9 @@ impl Terminal {
 
   /// Execute the search against the current terminal grid content.
   pub(super) fn execute_search(
-    term: &terminal_kernel::Term<super::TerminalEventListener>,
+    term: &dyn terminal_kernel::TerminalBackend,
     search_state: &super::SearchState,
   ) -> Vec<std::ops::RangeInclusive<AlacPoint>> {
-    use terminal_kernel::grid::Dimensions as _;
 
     fn is_word_char(c: char) -> bool {
       c.is_alphanumeric() || c == '_'
@@ -189,7 +183,7 @@ impl Terminal {
 
       for col in 0..columns {
         let point = AlacPoint::new(line, Column(col));
-        let cell = &term.grid()[point];
+        let cell = term.cell_at(point);
         current_line_text.push(cell.c);
         current_line_cells.push(point);
       }

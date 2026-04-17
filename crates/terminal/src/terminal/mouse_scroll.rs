@@ -416,7 +416,7 @@ impl Terminal {
 
   pub(super) fn process_hyperlink(
     &mut self,
-    hyperlink: (String, bool, terminal_kernel::term::search::Match),
+    hyperlink: (String, bool, std::ops::RangeInclusive<AlacPoint>),
     open: bool,
     cx: &mut Context<Self>,
   ) {

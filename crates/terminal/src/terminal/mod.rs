@@ -14,13 +14,12 @@ use crate::{
 };
 use gpui::{Context, EventEmitter, Pixels, Window, px};
 use terminal_kernel::{
-  Term,
+  TerminalBackend,
   event::Event as AlacTermEvent,
   event_loop::{EventLoopSender, Msg, Notifier},
   grid::{Dimensions as _, Scroll},
   index::{Column as AlacColumn, Direction, Line as AlacLine, Point as AlacPoint},
   selection::Selection,
-  sync::FairMutex,
 };
 use themeing::ActiveTheme;
 
@@ -44,7 +43,7 @@ pub enum InternalEvent {
   SetSelection(Option<(Selection, AlacPoint)>),
   UpdateSelection(gpui::Point<Pixels>),
   FindHyperlink(gpui::Point<Pixels>, bool),
-  ProcessHyperlink((String, bool, terminal_kernel::term::search::Match), bool),
+  ProcessHyperlink((String, bool, std::ops::RangeInclusive<AlacPoint>), bool),
   Copy(Option<bool>),
   /// Auto-copy selection to clipboard (triggered by copy_on_select config)
   CopySelectionToClipboard,
@@ -68,7 +67,7 @@ pub enum Event {
 pub struct Terminal {
   pub pty_tx: Notifier,
   pub events: VecDeque<InternalEvent>,
-  pub term: Arc<FairMutex<Term<TerminalEventListener>>>,
+  pub term: Box<dyn TerminalBackend>,
   pub last_content: TerminalContent,
   pub selection_head: Option<AlacPoint>,
   pub pty_info: PtyProcessInfo,
@@ -121,7 +120,7 @@ pub struct Terminal {
 impl Terminal {
   pub fn new(
     pty_tx: EventLoopSender,
-    term: Arc<FairMutex<Term<TerminalEventListener>>>,
+    term: Box<dyn TerminalBackend>,
     pty_info: PtyProcessInfo,
     graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
     pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
@@ -242,22 +241,20 @@ impl Terminal {
   /// Collect all grid cells (history + visible) for minimap rendering.
   /// Returns cells with 0-based line numbers (0 = oldest history line).
   pub fn collect_minimap_cells(&self) -> Vec<IndexedCell> {
-    let term = self.term.lock_unfair();
-    let history_size = term.history_size();
-    let screen_lines = term.screen_lines();
-    let columns = term.columns();
+    let history_size = self.term.history_size();
+    let screen_lines = self.term.screen_lines();
+    let columns = self.term.columns();
     let total_lines = history_size + screen_lines;
 
     let mut cells = Vec::new();
     for line_idx in 0..total_lines {
       let original_line = line_idx as i32 - history_size as i32;
-      let row = &term.grid()[AlacLine(original_line)];
       for col_idx in 0..columns {
-        let cell = &row[AlacColumn(col_idx)];
+        let cell = self.term.cell_at(AlacPoint::new(AlacLine(original_line), AlacColumn(col_idx)));
         if cell.c != ' ' && cell.c != '\t' && cell.c != '\0' {
           cells.push(IndexedCell {
             point: AlacPoint::new(AlacLine(line_idx as i32), AlacColumn(col_idx)),
-            cell: cell.clone(),
+            cell,
           });
         }
       }
@@ -273,20 +270,18 @@ impl Terminal {
   }
 
   pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    let term = self.term.clone();
-    let mut terminal = term.lock_unfair();
     while let Some(e) = self.events.pop_front() {
-      self.process_terminal_event(&e, &mut terminal, window, cx)
+      self.process_terminal_event(&e, window, cx)
     }
-    self.last_content = Self::make_content(&terminal, &self.last_content);
+    self.last_content = Self::make_content(&*self.term, &self.last_content);
 
     // Re-run search only when content has actually changed.
     if let Some(search_state) = &self.search_state {
-      let fingerprint = (terminal.history_size(), self.last_content.cursor.point);
+      let fingerprint = (self.term.history_size(), self.last_content.cursor.point);
       if fingerprint != self.search_fingerprint {
         self.search_fingerprint = fingerprint;
         let old_count = self.last_content.search_matches.len();
-        self.last_content.search_matches = Self::execute_search(&terminal, search_state);
+        self.last_content.search_matches = Self::execute_search(&*self.term, search_state);
         let new_count = self.last_content.search_matches.len();
         if self.last_content.current_search_match_index > new_count {
           self.last_content.current_search_match_index = if new_count > 0 { new_count } else { 0 };
@@ -297,9 +292,8 @@ impl Terminal {
       }
     }
 
-    let history_size = terminal.history_size() as i32;
+    let history_size = self.term.history_size() as i32;
     let display_offset = self.last_content.display_offset as i32;
-    drop(terminal);
 
     // Process graphics commands AFTER terminal events so terminal_bounds is up to date.
     self.process_graphics_commands();
@@ -509,11 +503,10 @@ impl Terminal {
         }
       }
       KittyDelete::AtCursor => {
-        let term = self.term.lock_unfair();
-        let cursor = term.renderable_content().cursor;
-        let history_size = term.history_size() as i32;
-        let line = history_size + cursor.point.line.0;
-        let col = cursor.point.column.0 as i32;
+        let cursor = self.term.cursor_point();
+        let history_size = self.term.history_size() as i32;
+        let line = history_size + cursor.line.0;
+        let col = cursor.column.0 as i32;
         self.placement_manager.remove_at_cursor(line, col);
       }
       KittyDelete::ByZIndex(_) | KittyDelete::AtColumn(_) | KittyDelete::AtRow(_) => {
@@ -527,18 +520,16 @@ impl Terminal {
   }
 
   fn make_content(
-    term: &Term<TerminalEventListener>,
+    term: &dyn TerminalBackend,
     last_content: &TerminalContent,
   ) -> TerminalContent {
-    let content = term.renderable_content();
+    let content = term.renderable_snapshot();
 
-    let estimated_size = content.display_iter.size_hint().0;
-    let mut cells = Vec::with_capacity(estimated_size);
-
-    cells.extend(content.display_iter.map(|ic| IndexedCell {
-      point: ic.point,
-      cell: ic.cell.clone(),
-    }));
+    let cells: Vec<IndexedCell> = content
+      .cells
+      .into_iter()
+      .map(|(point, cell)| IndexedCell { point, cell })
+      .collect();
 
     let selection_text = if content.selection.is_some() {
       term.selection_to_string()
@@ -558,7 +549,7 @@ impl Terminal {
       selection_text,
       selection: content.selection,
       cursor: content.cursor,
-      cursor_char: term.grid()[content.cursor.point].c,
+      cursor_char: term.cell_at(content.cursor.point).c,
       terminal_bounds: last_content.terminal_bounds,
       last_hovered_word: last_content.last_hovered_word.clone(),
       history_size: current_history_size,
@@ -613,8 +604,7 @@ impl Terminal {
         self.write_to_pty(format(self.last_content.terminal_bounds.into()).into_bytes())
       }
       AlacTermEvent::CursorBlinkingChange => {
-        let terminal = self.term.lock();
-        let blinking = terminal.cursor_style().blinking;
+        let blinking = self.term.cursor_style().blinking;
         cx.emit(Event::BlinkChanged(blinking));
       }
       AlacTermEvent::Bell => {
@@ -642,7 +632,7 @@ impl Terminal {
         }
       }
       AlacTermEvent::ColorRequest(index, format) => {
-        let color = self.term.lock().colors()[index].unwrap_or_else(|| {
+        let color = self.term.color_at(index).unwrap_or_else(|| {
           crate::mappings::colors::to_alac_rgb(themeing::get_color_at_index(
             index,
             cx.theme().as_ref(),
@@ -663,7 +653,6 @@ impl Terminal {
   fn process_terminal_event(
     &mut self,
     event: &InternalEvent,
-    term: &mut Term<TerminalEventListener>,
     _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
@@ -674,17 +663,17 @@ impl Terminal {
 
         self.last_content.terminal_bounds = new_bounds;
         self.pty_tx.0.send(Msg::Resize(new_bounds.into())).ok();
-        term.resize(new_bounds);
+        self.term.resize(new_bounds.num_lines(), new_bounds.num_columns());
       }
       InternalEvent::Clear => {}
       InternalEvent::Scroll(scroll) => {
-        term.scroll_display(*scroll);
+        self.term.scroll_display(*scroll);
       }
       InternalEvent::SetSelection(selection) => {
-        term.selection = selection.as_ref().map(|(sel, _)| sel.clone());
+        self.term.set_selection(selection.as_ref().map(|(sel, _)| sel.clone()));
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        if let Some(selection_text) = term.selection_to_string() {
+        if let Some(selection_text) = self.term.selection_to_string() {
           cx.write_to_primary(gpui::ClipboardItem::new_string(selection_text));
         }
 
@@ -694,44 +683,54 @@ impl Terminal {
         cx.emit(Event::SelectionsChanged)
       }
       InternalEvent::UpdateSelection(position) => {
-        if let Some(mut selection) = term.selection.take() {
-          let (point, side) = grid_point_and_side(
+        self.term.update_selection(&mut |sel| {
+          if let Some(mut selection) = sel.take() {
+            let (point, side) = grid_point_and_side(
+              *position,
+              self.last_content.terminal_bounds,
+              self.last_content.display_offset,
+            );
+
+            selection.update(point, side);
+            *sel = Some(selection);
+          }
+        });
+
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        if let Some(selection_text) = self.term.selection_to_string() {
+          cx.write_to_primary(gpui::ClipboardItem::new_string(selection_text));
+        }
+
+        // Update selection_head from the current position.
+        if self.term.get_selection().is_some() {
+          let (point, _side) = grid_point_and_side(
             *position,
             self.last_content.terminal_bounds,
-            term.grid().display_offset(),
+            self.last_content.display_offset,
           );
-
-          selection.update(point, side);
-          term.selection = Some(selection);
-
-          #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-          if let Some(selection_text) = term.selection_to_string() {
-            cx.write_to_primary(gpui::ClipboardItem::new_string(selection_text));
-          }
-
           self.selection_head = Some(point);
-          cx.emit(Event::SelectionsChanged)
         }
+        cx.emit(Event::SelectionsChanged)
       }
       InternalEvent::Copy(_keep_selection) => {}
       InternalEvent::CopySelectionToClipboard => {
-        if let Some(txt) = term.selection_to_string() {
+        if let Some(txt) = self.term.selection_to_string() {
           cx.write_to_clipboard(gpui::ClipboardItem::new_string(txt));
         }
       }
       InternalEvent::ScrollToAlacPoint(point) => {
-        term.scroll_to_point(*point);
+        self.term.scroll_to_point(*point);
       }
       InternalEvent::FindHyperlink(position, open) => {
         let point = crate::mappings::mouse::grid_point(
           *position,
           self.last_content.terminal_bounds,
-          term.grid().display_offset(),
-        )
-        .grid_clamp(term, terminal_kernel::index::Boundary::Grid);
+          self.term.display_offset(),
+        );
+        let point = self.term.grid_clamp(point, terminal_kernel::index::Boundary::Grid);
 
         match crate::terminal_hyperlinks::find_from_grid_point(
-          term,
+          &*self.term,
           point,
           &mut self.hyperlink_regex_searches,
         ) {

@@ -6,7 +6,7 @@ use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle};
 use futures::{channel::mpsc::UnboundedReceiver, channel::mpsc::unbounded};
 use terminal::{PtyProcessInfo, Terminal, TerminalBounds, TerminalEventListener};
 use terminal_kernel::{
-  SessionEvents, Term, event_loop::EventLoop, sync::FairMutex, term::Config, tty,
+  AlacrittyBackend, SessionEvents, Term, event_loop::EventLoop, sync::FairMutex, term::Config, tty,
 };
 
 #[cfg(unix)]
@@ -234,9 +234,10 @@ pub fn create_terminal_session(
     (pty_tx, pty_info, None, None, None)
   };
 
+  let backend = AlacrittyBackend::new(term);
   let terminal = Terminal::new(
     pty_tx,
-    term,
+    Box::new(backend),
     pty_info,
     graphics_rx,
     pending_cnl,

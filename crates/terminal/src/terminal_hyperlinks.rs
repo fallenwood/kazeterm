@@ -1,18 +1,12 @@
 use regex::Regex;
 use std::{
-  iter::{once, once_with},
-  ops::{Index, Range},
+  ops::Range,
   time::{Duration, Instant},
 };
 use terminal_kernel::{
-  Term,
-  event::EventListener,
-  grid::Dimensions,
+  TerminalBackend,
   index::{Boundary, Column, Direction as AlacDirection, Point as AlacPoint},
-  term::{
-    cell::Flags,
-    search::{Match, RegexIter, RegexSearch},
-  },
+  term::cell::Flags,
 };
 use url::Url;
 
@@ -22,7 +16,6 @@ const WIDE_CHAR_SPACERS: Flags =
     .unwrap();
 
 pub struct RegexSearches {
-  url_regex: RegexSearch,
   path_hyperlink_regexes: Vec<Regex>,
   path_hyperlink_timeout: Duration,
 }
@@ -30,105 +23,75 @@ pub struct RegexSearches {
 impl Default for RegexSearches {
   fn default() -> Self {
     Self {
-      url_regex: RegexSearch::new(URL_REGEX).unwrap(),
       path_hyperlink_regexes: Vec::default(),
       path_hyperlink_timeout: Duration::default(),
     }
   }
 }
 
-pub(super) fn find_from_grid_point<T: EventListener>(
-  term: &Term<T>,
+pub(super) fn find_from_grid_point(
+  backend: &dyn TerminalBackend,
   point: AlacPoint,
   regex_searches: &mut RegexSearches,
-) -> Option<(String, bool, Match)> {
-  let grid = term.grid();
-  let link = grid.index(point).hyperlink();
-  let found_word = if let Some(ref url) = link {
-    let mut min_index = point;
-    loop {
-      let new_min_index = min_index.sub(term, Boundary::Cursor, 1);
-      if new_min_index == min_index || grid.index(new_min_index).hyperlink() != link {
-        break;
-      } else {
-        min_index = new_min_index
-      }
+) -> Option<(String, bool, std::ops::RangeInclusive<AlacPoint>)> {
+  // Delegate URL/OSC8 detection to the backend.
+  if let Some(result) = backend.find_hyperlink_at(point, URL_REGEX) {
+    let (url, is_url, range) = result;
+    // OSC8 hyperlinks (explicit, set by the application) are returned as-is.
+    // Regex-matched URLs need trailing punctuation sanitization.
+    let is_osc8 = backend.cell_at(point).hyperlink().is_some();
+    if is_url && !is_osc8 {
+      let (sanitized_url, sanitized_match) = sanitize_url_punctuation(url, range, backend);
+      // Apply file:// path handling.
+      let (final_url, final_is_url, final_match) = handle_file_url(sanitized_url, true, sanitized_match);
+      return Some((final_url, final_is_url, final_match));
     }
+    // OSC8: apply file:// handling but no sanitization.
+    let (final_url, final_is_url, final_match) = handle_file_url(url, is_url, range);
+    return Some((final_url, final_is_url, final_match));
+  }
 
-    let mut max_index = point;
-    loop {
-      let new_max_index = max_index.add(term, Boundary::Cursor, 1);
-      if new_max_index == max_index || grid.index(new_max_index).hyperlink() != link {
-        break;
-      } else {
-        max_index = new_max_index
-      }
-    }
-
-    let url = url.uri().to_owned();
-    let url_match = min_index..=max_index;
-
-    Some((url, true, url_match))
-  } else {
-    let (line_start, line_end) = (term.line_search_left(point), term.line_search_right(point));
-    if let Some((url, url_match)) = RegexIter::new(
-      line_start,
-      line_end,
-      AlacDirection::Right,
-      term,
-      &mut regex_searches.url_regex,
-    )
-    .find(|rm| rm.contains(&point))
-    .map(|url_match| {
-      let url = term.bounds_to_string(*url_match.start(), *url_match.end());
-      sanitize_url_punctuation(url, url_match, term)
-    }) {
-      Some((url, true, url_match))
-    } else {
-      path_match(
-        term,
-        line_start,
-        line_end,
-        point,
-        &mut regex_searches.path_hyperlink_regexes,
-        regex_searches.path_hyperlink_timeout,
-      )
-      .map(|(path, path_match)| (path, false, path_match))
-    }
-  };
-
-  found_word.map(|(maybe_url_or_path, is_url, word_match)| {
-    if is_url {
-      // Treat "file://" IRIs like file paths to ensure
-      // that line numbers at the end of the path are
-      // handled correctly.
-      // Use Url::to_file_path() to properly handle Windows drive letters
-      // (e.g., file:///C:/path -> C:\path)
-      if maybe_url_or_path.starts_with("file://") {
-        if let Ok(url) = Url::parse(&maybe_url_or_path)
-          && let Ok(path) = url.to_file_path()
-        {
-          return (path.to_string_lossy().into_owned(), false, word_match);
-        }
-        // Fallback: strip file:// prefix if URL parsing fails
-        let path = maybe_url_or_path
-          .strip_prefix("file://")
-          .unwrap_or(&maybe_url_or_path);
-        (path.to_string(), false, word_match)
-      } else {
-        (maybe_url_or_path, true, word_match)
-      }
-    } else {
-      (maybe_url_or_path, false, word_match)
-    }
-  })
+  // Fall back to path matching.
+  let (line_start, line_end) = (
+    backend.line_search_left(point),
+    backend.line_search_right(point),
+  );
+  path_match(
+    backend,
+    line_start,
+    line_end,
+    point,
+    &mut regex_searches.path_hyperlink_regexes,
+    regex_searches.path_hyperlink_timeout,
+  )
+  .map(|(path, path_match)| (path, false, path_match))
 }
 
-fn sanitize_url_punctuation<T: EventListener>(
+/// Convert `file://` URLs to local file paths; pass other URLs through unchanged.
+fn handle_file_url(
+  maybe_url_or_path: String,
+  is_url: bool,
+  word_match: std::ops::RangeInclusive<AlacPoint>,
+) -> (String, bool, std::ops::RangeInclusive<AlacPoint>) {
+  if is_url && maybe_url_or_path.starts_with("file://") {
+    if let Ok(url) = Url::parse(&maybe_url_or_path)
+      && let Ok(path) = url.to_file_path()
+    {
+      return (path.to_string_lossy().into_owned(), false, word_match);
+    }
+    let path = maybe_url_or_path
+      .strip_prefix("file://")
+      .unwrap_or(&maybe_url_or_path);
+    return (path.to_string(), false, word_match);
+  }
+  (maybe_url_or_path, is_url, word_match)
+}
+
+fn sanitize_url_punctuation(
   url: String,
-  url_match: Match,
-  term: &Term<T>,
-) -> (String, Match) {
+  url_match: std::ops::RangeInclusive<AlacPoint>,
+  backend: &dyn TerminalBackend,
+) -> (String, std::ops::RangeInclusive<AlacPoint>) {
   let mut sanitized_url = url;
   let mut chars_trimmed = 0;
 
@@ -167,22 +130,22 @@ fn sanitize_url_punctuation<T: EventListener>(
   }
 
   if chars_trimmed > 0 {
-    let new_end = url_match.end().sub(term, Boundary::Grid, chars_trimmed);
-    let sanitized_match = Match::new(*url_match.start(), new_end);
+    let new_end = backend.point_sub(*url_match.end(), Boundary::Grid, chars_trimmed);
+    let sanitized_match = *url_match.start()..=new_end;
     (sanitized_url, sanitized_match)
   } else {
     (sanitized_url, url_match)
   }
 }
 
-fn path_match<T>(
-  term: &Term<T>,
+fn path_match(
+  backend: &dyn TerminalBackend,
   line_start: AlacPoint,
   line_end: AlacPoint,
   hovered: AlacPoint,
   path_hyperlink_regexes: &mut Vec<Regex>,
   path_hyperlink_timeout: Duration,
-) -> Option<(String, Match)> {
+) -> Option<(String, std::ops::RangeInclusive<AlacPoint>)> {
   if path_hyperlink_regexes.is_empty() || path_hyperlink_timeout.as_millis() == 0 {
     return None;
   }
@@ -196,14 +159,12 @@ fn path_match<T>(
       .then_some((elapsed_time.as_millis(), path_hyperlink_timeout.as_millis()))
   };
 
-  // This used to be: `let line = term.bounds_to_string(line_start, line_end)`, however, that
-  // api compresses tab characters into a single space, whereas we require a cell accurate
-  // string representation of the line. The below algorithm does this, but seems a bit odd.
-  // Maybe there is a clean api for doing this, but I couldn't find it.
+  // Build cell-accurate string from the grid line. bounds_to_string compresses
+  // tabs into single spaces, so we iterate cells directly instead.
   let mut line = String::with_capacity(
-    (line_end.line.0 - line_start.line.0 + 1) as usize * term.grid().columns(),
+    (line_end.line.0 - line_start.line.0 + 1) as usize * backend.columns(),
   );
-  let first_cell = &term.grid()[line_start];
+  let first_cell = backend.cell_at(line_start);
   let mut prev_len = 0;
   line.push(first_cell.c);
   let mut prev_char_is_space = first_cell.c == ' ';
@@ -218,9 +179,9 @@ fn path_match<T>(
     }
   }
 
-  for cell in term.grid().iter_from(line_start) {
-    if cell.point > line_end {
-      break;
+  backend.iter_from(line_start, &mut |cell_point, cell| {
+    if cell_point > line_end {
+      return false;
     }
 
     if !cell.flags.intersects(WIDE_CHAR_SPACERS) {
@@ -246,11 +207,14 @@ fn path_match<T>(
       }
     }
 
-    if cell.point == hovered {
+    if cell_point == hovered {
       debug_assert!(hovered_point_byte_offset.is_none());
       hovered_point_byte_offset = Some(prev_len);
     }
-  }
+
+    true
+  });
+
   let line = line.trim_ascii_end();
   let hovered_point_byte_offset = hovered_point_byte_offset?;
   let hovered_word_range = {
@@ -265,14 +229,12 @@ fn path_match<T>(
     |path_range: Range<usize>, link_range: Range<usize>, position: Option<(u32, Option<u32>)>| {
       let advance_point_by_str = |mut point: AlacPoint, s: &str| {
         for _ in s.chars() {
-          point = term
-            .expand_wide(point, AlacDirection::Right)
-            .add(term, Boundary::Grid, 1);
+          point = backend
+            .expand_wide(point, AlacDirection::Right);
+          point = backend.point_add(point, Boundary::Grid, 1);
         }
 
-        // There does not appear to be an alacritty api that is
-        // "move to start of current wide char", so we have to do it ourselves.
-        let flags = term.grid().index(point).flags;
+        let flags = backend.cell_at(point).flags;
         if flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
           AlacPoint::new(point.line + 1, Column(0))
         } else if flags.contains(Flags::WIDE_CHAR_SPACER) {
@@ -284,10 +246,9 @@ fn path_match<T>(
 
       let link_start = advance_point_by_str(line_start, &line[..link_range.start]);
       let link_end = advance_point_by_str(link_start, &line[link_range]);
-      let link_match = link_start
-        ..=term
-          .expand_wide(link_end, AlacDirection::Left)
-          .sub(term, Boundary::Grid, 1);
+      let link_end_expanded = backend.expand_wide(link_end, AlacDirection::Left);
+      let link_end_final = backend.point_sub(link_end_expanded, Boundary::Grid, 1);
+      let link_match = link_start..=link_end_final;
 
       (
         {
@@ -305,13 +266,13 @@ fn path_match<T>(
   for regex in path_hyperlink_regexes {
     let mut path_found = false;
 
-    for (line_start_offset, captures) in once(
+    for (line_start_offset, captures) in std::iter::once(
       regex
         .captures_iter(line)
         .next()
         .map(|captures| (0, captures)),
     )
-    .chain(once_with(|| {
+    .chain(std::iter::once_with(|| {
       if let Some(hovered_word_range) = &hovered_word_range {
         regex
           .captures_iter(&line[hovered_word_range.clone()])

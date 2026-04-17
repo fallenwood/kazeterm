@@ -42,6 +42,17 @@ pub mod vte {
 
 pub type SessionEvents = UnboundedReceiver<event::Event>;
 
+// ---------------------------------------------------------------------------
+// TerminalBackend trait
+// ---------------------------------------------------------------------------
+
+mod backend;
+pub use backend::{AlacrittyBackend, RenderableSnapshot, TerminalBackend};
+
+// ---------------------------------------------------------------------------
+// Color conversion helpers
+// ---------------------------------------------------------------------------
+
 pub fn to_themeing_color(color: &vte::ansi::Color) -> themeing::AnsiColor {
   use themeing::{AnsiColor, AnsiNamedColor, AnsiRgb};
 
