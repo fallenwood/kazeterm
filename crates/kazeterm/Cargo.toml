@@ -22,9 +22,9 @@ config = { path = "../config" }
 kazeterm-event-system = { path = "../kazeterm-event-system" }
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
-terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty" }
-terminal-kernel-vte = { path = "../terminal-kernel-vte" }
-terminal-kernel-xterm = { path = "../terminal-kernel-xterm" }
+terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty", optional = true }
+terminal-kernel-vte = { path = "../terminal-kernel-vte", optional = true }
+terminal-kernel-xterm = { path = "../terminal-kernel-xterm", optional = true }
 themeing = { path = "../themeing" }
 toml.workspace = true
 serde.workspace = true
@@ -34,6 +34,12 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 notify.workspace = true
 notify-debouncer-mini.workspace = true
+
+[features]
+default = ["kernel-alacritty"]
+kernel-alacritty = ["dep:terminal-kernel-alacritty"]
+kernel-vte = ["dep:terminal-kernel-vte"]
+kernel-xterm = ["dep:terminal-kernel-xterm"]
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
 raw-window-handle = "0.6"

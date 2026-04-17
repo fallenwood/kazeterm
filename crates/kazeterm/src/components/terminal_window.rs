@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[cfg(any(feature = "kernel-alacritty", feature = "kernel-vte", feature = "kernel-xterm"))]
 use config::TerminalKernel;
 use futures::{FutureExt, StreamExt as _};
 use gpui::{AppContext, Context, Entity};
@@ -8,6 +9,7 @@ use terminal::TerminalView;
 
 use crate::components::MainWindow;
 
+#[allow(unused_variables)]
 fn create_terminal_session(
   program: String,
   args: Vec<String>,
@@ -15,18 +17,21 @@ fn create_terminal_session(
   app_config: &config::Config,
 ) -> Result<(terminal::Terminal, terminal_kernel::SessionEvents), String> {
   match app_config.terminal.kernel {
+    #[cfg(feature = "kernel-alacritty")]
     TerminalKernel::Alacritty => terminal_kernel_alacritty::create_terminal_session(
       program,
       args,
       working_directory,
       app_config,
     ),
+    #[cfg(feature = "kernel-vte")]
     TerminalKernel::Vte => terminal_kernel_vte::create_terminal_session(
       program,
       args,
       working_directory,
       app_config,
     ),
+    #[cfg(feature = "kernel-xterm")]
     TerminalKernel::Xterm => terminal_kernel_xterm::create_terminal_session(
       program,
       args,
@@ -34,7 +39,8 @@ fn create_terminal_session(
       app_config,
     ),
     other => Err(format!(
-      "Terminal kernel '{other}' is not implemented yet. Currently supported kernels: alacritty, vte, xterm."
+      "Terminal kernel '{other}' is not available. Enable the corresponding feature to use it: \
+       kernel-alacritty, kernel-vte, kernel-xterm."
     )),
   }
 }
