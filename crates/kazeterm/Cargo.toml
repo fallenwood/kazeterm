@@ -36,7 +36,7 @@ notify.workspace = true
 notify-debouncer-mini.workspace = true
 
 [features]
-default = ["kernel-alacritty"]
+default = ["kernel-alacritty", "kernel-vte", "kernel-xterm"]
 kernel-alacritty = ["dep:terminal-kernel-alacritty"]
 kernel-vte = ["dep:terminal-kernel-vte"]
 kernel-xterm = ["dep:terminal-kernel-xterm"]
