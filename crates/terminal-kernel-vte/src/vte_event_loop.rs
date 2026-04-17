@@ -25,6 +25,9 @@ pub type VteSender = std::sync::mpsc::Sender<VteMsg>;
 ///
 /// On Unix the PTY file descriptor is set to non-blocking so we can interleave
 /// reading from the PTY and draining the message channel in one thread.
+///
+/// The event loop takes ownership of the `Pty` to keep the child process alive.
+/// When the loop exits the `Pty` is dropped, which sends SIGHUP to the child.
 pub struct VteEventLoop {
     tx: VteSender,
     rx: std::sync::mpsc::Receiver<VteMsg>,
@@ -33,6 +36,8 @@ pub struct VteEventLoop {
     state: Arc<Mutex<VteTermInner>>,
     #[cfg(unix)]
     pty_raw_fd: i32,
+    /// Keeps the child process alive for the lifetime of the event loop.
+    _pty: terminal_kernel::tty::Pty,
 }
 
 impl VteEventLoop {
@@ -41,6 +46,7 @@ impl VteEventLoop {
     /// `pty_reader` / `pty_writer` are cloned file handles to the PTY master.
     /// On Unix they share the same underlying fd.
     pub fn new(
+        pty: terminal_kernel::tty::Pty,
         pty_reader: std::fs::File,
         pty_writer: std::fs::File,
         state: Arc<Mutex<VteTermInner>>,
@@ -55,6 +61,7 @@ impl VteEventLoop {
             state,
             #[cfg(unix)]
             pty_raw_fd,
+            _pty: pty,
         }
     }
 

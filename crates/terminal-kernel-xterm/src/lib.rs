@@ -176,7 +176,7 @@ pub fn create_terminal_session(
       .try_clone()
       .map_err(|e| format!("clone pty writer: {e}"))?;
 
-    let event_loop = VteEventLoop::new(reader, writer, state.clone(), raw_fd);
+    let event_loop = VteEventLoop::new(pty, reader, writer, state.clone(), raw_fd);
     let tx = event_loop.channel();
     let _handle = event_loop.spawn();
 
@@ -195,7 +195,7 @@ pub fn create_terminal_session(
       .try_clone()
       .map_err(|e| format!("clone pty writer: {e}"))?;
 
-    let event_loop = VteEventLoop::new(reader, writer, state.clone());
+    let event_loop = VteEventLoop::new(pty, reader, writer, state.clone());
     let tx = event_loop.channel();
     let _handle = event_loop.spawn();
 
