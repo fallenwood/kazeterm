@@ -24,7 +24,7 @@ terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
 terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty", optional = true }
 terminal-kernel-vte = { path = "../terminal-kernel-vte", optional = true }
-terminal-kernel-xterm = { path = "../terminal-kernel-xterm", optional = true }
+terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty", optional = true }
 themeing = { path = "../themeing" }
 toml.workspace = true
 serde.workspace = true
@@ -36,10 +36,10 @@ notify.workspace = true
 notify-debouncer-mini.workspace = true
 
 [features]
-default = ["kernel-alacritty", "kernel-vte", "kernel-xterm"]
+default = ["kernel-alacritty", "kernel-vte", "kernel-ghostty"]
 kernel-alacritty = ["dep:terminal-kernel-alacritty"]
 kernel-vte = ["dep:terminal-kernel-vte"]
-kernel-xterm = ["dep:terminal-kernel-xterm"]
+kernel-ghostty = ["dep:terminal-kernel-ghostty"]
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
 raw-window-handle = "0.6"

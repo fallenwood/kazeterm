@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-#[cfg(any(feature = "kernel-alacritty", feature = "kernel-vte", feature = "kernel-xterm"))]
+#[cfg(any(feature = "kernel-alacritty", feature = "kernel-vte", feature = "kernel-ghostty"))]
 use config::TerminalKernel;
 use futures::{FutureExt, StreamExt as _};
 use gpui::{AppContext, Context, Entity};
@@ -31,16 +31,17 @@ fn create_terminal_session(
       working_directory,
       app_config,
     ),
-    #[cfg(feature = "kernel-xterm")]
-    TerminalKernel::Xterm => terminal_kernel_xterm::create_terminal_session(
+    #[cfg(feature = "kernel-ghostty")]
+    TerminalKernel::Libghostty => terminal_kernel_ghostty::create_terminal_session(
       program,
       args,
       working_directory,
       app_config,
     ),
+    #[allow(unreachable_patterns)]
     other => Err(format!(
       "Terminal kernel '{other}' is not available. Enable the corresponding feature to use it: \
-       kernel-alacritty, kernel-vte, kernel-xterm."
+       kernel-alacritty, kernel-vte, kernel-ghostty."
     )),
   }
 }

@@ -9,7 +9,7 @@ members = [
   "crates/terminal-kernel",
   "crates/terminal-kernel-alacritty",
   "crates/terminal-kernel-vte",
-  "crates/terminal-kernel-xterm",
+  "crates/terminal-kernel-ghostty",
 ]
 
 [workspace.package]

@@ -293,7 +293,6 @@ impl PaneConfig {
 pub enum TerminalKernel {
   #[default]
   Alacritty,
-  Xterm,
   Libghostty,
   Vte,
 }
@@ -302,7 +301,6 @@ impl std::fmt::Display for TerminalKernel {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let value = match self {
       Self::Alacritty => "alacritty",
-      Self::Xterm => "xterm",
       Self::Libghostty => "libghostty",
       Self::Vte => "vte",
     };

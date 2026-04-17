@@ -1,3 +1,6 @@
+pub mod ghostty_event_loop;
+pub mod ghostty_term;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -8,28 +11,28 @@ use parking_lot::Mutex;
 use terminal::{PtyProcessInfo, PtySender, Terminal, TerminalBounds};
 use terminal_kernel::{SessionEvents, event::WindowSize, tty};
 
-use terminal_kernel_vte::vte_event_loop::{VteEventLoop, VteMsg, VteSender};
-use terminal_kernel_vte::vte_term::{VteBackend, VteTermInner};
+use ghostty_event_loop::{GhosttyEventLoop, GhosttyMsg, GhosttyMsgSender};
+use ghostty_term::{GhosttyBackend, GhosttyTermInner};
 
-/// PtySender wrapping the VTE event loop channel.
-struct VtePtySender(VteSender);
+/// PtySender wrapping the ghostty event loop channel.
+struct GhosttyPtySender(GhosttyMsgSender);
 
-impl PtySender for VtePtySender {
+impl PtySender for GhosttyPtySender {
   fn send_input(&self, bytes: Cow<'static, [u8]>) {
     if !bytes.is_empty() {
-      let _ = self.0.send(VteMsg::Input(bytes));
+      let _ = self.0.send(GhosttyMsg::Input(bytes));
     }
   }
 
   fn send_resize(&self, size: WindowSize) {
-    let _ = self.0.send(VteMsg::Resize(size));
+    let _ = self.0.send(GhosttyMsg::Resize(size));
   }
 }
 
-/// Create a terminal session emulating an xterm-compatible terminal.
+/// Create a terminal session using the libghostty backend.
 ///
-/// Uses the VTE backend with `TERM=xterm-256color` and `XTERM_VERSION` so
-/// that applications can detect xterm feature support.
+/// Uses `xterm-256color` TERM and advertises Ghostty identification via
+/// `TERM_PROGRAM`.
 pub fn create_terminal_session(
   program: String,
   args: Vec<String>,
@@ -50,8 +53,6 @@ pub fn create_terminal_session(
   );
   env.insert("TERM".to_string(), "xterm-256color".to_string());
   env.insert("COLORTERM".to_string(), "truecolor".to_string());
-  // Advertise xterm compatibility so applications can detect feature support.
-  env.insert("XTERM_VERSION".to_string(), "XTerm(389)".to_string());
 
   for (key, value) in &app_config.terminal.env {
     env.insert(key.clone(), value.clone());
@@ -125,20 +126,19 @@ pub fn create_terminal_session(
     UnboundedReceiver<terminal_kernel::event::Event>,
   ) = unbounded();
 
-  let (osc7_tx, osc7_rx) = std::sync::mpsc::channel();
+  let (_osc7_tx, osc7_rx) = std::sync::mpsc::channel();
 
   // Default terminal dimensions.
   let bounds = TerminalBounds::default();
   let num_lines = bounds.num_lines();
   let num_cols = bounds.num_columns();
 
-  // Build VTE terminal state.
-  let state = Arc::new(Mutex::new(VteTermInner::new(
+  // Build ghostty terminal state.
+  let state = Arc::new(Mutex::new(GhosttyTermInner::new(
     num_lines,
     num_cols,
     app_config.terminal.get_scrollback_lines(),
     events_tx,
-    Some(osc7_tx),
   )));
 
   // Spawn the child shell.
@@ -158,7 +158,6 @@ pub fn create_terminal_session(
   let pty = tty::new(&pty_options, bounds.into(), 1)
     .map_err(|e| format!("Could not start shell '{}': {}", shell_program, e))?;
 
-  // Extract PTY fd/child info and build the event loop.
   #[cfg(unix)]
   let (tx, pty_info) = {
     use std::os::unix::io::AsRawFd;
@@ -176,7 +175,16 @@ pub fn create_terminal_session(
       .try_clone()
       .map_err(|e| format!("clone pty writer: {e}"))?;
 
-    let event_loop = VteEventLoop::new(pty, reader, writer, state.clone(), raw_fd);
+    let event_loop = GhosttyEventLoop::new(
+      pty,
+      reader,
+      writer,
+      state.clone(),
+      raw_fd,
+      num_cols as u16,
+      num_lines as u16,
+      app_config.terminal.get_scrollback_lines(),
+    );
     let tx = event_loop.channel();
     let _handle = event_loop.spawn();
 
@@ -195,16 +203,24 @@ pub fn create_terminal_session(
       .try_clone()
       .map_err(|e| format!("clone pty writer: {e}"))?;
 
-    let event_loop = VteEventLoop::new(pty, reader, writer, state.clone());
+    let event_loop = GhosttyEventLoop::new(
+      pty,
+      reader,
+      writer,
+      state.clone(),
+      num_cols as u16,
+      num_lines as u16,
+      app_config.terminal.get_scrollback_lines(),
+    );
     let tx = event_loop.channel();
     let _handle = event_loop.spawn();
 
     (tx, pty_info)
   };
 
-  let backend = VteBackend::new(state);
+  let backend = GhosttyBackend::new(state);
   let terminal = Terminal::new(
-    Box::new(VtePtySender(tx)),
+    Box::new(GhosttyPtySender(tx)),
     Box::new(backend),
     pty_info,
     None,
