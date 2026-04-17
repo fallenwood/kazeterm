@@ -11,7 +11,7 @@ libc.workspace = true
 parking_lot = "0.12"
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
-libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs.git", default-features = false }
+libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs.git", rev = "f27655", default-features = false }
 
 [lints]
 workspace = true

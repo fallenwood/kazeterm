@@ -138,7 +138,7 @@ pub fn create_terminal_session(
     num_lines,
     num_cols,
     app_config.terminal.get_scrollback_lines(),
-    events_tx,
+    events_tx.clone(),
   )));
 
   // Spawn the child shell.
@@ -180,6 +180,7 @@ pub fn create_terminal_session(
       reader,
       writer,
       state.clone(),
+      events_tx.clone(),
       raw_fd,
       num_cols as u16,
       num_lines as u16,
@@ -208,6 +209,7 @@ pub fn create_terminal_session(
       reader,
       writer,
       state.clone(),
+      events_tx.clone(),
       num_cols as u16,
       num_lines as u16,
       app_config.terminal.get_scrollback_lines(),

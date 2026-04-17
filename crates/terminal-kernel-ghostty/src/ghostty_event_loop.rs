@@ -39,6 +39,7 @@ pub struct GhosttyEventLoop {
   pty_reader: std::fs::File,
   pty_writer: std::fs::File,
   state: Arc<Mutex<GhosttyTermInner>>,
+  event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
   #[cfg(unix)]
   pty_raw_fd: i32,
   /// Keeps the child process alive for the lifetime of the event loop.
@@ -55,6 +56,7 @@ impl GhosttyEventLoop {
     pty_reader: std::fs::File,
     pty_writer: std::fs::File,
     state: Arc<Mutex<GhosttyTermInner>>,
+    event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
     #[cfg(unix)] pty_raw_fd: i32,
     initial_cols: u16,
     initial_rows: u16,
@@ -67,6 +69,7 @@ impl GhosttyEventLoop {
       pty_reader,
       pty_writer,
       state,
+      event_tx,
       #[cfg(unix)]
       pty_raw_fd,
       _pty: pty,
@@ -154,6 +157,69 @@ impl GhosttyEventLoop {
       });
     }
 
+    // Bell → alacritty Bell event.
+    {
+      let event_tx = self.event_tx.clone();
+      let _ = terminal.on_bell(move |_term| {
+        let _ = event_tx.unbounded_send(terminal_kernel::event::Event::Bell);
+      });
+    }
+
+    // Title changed → alacritty Title event.
+    {
+      let event_tx = self.event_tx.clone();
+      let _ = terminal.on_title_changed(move |term| {
+        let title = term.title().unwrap_or("").to_string();
+        let _ = event_tx.unbounded_send(terminal_kernel::event::Event::Title(title));
+      });
+    }
+
+    // XTVERSION → respond with kazeterm identification.
+    {
+      let _ = terminal.on_xtversion(|_term| {
+        Some(concat!("kazeterm ", env!("CARGO_PKG_VERSION")))
+      });
+    }
+
+    // ENQ → respond with empty string (standard).
+    {
+      let _ = terminal.on_enquiry(|_term| {
+        Some("")
+      });
+    }
+
+    // Device attributes → respond as VT220-compatible terminal.
+    {
+      use libghostty_vt::terminal::{
+        ConformanceLevel, DeviceAttributeFeature, DeviceAttributes, DeviceType,
+        PrimaryDeviceAttributes, SecondaryDeviceAttributes, TertiaryDeviceAttributes,
+      };
+      let _ = terminal.on_device_attributes(|_term| {
+        Some(DeviceAttributes {
+          primary: PrimaryDeviceAttributes::new(
+            ConformanceLevel::VT220,
+            [
+              DeviceAttributeFeature::COLUMNS_132,
+              DeviceAttributeFeature::SELECTIVE_ERASE,
+              DeviceAttributeFeature::ANSI_COLOR,
+            ],
+          ),
+          secondary: SecondaryDeviceAttributes {
+            device_type: DeviceType::VT220,
+            firmware_version: 1,
+            rom_cartridge: 0,
+          },
+          tertiary: TertiaryDeviceAttributes { unit_id: 0 },
+        })
+      });
+    }
+
+    // Color scheme → report dark scheme.
+    {
+      use libghostty_vt::terminal::ColorScheme;
+      let _ = terminal.on_color_scheme(|_term| Some(ColorScheme::Dark));
+    }
+
     // Track scrollback for delta computation.
     let mut prev_scrollback_count: usize = 0;
 
@@ -213,6 +279,7 @@ impl GhosttyEventLoop {
             &self.state,
             &mut prev_scrollback_count,
           );
+          let _ = self.event_tx.unbounded_send(terminal_kernel::event::Event::Exit);
           return;
         }
         Ok(n) => {
@@ -225,6 +292,7 @@ impl GhosttyEventLoop {
             &self.state,
             &mut prev_scrollback_count,
           );
+          let _ = self.event_tx.unbounded_send(terminal_kernel::event::Event::Wakeup);
         }
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
           thread::sleep(std::time::Duration::from_millis(2));
@@ -238,6 +306,7 @@ impl GhosttyEventLoop {
             &self.state,
             &mut prev_scrollback_count,
           );
+          let _ = self.event_tx.unbounded_send(terminal_kernel::event::Event::Exit);
           return;
         }
       }
