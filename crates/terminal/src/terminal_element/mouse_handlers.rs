@@ -138,6 +138,15 @@ impl TerminalElement {
         let hovered_now = hitbox.is_hovered(window);
         let was_hovered = terminal_view.read(cx).is_hovered;
         if hovered_now != was_hovered {
+          let focus_terminal_on_hover = cx
+            .try_global::<config::Config>()
+            .map(|config| config.terminal.focus_terminal_on_hover)
+            .unwrap_or(true);
+
+          if hovered_now && focus_terminal_on_hover && !focus.is_focused(window) {
+            window.focus(&focus);
+          }
+
           terminal_view.update(cx, |view, cx| {
             view.is_hovered = hovered_now;
             cx.notify();

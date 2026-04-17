@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260417.1";
+pub const CURRENT_CONFIG_VERSION: &str = "20260417.2";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -139,6 +139,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260416.3",
       to_version: "20260417.1",
       migrate: migrate_v20260416_3_to_20260417_1,
+    },
+    Migration {
+      from_version: "20260417.1",
+      to_version: "20260417.2",
+      migrate: migrate_v20260417_1_to_20260417_2,
     },
   ]
 }
@@ -693,6 +698,25 @@ fn migrate_v20260416_3_to_20260417_1(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260417.1".to_string()),
+    );
+  }
+}
+
+/// Add terminal hover-to-focus configuration.
+fn migrate_v20260417_1_to_20260417_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    let terminal = table
+      .entry("terminal")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(terminal_table) = terminal
+      && !terminal_table.contains_key("focus_terminal_on_hover")
+    {
+      terminal_table.insert("focus_terminal_on_hover".to_string(), Value::Boolean(true));
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260417.2".to_string()),
     );
   }
 }
@@ -1414,6 +1438,33 @@ copy = "ctrl-shift-c"
         .as_str()
         .unwrap(),
       default_keybindings.focus_pane_right.first().unwrap()
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260417_1_adds_focus_terminal_on_hover() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260417.1"
+
+[terminal]
+scrollback_lines = 10000
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      get_nested(&config, "terminal", "focus_terminal_on_hover")
+        .unwrap()
+        .as_bool()
+        .unwrap(),
+      true
     );
     assert_eq!(
       config.get("version").unwrap().as_str().unwrap(),

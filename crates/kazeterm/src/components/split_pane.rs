@@ -508,6 +508,7 @@ impl SplitPane {
   pub fn render(
     &self,
     active_pane_id: Option<PaneId>,
+    focused_pane_id: Option<PaneId>,
     has_splits: bool,
     path: Vec<bool>,
     window: &mut Window,
@@ -520,8 +521,9 @@ impl SplitPane {
           .map(|c| c.terminal.right_click_context_menu)
           .unwrap_or(false);
 
-        let is_active = active_pane_id.is_some_and(|active| active == *id);
-        let is_inactive = active_pane_id.is_some_and(|active| active != *id);
+        let effective_active_pane_id = focused_pane_id.or(active_pane_id);
+        let is_active = effective_active_pane_id.is_some_and(|active| active == *id);
+        let is_inactive = effective_active_pane_id.is_some_and(|active| active != *id);
         terminal.update(cx, |tv, _| {
           tv.is_inactive_pane = is_inactive;
         });
@@ -587,8 +589,22 @@ impl SplitPane {
         let mut second_path = path.clone();
         second_path.push(true);
 
-        let first_element = first.render(active_pane_id, has_splits, first_path, window, cx);
-        let second_element = second.render(active_pane_id, has_splits, second_path, window, cx);
+        let first_element = first.render(
+          active_pane_id,
+          focused_pane_id,
+          has_splits,
+          first_path,
+          window,
+          cx,
+        );
+        let second_element = second.render(
+          active_pane_id,
+          focused_pane_id,
+          has_splits,
+          second_path,
+          window,
+          cx,
+        );
 
         let path_id = path_to_usize(&path);
         let container_id = ElementId::from(("split-container", path_id));
@@ -870,9 +886,25 @@ impl SplitContainer {
 
   pub fn render(&self, window: &mut Window, cx: &mut Context<MainWindow>) -> AnyElement {
     let has_splits = matches!(self.root, SplitPane::Split { .. });
-    self
+    let focused_pane_id = self
       .root
-      .render(self.active_pane_id, has_splits, vec![], window, cx)
+      .all_terminals()
+      .into_iter()
+      .find_map(|(id, terminal)| {
+        terminal
+          .read(cx)
+          .focus_handle
+          .is_focused(window)
+          .then_some(id)
+      });
+    self.root.render(
+      self.active_pane_id,
+      focused_pane_id,
+      has_splits,
+      vec![],
+      window,
+      cx,
+    )
   }
 }
 

@@ -296,6 +296,8 @@ pub struct TerminalConfig {
   pub copy_on_select: bool,
   /// Hide the mouse pointer while sending keyboard input to the terminal.
   pub hide_mouse_when_typing: bool,
+  /// Automatically focus the terminal when the mouse cursor enters it.
+  pub focus_terminal_on_hover: bool,
   /// Show a context menu on right-click instead of the default copy/paste behavior.
   pub right_click_context_menu: bool,
   /// Enable Ctrl+Scroll to zoom (change font size). Default is true.
@@ -319,6 +321,7 @@ impl Default for TerminalConfig {
       osc52: "copy_only".to_string(),
       copy_on_select: false,
       hide_mouse_when_typing: false,
+      focus_terminal_on_hover: true,
       right_click_context_menu: true,
       ctrl_scroll_zoom: true,
       minimap_enabled: false,
