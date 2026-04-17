@@ -89,7 +89,8 @@ impl PartialEq<&str> for KeybindingList {
 ///
 /// Each field maps an action name to either one keystroke string or an array of
 /// keystroke strings using the format:
-/// `[modifier-]...[key]` where modifiers can be `ctrl`, `shift`, `alt`.
+/// `[modifier-]...[key]` where modifiers can be `ctrl`, `shift`, `alt`, or a
+/// platform modifier (`win`, `cmd`, `super`).
 ///
 /// Examples: `"ctrl-shift-c"`, `["ctrl-shift-c", "ctrl-insert"]`, `"ctrl-tab"`
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -109,6 +110,24 @@ pub struct KeybindingConfig {
   pub next_tab: KeybindingList,
   /// Switch to previous tab
   pub previous_tab: KeybindingList,
+  /// Select tab 1
+  pub select_tab_1: KeybindingList,
+  /// Select tab 2
+  pub select_tab_2: KeybindingList,
+  /// Select tab 3
+  pub select_tab_3: KeybindingList,
+  /// Select tab 4
+  pub select_tab_4: KeybindingList,
+  /// Select tab 5
+  pub select_tab_5: KeybindingList,
+  /// Select tab 6
+  pub select_tab_6: KeybindingList,
+  /// Select tab 7
+  pub select_tab_7: KeybindingList,
+  /// Select tab 8
+  pub select_tab_8: KeybindingList,
+  /// Select the last tab
+  pub select_tab_9: KeybindingList,
   /// Toggle search bar
   pub toggle_search: KeybindingList,
   /// Split pane horizontally
@@ -164,6 +183,15 @@ impl Default for KeybindingConfig {
         zoom_reset: KeybindingList::new("cmd-0"),
         next_tab: KeybindingList::new("ctrl-tab"),
         previous_tab: KeybindingList::new("ctrl-shift-tab"),
+        select_tab_1: KeybindingList::new("cmd-1"),
+        select_tab_2: KeybindingList::new("cmd-2"),
+        select_tab_3: KeybindingList::new("cmd-3"),
+        select_tab_4: KeybindingList::new("cmd-4"),
+        select_tab_5: KeybindingList::new("cmd-5"),
+        select_tab_6: KeybindingList::new("cmd-6"),
+        select_tab_7: KeybindingList::new("cmd-7"),
+        select_tab_8: KeybindingList::new("cmd-8"),
+        select_tab_9: KeybindingList::new("cmd-9"),
         toggle_search: KeybindingList::new("ctrl-shift-f"),
         split_horizontal: KeybindingList::new("ctrl-shift-d"),
         split_vertical: KeybindingList::new("ctrl-shift-e"),
@@ -195,6 +223,15 @@ impl Default for KeybindingConfig {
         zoom_reset: KeybindingList::new("ctrl-0"),
         next_tab: KeybindingList::new("ctrl-tab"),
         previous_tab: KeybindingList::new("ctrl-shift-tab"),
+        select_tab_1: KeybindingList::new("ctrl-alt-1"),
+        select_tab_2: KeybindingList::new("ctrl-alt-2"),
+        select_tab_3: KeybindingList::new("ctrl-alt-3"),
+        select_tab_4: KeybindingList::new("ctrl-alt-4"),
+        select_tab_5: KeybindingList::new("ctrl-alt-5"),
+        select_tab_6: KeybindingList::new("ctrl-alt-6"),
+        select_tab_7: KeybindingList::new("ctrl-alt-7"),
+        select_tab_8: KeybindingList::new("ctrl-alt-8"),
+        select_tab_9: KeybindingList::new("ctrl-alt-9"),
         toggle_search: KeybindingList::new("ctrl-shift-f"),
         split_horizontal: KeybindingList::new("ctrl-shift-d"),
         split_vertical: KeybindingList::new("ctrl-shift-e"),
@@ -440,6 +477,14 @@ mod tests {
     format!("ctrl-shift-{}", index)
   }
 
+  fn expected_default_select_tab_binding(index: usize) -> String {
+    if cfg!(target_os = "macos") {
+      format!("cmd-{}", index)
+    } else {
+      format!("ctrl-alt-{}", index)
+    }
+  }
+
   fn expected_platform_modifier_label() -> &'static str {
     if cfg!(target_os = "macos") {
       "Cmd"
@@ -620,6 +665,20 @@ mod tests {
     } else {
       assert!(new_tab.matches(true, true, false, false, "t"));
     }
+
+    let select_tab_1 = ParsedKeybinding::parse(config.select_tab_1.first().unwrap());
+    if cfg!(target_os = "macos") {
+      assert!(select_tab_1.matches(false, false, false, true, "1"));
+    } else {
+      assert!(select_tab_1.matches(true, false, true, false, "1"));
+    }
+
+    let select_tab_9 = ParsedKeybinding::parse(config.select_tab_9.first().unwrap());
+    if cfg!(target_os = "macos") {
+      assert!(select_tab_9.matches(false, false, false, true, "9"));
+    } else {
+      assert!(select_tab_9.matches(true, false, true, false, "9"));
+    }
   }
 
   #[test]
@@ -635,6 +694,14 @@ mod tests {
     assert_eq!(
       config.new_tab_profile_1.first().unwrap(),
       expected_default_new_tab_profile_binding(1)
+    );
+    assert_eq!(
+      config.select_tab_1.first().unwrap(),
+      expected_default_select_tab_binding(1)
+    );
+    assert_eq!(
+      config.select_tab_9.first().unwrap(),
+      expected_default_select_tab_binding(9)
     );
   }
 

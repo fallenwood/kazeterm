@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260416.2";
+pub const CURRENT_CONFIG_VERSION: &str = "20260416.3";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -129,6 +129,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260416.1",
       to_version: "20260416.2",
       migrate: migrate_v20260416_1_to_20260416_2,
+    },
+    Migration {
+      from_version: "20260416.2",
+      to_version: "20260416.3",
+      migrate: migrate_v20260416_2_to_20260416_3,
     },
   ]
 }
@@ -622,6 +627,38 @@ fn migrate_v20260416_1_to_20260416_2(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260416.2".to_string()),
+    );
+  }
+}
+
+/// Add direct tab selection keybindings (select_tab_1..9) to existing keybinding sections.
+fn migrate_v20260416_2_to_20260416_3(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
+      let defaults = crate::KeybindingConfig::default();
+      let select_tab_bindings = [
+        &defaults.select_tab_1,
+        &defaults.select_tab_2,
+        &defaults.select_tab_3,
+        &defaults.select_tab_4,
+        &defaults.select_tab_5,
+        &defaults.select_tab_6,
+        &defaults.select_tab_7,
+        &defaults.select_tab_8,
+        &defaults.select_tab_9,
+      ];
+
+      for (i, binding) in select_tab_bindings.iter().enumerate() {
+        let key = format!("select_tab_{}", i + 1);
+        if !kb.contains_key(&key) {
+          kb.insert(key, Value::String(binding.first().unwrap().to_string()));
+        }
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260416.3".to_string()),
     );
   }
 }
@@ -1271,6 +1308,42 @@ new_tab_profile_9 = "ctrl-shift-9"
         .as_str()
         .unwrap(),
       expected_profile_9
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260416_2_adds_select_tab_keybindings_using_platform_defaults() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260416.2"
+
+[keybindings]
+copy = "ctrl-shift-c"
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+
+    let default_keybindings = crate::KeybindingConfig::default();
+    assert_eq!(
+      get_nested(&config, "keybindings", "select_tab_1")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.select_tab_1.first().unwrap()
+    );
+    assert_eq!(
+      get_nested(&config, "keybindings", "select_tab_9")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.select_tab_9.first().unwrap()
     );
     assert_eq!(
       config.get("version").unwrap().as_str().unwrap(),

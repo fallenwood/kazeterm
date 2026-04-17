@@ -140,6 +140,17 @@ impl Render for MainWindow {
           &keybindings.new_tab_profile_8,
           &keybindings.new_tab_profile_9,
         ];
+        let kb_select_tabs = [
+          &keybindings.select_tab_1,
+          &keybindings.select_tab_2,
+          &keybindings.select_tab_3,
+          &keybindings.select_tab_4,
+          &keybindings.select_tab_5,
+          &keybindings.select_tab_6,
+          &keybindings.select_tab_7,
+          &keybindings.select_tab_8,
+          &keybindings.select_tab_9,
+        ];
         let tab_switcher_popup = cx.global::<config::Config>().tab.switcher_popup;
 
         if keybindings
@@ -219,13 +230,17 @@ impl Render for MainWindow {
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.insert_new_tab(window, cx);
+        } else if let Some((i, _)) = kb_select_tabs.iter().enumerate().find(|(_, kb_select_tab)| {
+          kb_select_tab.matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        }) {
+          this.select_tab_by_shortcut(i + 1, window, cx);
         } else if keybindings
           .quit
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.show_close_confirm_dialog(window, cx);
         } else {
-          // Check profile-specific new tab shortcuts (Ctrl+Shift+1..9)
+          // Check profile-specific new tab shortcuts.
           let profiles = cx.global::<config::Config>().get_local_profile_names();
           for (i, kb_profile) in kb_new_tab_profiles.iter().enumerate() {
             if kb_profile.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
