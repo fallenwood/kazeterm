@@ -16,7 +16,6 @@ use gpui::{Context, EventEmitter, Pixels, Window, px};
 use terminal_kernel::{
   TerminalBackend,
   event::Event as AlacTermEvent,
-  event_loop::{EventLoopSender, Msg, Notifier},
   grid::{Dimensions as _, Scroll},
   index::{Column as AlacColumn, Direction, Line as AlacLine, Point as AlacPoint},
   selection::Selection,
@@ -64,8 +63,17 @@ pub enum Event {
   PromptReturned,
 }
 
+/// Abstraction for sending data to the PTY process.
+///
+/// Implementations handle writing bytes (keyboard input, paste) and
+/// notifying the PTY of terminal resize events.
+pub trait PtySender: Send {
+  fn send_input(&self, bytes: std::borrow::Cow<'static, [u8]>);
+  fn send_resize(&self, size: terminal_kernel::event::WindowSize);
+}
+
 pub struct Terminal {
-  pub pty_tx: Notifier,
+  pub pty_tx: Box<dyn PtySender>,
   pub events: VecDeque<InternalEvent>,
   pub term: Box<dyn TerminalBackend>,
   pub last_content: TerminalContent,
@@ -119,7 +127,7 @@ pub struct Terminal {
 
 impl Terminal {
   pub fn new(
-    pty_tx: EventLoopSender,
+    pty_tx: Box<dyn PtySender>,
     term: Box<dyn TerminalBackend>,
     pty_info: PtyProcessInfo,
     graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
@@ -128,7 +136,7 @@ impl Terminal {
     cwd_file: Option<std::path::PathBuf>,
   ) -> Self {
     Self {
-      pty_tx: Notifier(pty_tx),
+      pty_tx,
       events: VecDeque::with_capacity(10),
       term,
       last_content: Default::default(),
@@ -662,7 +670,7 @@ impl Terminal {
         new_bounds.bounds.size.width = cmp::max(new_bounds.cell_width, new_bounds.width());
 
         self.last_content.terminal_bounds = new_bounds;
-        self.pty_tx.0.send(Msg::Resize(new_bounds.into())).ok();
+        self.pty_tx.send_resize(new_bounds.into());
         self.term.resize(new_bounds.num_lines(), new_bounds.num_columns());
       }
       InternalEvent::Clear => {}

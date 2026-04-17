@@ -5,11 +5,14 @@ publish.workspace = true
 edition.workspace = true
 
 [dependencies]
-alacritty_terminal.workspace = true
 config = { path = "../config" }
 futures.workspace = true
+libc = "0.2"
+parking_lot = "0.12"
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
+terminal-kernel-vte = { path = "../terminal-kernel-vte" }
+vte = "0.15"
 
 [lints]
 workspace = true

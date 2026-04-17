@@ -1,45 +1,35 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::term::Osc52;
-use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle};
-use futures::{channel::mpsc::UnboundedReceiver, channel::mpsc::unbounded};
-use terminal::{PtyProcessInfo, Terminal, TerminalBounds, TerminalEventListener};
-use terminal_kernel::{
-  AlacrittyBackend, SessionEvents, Term, event_loop::EventLoop, sync::FairMutex, term::Config, tty,
-};
+use futures::channel::mpsc::{UnboundedReceiver, unbounded};
+use parking_lot::Mutex;
+use terminal::{PtyProcessInfo, PtySender, Terminal, TerminalBounds};
+use terminal_kernel::{SessionEvents, event::WindowSize, tty};
 
-#[cfg(unix)]
-use terminal::kitty_graphics::GraphicsPtyFilter;
-#[cfg(not(unix))]
-use terminal::kitty_graphics::{WindowsDsrCursorFn, WindowsDsrFilter};
+use terminal_kernel_vte::vte_event_loop::{VteEventLoop, VteMsg, VteSender};
+use terminal_kernel_vte::vte_term::{VteBackend, VteTermInner};
 
-fn parse_cursor_style(config: &config::Config) -> CursorStyle {
-  let shape = match config.cursor.shape.as_str() {
-    "underline" => CursorShape::Underline,
-    "beam" => CursorShape::Beam,
-    _ => CursorShape::Block,
-  };
+/// PtySender wrapping the VTE event loop channel.
+struct VtePtySender(VteSender);
 
-  CursorStyle {
-    shape,
-    blinking: config.cursor.blink,
+impl PtySender for VtePtySender {
+  fn send_input(&self, bytes: Cow<'static, [u8]>) {
+    if !bytes.is_empty() {
+      let _ = self.0.send(VteMsg::Input(bytes));
+    }
   }
-}
 
-fn parse_osc52(mode: &str) -> Osc52 {
-  match mode {
-    "disabled" => Osc52::Disabled,
-    "paste_only" => Osc52::OnlyPaste,
-    "copy_paste" => Osc52::CopyPaste,
-    _ => Osc52::OnlyCopy,
+  fn send_resize(&self, size: WindowSize) {
+    let _ = self.0.send(VteMsg::Resize(size));
   }
 }
 
 /// Create a terminal session emulating an xterm-compatible terminal.
 ///
-/// Sets `TERM=xterm-256color` and `XTERM_VERSION` so that applications
-/// can detect xterm feature support.
+/// Uses the VTE backend with `TERM=xterm-256color` and `XTERM_VERSION` so
+/// that applications can detect xterm feature support.
 pub fn create_terminal_session(
   program: String,
   args: Vec<String>,
@@ -129,28 +119,32 @@ pub fn create_terminal_session(
     }
   }
 
+  // Event channels.
   let (events_tx, events_rx): (
     futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
     UnboundedReceiver<terminal_kernel::event::Event>,
   ) = unbounded();
 
-  let term = Term::new(
-    Config {
-      scrolling_history: app_config.terminal.get_scrollback_lines(),
-      default_cursor_style: parse_cursor_style(app_config),
-      osc52: parse_osc52(&app_config.terminal.osc52),
-      ..Config::default()
-    },
-    &TerminalBounds::default(),
-    TerminalEventListener(events_tx.clone()),
-  );
+  let (osc7_tx, osc7_rx) = std::sync::mpsc::channel();
 
-  let term = Arc::new(FairMutex::new(term));
+  // Default terminal dimensions.
+  let bounds = TerminalBounds::default();
+  let num_lines = bounds.num_lines();
+  let num_cols = bounds.num_columns();
 
+  // Build VTE terminal state.
+  let state = Arc::new(Mutex::new(VteTermInner::new(
+    num_lines,
+    num_cols,
+    app_config.terminal.get_scrollback_lines(),
+    events_tx,
+    Some(osc7_tx),
+  )));
+
+  // Spawn the child shell.
   let shell_program = program.clone();
   let pty_options = {
     let shell = tty::Shell::new(program, args);
-
     tty::Options {
       shell: Some(shell),
       working_directory,
@@ -161,86 +155,61 @@ pub fn create_terminal_session(
     }
   };
 
-  let pty = tty::new(&pty_options, TerminalBounds::default().into(), 1)
+  let pty = tty::new(&pty_options, bounds.into(), 1)
     .map_err(|e| format!("Could not start shell '{}': {}", shell_program, e))?;
 
+  // Extract PTY fd/child info and build the event loop.
   #[cfg(unix)]
-  let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
-    let term_for_cursor = term.clone();
-    let cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> = Box::new(move || {
-      let t = term_for_cursor.try_lock_unfair()?;
-      let cursor = t.grid().cursor.point;
-      let hs = t.history_size() as i32;
-      Some((hs + cursor.line.0, cursor.column.0 as i32))
-    });
+  let (tx, pty_info) = {
+    use std::os::unix::io::AsRawFd;
 
-    let term_for_dsr = term.clone();
-    let dsr_cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> = Box::new(move || {
-      let t = term_for_dsr.try_lock_unfair()?;
-      let cursor = t.grid().cursor.point;
-      Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
-    });
+    let raw_fd = pty.file().as_raw_fd();
+    let child_pid = pty.child().id();
+    let pty_info = PtyProcessInfo::from_raw(raw_fd, child_pid);
 
-    let (filter, pending_cnl, graphics_rx, osc7_rx) =
-      GraphicsPtyFilter::new(pty, cursor_fn, dsr_cursor_fn).unwrap();
-    let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
+    let reader = pty
+      .file()
+      .try_clone()
+      .map_err(|e| format!("clone pty reader: {e}"))?;
+    let writer = pty
+      .file()
+      .try_clone()
+      .map_err(|e| format!("clone pty writer: {e}"))?;
 
-    let event_loop = EventLoop::new(
-      term.clone(),
-      TerminalEventListener(events_tx),
-      filter,
-      pty_options.drain_on_exit,
-      false,
-    )
-    .unwrap();
+    let event_loop = VteEventLoop::new(reader, writer, state.clone(), raw_fd);
+    let tx = event_loop.channel();
+    let _handle = event_loop.spawn();
 
-    let pty_tx = event_loop.channel();
-    let _io_thread = event_loop.spawn();
-
-    (
-      pty_tx,
-      pty_info,
-      Some(graphics_rx),
-      Some(pending_cnl),
-      Some(osc7_rx),
-    )
+    (tx, pty_info)
   };
 
   #[cfg(not(unix))]
-  let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
-    let term_for_dsr = term.clone();
-    let dsr_cursor_fn: WindowsDsrCursorFn = Box::new(move || {
-      let t = term_for_dsr.try_lock_unfair()?;
-      let cursor = t.grid().cursor.point;
-      Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
-    });
-
+  let (tx, pty_info) = {
     let pty_info = PtyProcessInfo::new(&pty);
-    let filter = WindowsDsrFilter::new(pty, dsr_cursor_fn);
+    let reader = pty
+      .file()
+      .try_clone()
+      .map_err(|e| format!("clone pty reader: {e}"))?;
+    let writer = pty
+      .file()
+      .try_clone()
+      .map_err(|e| format!("clone pty writer: {e}"))?;
 
-    let event_loop = EventLoop::new(
-      term.clone(),
-      TerminalEventListener(events_tx),
-      filter,
-      pty_options.drain_on_exit,
-      false,
-    )
-    .unwrap();
+    let event_loop = VteEventLoop::new(reader, writer, state.clone());
+    let tx = event_loop.channel();
+    let _handle = event_loop.spawn();
 
-    let pty_tx = event_loop.channel();
-    let _io_thread = event_loop.spawn();
-
-    (pty_tx, pty_info, None, None, None)
+    (tx, pty_info)
   };
 
-  let backend = AlacrittyBackend::new(term);
+  let backend = VteBackend::new(state);
   let terminal = Terminal::new(
-    pty_tx,
+    Box::new(VtePtySender(tx)),
     Box::new(backend),
     pty_info,
-    graphics_rx,
-    pending_cnl,
-    osc7_rx,
+    None,
+    None,
+    Some(osc7_rx),
     Some(cwd_file),
   );
 

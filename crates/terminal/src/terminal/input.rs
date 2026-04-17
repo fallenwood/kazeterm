@@ -3,7 +3,6 @@ use std::process::ExitStatus;
 
 use gpui::{Context, Keystroke};
 use terminal_kernel::{
-  event::Notify,
   grid::Scroll,
   index::{Column, Point as AlacPoint},
 };
@@ -245,6 +244,6 @@ impl Terminal {
 
   /// Write the Input payload to the tty.
   pub(super) fn write_to_pty(&self, input: impl Into<Cow<'static, [u8]>>) {
-    self.pty_tx.notify(input.into());
+    self.pty_tx.send_input(input.into());
   }
 }

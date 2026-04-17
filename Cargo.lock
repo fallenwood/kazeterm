@@ -6159,22 +6159,27 @@ dependencies = [
 name = "terminal-kernel-vte"
 version = "0.1.0"
 dependencies = [
- "alacritty_terminal",
  "config",
  "futures",
+ "libc",
+ "parking_lot",
  "terminal",
  "terminal-kernel",
+ "vte",
 ]
 
 [[package]]
 name = "terminal-kernel-xterm"
 version = "0.1.0"
 dependencies = [
- "alacritty_terminal",
  "config",
  "futures",
+ "libc",
+ "parking_lot",
  "terminal",
  "terminal-kernel",
+ "terminal-kernel-vte",
+ "vte",
 ]
 
 [[package]]

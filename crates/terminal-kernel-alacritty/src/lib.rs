@@ -1,18 +1,38 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, path::PathBuf, sync::Arc};
 
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::Osc52;
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle};
 use futures::{channel::mpsc::UnboundedReceiver, channel::mpsc::unbounded};
-use terminal::{PtyProcessInfo, Terminal, TerminalBounds, TerminalEventListener};
+use terminal::{PtyProcessInfo, PtySender, Terminal, TerminalBounds, TerminalEventListener};
 use terminal_kernel::{
-  AlacrittyBackend, SessionEvents, Term, event_loop::EventLoop, sync::FairMutex, term::Config, tty,
+  AlacrittyBackend, SessionEvents, Term,
+  event::WindowSize,
+  event_loop::{EventLoop, EventLoopSender, Msg},
+  sync::FairMutex,
+  term::Config,
+  tty,
 };
 
 #[cfg(unix)]
 use terminal::kitty_graphics::GraphicsPtyFilter;
 #[cfg(not(unix))]
 use terminal::kitty_graphics::{WindowsDsrCursorFn, WindowsDsrFilter};
+
+/// PtySender implementation wrapping alacritty's EventLoopSender.
+pub struct AlacrittyPtySender(EventLoopSender);
+
+impl PtySender for AlacrittyPtySender {
+  fn send_input(&self, bytes: Cow<'static, [u8]>) {
+    if !bytes.is_empty() {
+      let _ = self.0.send(Msg::Input(bytes));
+    }
+  }
+
+  fn send_resize(&self, size: WindowSize) {
+    let _ = self.0.send(Msg::Resize(size));
+  }
+}
 
 fn parse_cursor_style(config: &config::Config) -> CursorStyle {
   let shape = match config.cursor.shape.as_str() {
@@ -229,7 +249,7 @@ pub fn create_terminal_session(
 
   let backend = AlacrittyBackend::new(term);
   let terminal = Terminal::new(
-    pty_tx,
+    Box::new(AlacrittyPtySender(pty_tx)),
     Box::new(backend),
     pty_info,
     graphics_rx,
