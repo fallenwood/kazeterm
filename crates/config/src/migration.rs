@@ -597,6 +597,7 @@ fn migrate_v20260415_3_to_20260416_1(value: &mut Value) {
 }
 
 /// Fix macOS legacy tab shortcuts that were inserted with non-macOS defaults.
+/// Add window.key_debug_mode configuration support.
 fn migrate_v20260416_1_to_20260416_2(value: &mut Value) {
   if let Value::Table(table) = value {
     if cfg!(target_os = "macos") {
@@ -632,6 +633,15 @@ fn migrate_v20260416_1_to_20260416_2(value: &mut Value) {
           }
         }
       }
+    }
+
+    let window = table
+      .entry("window")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(window_table) = window
+      && !window_table.contains_key("key_debug_mode")
+    {
+      window_table.insert("key_debug_mode".to_string(), Value::Boolean(false));
     }
 
     table.insert(

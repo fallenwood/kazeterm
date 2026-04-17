@@ -528,6 +528,9 @@ impl TerminalView {
     let key = &event.keystroke.key;
 
     let passthrough_bindings = [
+      &keybindings.zoom_in,
+      &keybindings.zoom_out,
+      &keybindings.zoom_reset,
       &keybindings.toggle_fullscreen,
       &keybindings.toggle_tab_bar,
       &keybindings.new_tab,

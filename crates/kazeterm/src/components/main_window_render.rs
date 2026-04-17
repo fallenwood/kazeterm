@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
@@ -7,9 +9,10 @@ use gpui_component::{
   label::Label,
   menu::{ContextMenuExt, DropdownMenu, PopupMenu},
 };
+use smol::Timer;
 use themeing::SettingsStore;
 
-use super::main_window::MainWindow;
+use super::main_window::{KeyDebugModifiers, KeyDebugPressedKey, KeyDebugRecentKey, MainWindow};
 use super::menu_builder::{build_new_tab_menu, build_tab_context_menu};
 use super::terminal_tab_bar::{TerminalTab, TerminalTabBar};
 use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
@@ -23,6 +26,567 @@ impl Render for ResizeVerticalTabbar {
   fn render(&mut self, _window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
     Empty
   }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct KeyDebugEntry {
+  raw_key: String,
+  shortcut: String,
+  action: Option<String>,
+}
+
+const KEY_DEBUG_RELEASE_PERSIST_DURATION: Duration = Duration::from_secs(3);
+const KEY_DEBUG_MAX_ROWS: usize = 16;
+
+impl KeyDebugModifiers {
+  fn is_empty(self) -> bool {
+    !self.control && !self.shift && !self.alt && !self.platform
+  }
+
+  fn display_text(self) -> String {
+    let mut parts = Vec::new();
+    if self.platform {
+      parts.push(if cfg!(target_os = "macos") {
+        "Cmd"
+      } else if cfg!(target_os = "windows") {
+        "Win"
+      } else {
+        "Super"
+      });
+    }
+    if self.control {
+      parts.push("Ctrl");
+    }
+    if self.shift {
+      parts.push("Shift");
+    }
+    if self.alt {
+      parts.push("Alt");
+    }
+    if parts.is_empty() {
+      "No modifiers".to_string()
+    } else {
+      parts.join("+")
+    }
+  }
+}
+
+impl MainWindow {
+  fn set_key_debug_modifiers(&mut self, modifiers: KeyDebugModifiers, cx: &mut Context<Self>) {
+    if self.key_debug_modifiers == modifiers {
+      return;
+    }
+
+    self.key_debug_modifiers = modifiers;
+    if cx.global::<::config::Config>().window.key_debug_mode {
+      cx.notify();
+    }
+  }
+
+  fn press_key_debug_key(
+    &mut self,
+    key: &str,
+    modifiers: KeyDebugModifiers,
+    cx: &mut Context<Self>,
+  ) {
+    let mut changed = false;
+
+    if !is_modifier_key(key) {
+      self.key_debug_pressed_keys.push(KeyDebugPressedKey {
+        raw_key: key.to_string(),
+        modifiers,
+        action: None,
+      });
+      changed = true;
+    }
+
+    if changed && cx.global::<::config::Config>().window.key_debug_mode {
+      cx.notify();
+    }
+  }
+
+  fn annotate_latest_key_debug_key(
+    &mut self,
+    key: &str,
+    action: Option<String>,
+    cx: &mut Context<Self>,
+  ) {
+    if let Some(pressed) = self
+      .key_debug_pressed_keys
+      .iter_mut()
+      .rev()
+      .find(|pressed| same_key_identity(&pressed.raw_key, key))
+      && pressed.action != action
+    {
+      pressed.action = action;
+      if cx.global::<::config::Config>().window.key_debug_mode {
+        cx.notify();
+      }
+    }
+  }
+
+  fn release_key_debug_key(&mut self, key: &str, cx: &mut Context<Self>) {
+    let released = if let Some(ix) = self
+      .key_debug_pressed_keys
+      .iter()
+      .position(|pressed| same_key_identity(&pressed.raw_key, key))
+    {
+      let pressed = self.key_debug_pressed_keys.remove(ix);
+      KeyDebugRecentKey {
+        raw_key: pressed.raw_key.clone(),
+        modifiers: pressed.modifiers,
+        shortcut: format_pressed_shortcut(pressed.modifiers, &pressed.raw_key),
+        action: pressed.action,
+        expires_at: Instant::now() + KEY_DEBUG_RELEASE_PERSIST_DURATION,
+      }
+    } else {
+      KeyDebugRecentKey {
+        raw_key: key.to_string(),
+        modifiers: self.key_debug_modifiers,
+        shortcut: if is_modifier_key(key) {
+          display_key_name(key)
+        } else {
+          format_pressed_shortcut(self.key_debug_modifiers, key)
+        },
+        action: None,
+        expires_at: Instant::now() + KEY_DEBUG_RELEASE_PERSIST_DURATION,
+      }
+    };
+
+    self.key_debug_recent_keys.insert(0, released);
+    self.key_debug_recent_keys.truncate(KEY_DEBUG_MAX_ROWS);
+
+    if cx.global::<::config::Config>().window.key_debug_mode {
+      cx.notify();
+    }
+
+    let view = cx.entity();
+    cx.spawn(async move |_this, cx| {
+      Timer::after(KEY_DEBUG_RELEASE_PERSIST_DURATION).await;
+      let _ = view.update(cx, |this, cx| {
+        this.prune_expired_key_debug_history(cx);
+      });
+    })
+    .detach();
+  }
+
+  fn prune_expired_key_debug_history(&mut self, cx: &mut Context<Self>) {
+    let len_before = self.key_debug_recent_keys.len();
+    let now = Instant::now();
+    self
+      .key_debug_recent_keys
+      .retain(|recent| recent.expires_at > now);
+    if len_before != self.key_debug_recent_keys.len()
+      && cx.global::<::config::Config>().window.key_debug_mode
+    {
+      cx.notify();
+    }
+  }
+}
+
+fn is_modifier_key(key: &str) -> bool {
+  matches!(
+    key.to_ascii_lowercase().as_str(),
+    "control" | "ctrl" | "shift" | "alt" | "meta" | "super" | "win" | "cmd"
+  )
+}
+
+fn same_key_identity(left: &str, right: &str) -> bool {
+  left.eq_ignore_ascii_case(right)
+}
+
+fn display_key_name(key: &str) -> String {
+  let normalized = key.to_ascii_lowercase();
+  match normalized.as_str() {
+    "control" | "ctrl" => "Ctrl".to_string(),
+    "shift" => "Shift".to_string(),
+    "alt" => "Alt".to_string(),
+    "meta" | "super" | "win" => {
+      if cfg!(target_os = "macos") {
+        "Cmd".to_string()
+      } else if cfg!(target_os = "windows") {
+        "Win".to_string()
+      } else {
+        "Super".to_string()
+      }
+    }
+    "cmd" => "Cmd".to_string(),
+    "escape" => "Escape".to_string(),
+    "enter" => "Enter".to_string(),
+    "tab" => "Tab".to_string(),
+    "space" => "Space".to_string(),
+    "backspace" => "Backspace".to_string(),
+    "delete" => "Delete".to_string(),
+    "insert" => "Insert".to_string(),
+    "home" => "Home".to_string(),
+    "end" => "End".to_string(),
+    "pageup" => "Page Up".to_string(),
+    "pagedown" => "Page Down".to_string(),
+    "up" => "Up".to_string(),
+    "down" => "Down".to_string(),
+    "left" => "Left".to_string(),
+    "right" => "Right".to_string(),
+    _ if key.len() == 1 => key.to_uppercase(),
+    _ if normalized.starts_with('f') && normalized[1..].chars().all(|ch| ch.is_ascii_digit()) => {
+      normalized.to_uppercase()
+    }
+    _ => {
+      let mut chars = normalized.chars();
+      match chars.next() {
+        Some(first) => first.to_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+      }
+    }
+  }
+}
+
+fn modifier_labels(modifiers: KeyDebugModifiers) -> Vec<&'static str> {
+  let mut parts = Vec::new();
+  if modifiers.platform {
+    parts.push(if cfg!(target_os = "macos") {
+      "Cmd"
+    } else if cfg!(target_os = "windows") {
+      "Win"
+    } else {
+      "Super"
+    });
+  }
+  if modifiers.control {
+    parts.push("Ctrl");
+  }
+  if modifiers.shift {
+    parts.push("Shift");
+  }
+  if modifiers.alt {
+    parts.push("Alt");
+  }
+  parts
+}
+
+fn modifier_raw_labels(modifiers: KeyDebugModifiers) -> Vec<&'static str> {
+  let mut parts = Vec::new();
+  if modifiers.platform {
+    parts.push(if cfg!(target_os = "macos") {
+      "cmd"
+    } else if cfg!(target_os = "windows") {
+      "win"
+    } else {
+      "super"
+    });
+  }
+  if modifiers.control {
+    parts.push("control");
+  }
+  if modifiers.shift {
+    parts.push("shift");
+  }
+  if modifiers.alt {
+    parts.push("alt");
+  }
+  parts
+}
+
+fn format_pressed_shortcut(modifiers: KeyDebugModifiers, key: &str) -> String {
+  let mut parts = modifier_labels(modifiers)
+    .into_iter()
+    .map(ToOwned::to_owned)
+    .collect::<Vec<_>>();
+  parts.push(display_key_name(key));
+  parts.join("+")
+}
+
+fn push_key_debug_action(
+  actions: &mut Vec<String>,
+  label: impl Into<String>,
+  bindings: &::config::KeybindingList,
+  modifiers: KeyDebugModifiers,
+  key: &str,
+) {
+  if bindings.matches(
+    modifiers.control,
+    modifiers.shift,
+    modifiers.alt,
+    modifiers.platform,
+    key,
+  ) {
+    let label = label.into();
+    if !actions.iter().any(|action| action == &label) {
+      actions.push(label);
+    }
+  }
+}
+
+fn resolve_key_debug_action(
+  config: &::config::Config,
+  modifiers: KeyDebugModifiers,
+  key: &str,
+  search_visible: bool,
+) -> Option<String> {
+  let keybindings = &config.keybindings;
+  let mut actions = Vec::new();
+
+  push_key_debug_action(&mut actions, "Copy", &keybindings.copy, modifiers, key);
+  push_key_debug_action(&mut actions, "Paste", &keybindings.paste, modifiers, key);
+  push_key_debug_action(
+    &mut actions,
+    "Zoom In",
+    &keybindings.zoom_in,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Zoom Out",
+    &keybindings.zoom_out,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Zoom Reset",
+    &keybindings.zoom_reset,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Next Tab",
+    &keybindings.next_tab,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Previous Tab",
+    &keybindings.previous_tab,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Toggle Search",
+    &keybindings.toggle_search,
+    modifiers,
+    key,
+  );
+  if search_visible
+    && key.eq_ignore_ascii_case("escape")
+    && !actions.iter().any(|action| action == "Toggle Search")
+  {
+    actions.push("Toggle Search".to_string());
+  }
+  push_key_debug_action(
+    &mut actions,
+    "Split Horizontal",
+    &keybindings.split_horizontal,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Split Vertical",
+    &keybindings.split_vertical,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Close Pane",
+    &keybindings.close_pane,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Focus Next Pane",
+    &keybindings.focus_next_pane,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Focus Previous Pane",
+    &keybindings.focus_previous_pane,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Swap Split Panes",
+    &keybindings.swap_split_panes,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Toggle Fullscreen",
+    &keybindings.toggle_fullscreen,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "Toggle Tab Bar",
+    &keybindings.toggle_tab_bar,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "New Tab",
+    &keybindings.new_tab,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
+    "New Window",
+    &keybindings.new_window,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(&mut actions, "Quit", &keybindings.quit, modifiers, key);
+
+  for (profile_name, binding) in config.get_local_profile_names().into_iter().zip([
+    &keybindings.new_tab_profile_1,
+    &keybindings.new_tab_profile_2,
+    &keybindings.new_tab_profile_3,
+    &keybindings.new_tab_profile_4,
+    &keybindings.new_tab_profile_5,
+    &keybindings.new_tab_profile_6,
+    &keybindings.new_tab_profile_7,
+    &keybindings.new_tab_profile_8,
+    &keybindings.new_tab_profile_9,
+  ]) {
+    push_key_debug_action(
+      &mut actions,
+      format!("New Tab: {}", profile_name),
+      binding,
+      modifiers,
+      key,
+    );
+  }
+
+  if actions.is_empty() {
+    None
+  } else {
+    Some(actions.join(" / "))
+  }
+}
+
+fn collect_key_debug_entries(
+  recent_keys: &[KeyDebugRecentKey],
+  config: &::config::Config,
+  modifiers: KeyDebugModifiers,
+  pressed_keys: &[KeyDebugPressedKey],
+) -> Vec<KeyDebugEntry> {
+  let mut entries = recent_keys
+    .iter()
+    .map(|recent| KeyDebugEntry {
+      raw_key: recent.raw_key.clone(),
+      shortcut: recent.shortcut.clone(),
+      action: recent
+        .action
+        .clone()
+        .or_else(|| resolve_key_debug_action(config, recent.modifiers, &recent.raw_key, false)),
+    })
+    .collect::<Vec<_>>();
+
+  for (raw_key, shortcut) in modifier_raw_labels(modifiers)
+    .into_iter()
+    .zip(modifier_labels(modifiers).into_iter())
+  {
+    entries.push(KeyDebugEntry {
+      raw_key: raw_key.to_string(),
+      shortcut: shortcut.to_string(),
+      action: None,
+    });
+  }
+
+  entries.extend(pressed_keys.iter().map(|pressed| {
+    KeyDebugEntry {
+      raw_key: pressed.raw_key.clone(),
+      shortcut: format_pressed_shortcut(pressed.modifiers, &pressed.raw_key),
+      action: pressed
+        .action
+        .clone()
+        .or_else(|| resolve_key_debug_action(config, pressed.modifiers, &pressed.raw_key, false)),
+    }
+  }));
+
+  entries.truncate(KEY_DEBUG_MAX_ROWS);
+  entries
+}
+
+fn render_key_debug_overlay(
+  entries: &[KeyDebugEntry],
+  modifiers: KeyDebugModifiers,
+  cx: &mut Context<MainWindow>,
+) -> impl IntoElement {
+  let theme = cx.theme().clone();
+  let header = if modifiers.is_empty() {
+    "Pressed Keys".to_string()
+  } else {
+    format!("Pressed Keys ({})", modifiers.display_text())
+  };
+  let empty_state = "Press and hold keys to inspect the current input state.";
+
+  div()
+    .absolute()
+    .right(px(16.0))
+    .bottom(px(16.0))
+    .w(px(520.0))
+    .p_2()
+    .child(
+      div()
+        .flex()
+        .flex_col()
+        .items_end()
+        .gap_1()
+        .child(
+          div()
+            .text_size(px(11.0))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(theme.muted_foreground)
+            .child(header),
+        )
+        .when(entries.is_empty(), |this| {
+          this.child(
+            div()
+              .text_size(px(11.0))
+              .text_color(theme.muted_foreground)
+              .child(empty_state),
+          )
+        })
+        .when(!entries.is_empty(), |this| {
+          this.children(entries.iter().map(|entry| {
+            h_flex()
+              .w_full()
+              .gap_4()
+              .child(
+                div()
+                  .w(px(90.0))
+                  .text_size(px(13.0))
+                  .text_color(theme.muted_foreground)
+                  .child(entry.raw_key.clone()),
+              )
+              .child(
+                div()
+                  .w(px(170.0))
+                  .text_size(px(15.0))
+                  .text_color(theme.foreground)
+                  .child(entry.shortcut.clone()),
+              )
+              .child(
+                div()
+                  .flex_1()
+                  .text_size(px(12.0))
+                  .text_color(theme.muted_foreground)
+                  .child(entry.action.clone().unwrap_or_default()),
+              )
+          }))
+        }),
+    )
 }
 
 impl Render for MainWindow {
@@ -56,6 +620,17 @@ impl Render for MainWindow {
     .map(|binding| binding.display_text())
     .collect();
     let toggle_tab_bar_shortcut = config.keybindings.toggle_tab_bar.display_text();
+    let key_debug_mode = config.window.key_debug_mode;
+    let key_debug_entries = if key_debug_mode {
+      collect_key_debug_entries(
+        &self.key_debug_recent_keys,
+        config,
+        self.key_debug_modifiers,
+        &self.key_debug_pressed_keys,
+      )
+    } else {
+      Vec::new()
+    };
 
     // Get current window bounds to detect resize
     let current_bounds = window.bounds();
@@ -122,8 +697,21 @@ impl Render for MainWindow {
       .size_full()
       .key_context("MainWindow")
       .on_key_down(cx.listener(move |this, e: &KeyDownEvent, window, cx| {
-        // Track Ctrl state
-        this.last_known_ctrl_state = e.keystroke.modifiers.control;
+        let key_debug_modifiers = KeyDebugModifiers {
+          control: e.keystroke.modifiers.control,
+          shift: e.keystroke.modifiers.shift,
+          alt: e.keystroke.modifiers.alt,
+          platform: e.keystroke.modifiers.platform,
+        };
+        this.set_key_debug_modifiers(key_debug_modifiers, cx);
+        this.press_key_debug_key(&e.keystroke.key, key_debug_modifiers, cx);
+        let key_debug_action = resolve_key_debug_action(
+          cx.global::<::config::Config>(),
+          key_debug_modifiers,
+          &e.keystroke.key,
+          this.search_visible,
+        );
+        this.annotate_latest_key_debug_key(&e.keystroke.key, key_debug_action, cx);
 
         let keybindings = &cx.global::<config::Config>().keybindings;
         let mods = &e.keystroke.modifiers;
@@ -272,13 +860,29 @@ impl Render for MainWindow {
           }
         }
       }))
-      .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, _cx| {
-        // Track Ctrl state
-        this.last_known_ctrl_state = e.keystroke.modifiers.control;
+      .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, cx| {
+        this.set_key_debug_modifiers(
+          KeyDebugModifiers {
+            control: e.keystroke.modifiers.control,
+            shift: e.keystroke.modifiers.shift,
+            alt: e.keystroke.modifiers.alt,
+            platform: e.keystroke.modifiers.platform,
+          },
+          cx,
+        );
+        this.release_key_debug_key(&e.keystroke.key, cx);
       }))
       .on_modifiers_changed(cx.listener(
         move |this, e: &ModifiersChangedEvent, window, cx| {
-          this.last_known_ctrl_state = e.modifiers.control;
+          this.set_key_debug_modifiers(
+            KeyDebugModifiers {
+              control: e.modifiers.control,
+              shift: e.modifiers.shift,
+              alt: e.modifiers.alt,
+              platform: e.modifiers.platform,
+            },
+            cx,
+          );
 
           // Dismiss tab switcher when Ctrl is released
           if this.tab_switcher_visible && !e.modifiers.control {
@@ -286,9 +890,16 @@ impl Render for MainWindow {
           }
         },
       ))
-      .on_mouse_move(cx.listener(move |this, _e: &MouseMoveEvent, _window, _cx| {
-        // Track Ctrl state from mouse events
-        this.last_known_ctrl_state = _e.modifiers.control;
+      .on_mouse_move(cx.listener(move |this, e: &MouseMoveEvent, _window, cx| {
+        this.set_key_debug_modifiers(
+          KeyDebugModifiers {
+            control: e.modifiers.control,
+            shift: e.modifiers.shift,
+            alt: e.modifiers.alt,
+            platform: e.modifiers.platform,
+          },
+          cx,
+        );
       }))
       .on_mouse_down(
         MouseButton::Left,
@@ -631,6 +1242,9 @@ impl Render for MainWindow {
                 div().into_any_element()
               }),
           )
+          .when(key_debug_mode, |this| {
+            this.child(render_key_debug_overlay(&key_debug_entries, self.key_debug_modifiers, cx))
+          })
           .when(search_visible, |this| this.child(search_bar))
           .when(self.tab_switcher_visible, |this| {
             if let Some(tab_switcher) = &self.tab_switcher {
