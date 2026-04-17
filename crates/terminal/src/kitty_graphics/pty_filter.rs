@@ -24,6 +24,15 @@
 //! The wrapper delegates all poll registration, writing, signal handling,
 //! and resize to the original `Pty`.
 
+/// Compute numeric version for Secondary DA response.
+/// Encodes as major*10000 + minor*100 + patch.
+fn da2_version_number() -> u32 {
+  let major: u32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+  let minor: u32 = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+  let patch: u32 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
+  major * 10000 + minor * 100 + patch
+}
+
 #[cfg(unix)]
 mod unix {
   use std::fs::File;
@@ -206,16 +215,76 @@ mod unix {
       self.last_dsr_cursor
     }
 
-    /// Handle a completed CSI sequence. If it's a private DSR query (`CSI ? N n`),
-    /// write the response directly to the PTY and return true (consumed).
-    /// Otherwise return false so the bytes are flushed to pending for alacritty.
+    /// Handle a completed CSI sequence. Intercepts Device Attributes (DA),
+    /// XTVERSION, and private DSR queries, writing responses directly to the
+    /// PTY. Returns true if the sequence was consumed.
     fn handle_csi_final(&mut self, final_byte: u8) -> bool {
-      // Only intercept private DSR: final byte 'n' with '?' prefix.
-      if final_byte != b'n' || self.csi_buf.first() != Some(&b'?') {
+      match final_byte {
+        b'c' => self.handle_device_attributes(),
+        b'q' => self.handle_xtversion(),
+        b'n' => self.handle_private_dsr(),
+        _ => false,
+      }
+    }
+
+    /// Handle Device Attributes requests (Primary, Secondary, Tertiary DA).
+    fn handle_device_attributes(&mut self) -> bool {
+      let response: Option<String> = if self.csi_buf.is_empty() || self.csi_buf == b"0" {
+        // Primary DA (CSI c / CSI 0 c).
+        // Report as VT220 (level 2) with ANSI color/VT525 support.
+        Some("\x1b[?62;22c".to_string())
+      } else if self.csi_buf.first() == Some(&b'>') {
+        let param = &self.csi_buf[1..];
+        if param.is_empty() || param == b"0" {
+          // Secondary DA (CSI > c / CSI > 0 c).
+          // Pp=1 (VT220 family), Pv=version, Pc=0 (ROM cartridge absent).
+          Some(format!("\x1b[>1;{};0c", super::da2_version_number()))
+        } else {
+          None
+        }
+      } else if self.csi_buf.first() == Some(&b'=') {
+        let param = &self.csi_buf[1..];
+        if param.is_empty() || param == b"0" {
+          // Tertiary DA (CSI = c / CSI = 0 c).
+          // Report unit ID as zeros (not applicable).
+          Some("\x1bP!|00000000\x1b\\".to_string())
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+
+      if let Some(resp) = response {
+        use std::io::Write;
+        let _ = self.inner.write(resp.as_bytes());
+        true
+      } else {
+        false
+      }
+    }
+
+    /// Handle XTVERSION query (CSI > q / CSI > 0 q).
+    fn handle_xtversion(&mut self) -> bool {
+      if self.csi_buf.first() != Some(&b'>') {
+        return false;
+      }
+      let param = &self.csi_buf[1..];
+      if !param.is_empty() && param != b"0" {
+        return false;
+      }
+      let resp = format!("\x1bP>|kazeterm({})\x1b\\", env!("CARGO_PKG_VERSION"));
+      use std::io::Write;
+      let _ = self.inner.write(resp.as_bytes());
+      true
+    }
+
+    /// Handle private DSR queries (CSI ? N n).
+    fn handle_private_dsr(&mut self) -> bool {
+      if self.csi_buf.first() != Some(&b'?') {
         return false;
       }
 
-      // Parse the parameter after '?'. Supports single numeric param only.
       let param_bytes = &self.csi_buf[1..];
       let param_str = match std::str::from_utf8(param_bytes) {
         Ok(s) => s,
@@ -677,10 +746,71 @@ mod windows {
       self.last_dsr_cursor
     }
 
-    /// Handle a completed CSI sequence. If it's a private DSR query (`CSI ? N n`),
-    /// write the response directly to the PTY input and return true (consumed).
+    /// Handle a completed CSI sequence. Intercepts Device Attributes (DA),
+    /// XTVERSION, and private DSR queries, writing responses directly to the
+    /// PTY input. Returns true if the sequence was consumed.
     fn handle_csi_final(&mut self, final_byte: u8) -> bool {
-      if final_byte != b'n' || self.csi_buf.first() != Some(&b'?') {
+      match final_byte {
+        b'c' => self.handle_device_attributes(),
+        b'q' => self.handle_xtversion(),
+        b'n' => self.handle_private_dsr(),
+        _ => false,
+      }
+    }
+
+    /// Handle Device Attributes requests (Primary, Secondary, Tertiary DA).
+    fn handle_device_attributes(&mut self) -> bool {
+      let response: Option<String> = if self.csi_buf.is_empty() || self.csi_buf == b"0" {
+        // Primary DA (CSI c / CSI 0 c).
+        // Report as VT220 (level 2) with ANSI color/VT525 support.
+        Some("\x1b[?62;22c".to_string())
+      } else if self.csi_buf.first() == Some(&b'>') {
+        let param = &self.csi_buf[1..];
+        if param.is_empty() || param == b"0" {
+          // Secondary DA (CSI > c / CSI > 0 c).
+          // Pp=1 (VT220 family), Pv=version, Pc=0 (ROM cartridge absent).
+          Some(format!("\x1b[>1;{};0c", super::da2_version_number()))
+        } else {
+          None
+        }
+      } else if self.csi_buf.first() == Some(&b'=') {
+        let param = &self.csi_buf[1..];
+        if param.is_empty() || param == b"0" {
+          // Tertiary DA (CSI = c / CSI = 0 c).
+          // Report unit ID as zeros (not applicable).
+          Some("\x1bP!|00000000\x1b\\".to_string())
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+
+      if let Some(resp) = response {
+        let _ = self.pty.writer().write_all(resp.as_bytes());
+        true
+      } else {
+        false
+      }
+    }
+
+    /// Handle XTVERSION query (CSI > q / CSI > 0 q).
+    fn handle_xtversion(&mut self) -> bool {
+      if self.csi_buf.first() != Some(&b'>') {
+        return false;
+      }
+      let param = &self.csi_buf[1..];
+      if !param.is_empty() && param != b"0" {
+        return false;
+      }
+      let resp = format!("\x1bP>|kazeterm({})\x1b\\", env!("CARGO_PKG_VERSION"));
+      let _ = self.pty.writer().write_all(resp.as_bytes());
+      true
+    }
+
+    /// Handle private DSR queries (CSI ? N n).
+    fn handle_private_dsr(&mut self) -> bool {
+      if self.csi_buf.first() != Some(&b'?') {
         return false;
       }
 
@@ -720,7 +850,6 @@ mod windows {
       };
 
       if let Some(resp) = response {
-        // Write DSR response to PTY input (conin) so it reaches the child process.
         let _ = self.pty.writer().write_all(resp.as_bytes());
         true
       } else {
