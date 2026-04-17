@@ -28,13 +28,14 @@ Kazeterm is a cross-platform terminal emulator built with the GPUI framework (fr
 
 ```
 crates/
+├── kazeterm-event-system/ # Shared AppEvent types, JSON parsing, readers, dispatch runtime
 ├── kazeterm/   # Main application entry point, window management, UI components
 ├── terminal/   # Terminal rendering, PTY management, input handling
 ├── config/     # Configuration loading, shell profiles, theme palette parsing
 └── themeing/   # Theme management, zoom state, color system
 ```
 
-**Dependency flow:** `kazeterm` → {`config`, `terminal`, `themeing`}, where `terminal` and `themeing` both depend on `config`.
+**Dependency flow:** `kazeterm` → {`kazeterm-event-system`, `config`, `terminal`, `themeing`}, where `terminal` and `themeing` both depend on `config`.
 
 ### Key Technologies
 
@@ -180,9 +181,7 @@ kazeterm/src/
 ├── app_icon.rs          # Platform icon setup
 ├── assets.rs            # Embedded assets (fonts, themes, icons)
 ├── event_system/
-│   ├── mod.rs           # AppEvent enum, EventBus, dispatch loop
-│   ├── event_sources.rs # stdin/socket readers
-│   └── json_event.rs    # JSON event protocol
+│   └── mod.rs           # Kazeterm-specific event handlers built on kazeterm-event-system
 └── components/
     ├── main_window.rs                      # MainWindow state (active tab, items, dialogs)
     ├── main_window_render.rs               # Render impl: titlebar, tab bar, terminal, overlays
@@ -205,6 +204,19 @@ kazeterm/src/
     ├── import_alacritty_dialog.rs          # ImportAlacrittyDialog (Render + EventEmitter)
     ├── dragged_tab.rs                      # DraggedTab payload + DraggedTabView
     └── shell_icon.rs                       # ShellIcon enum (exe icon extraction on Windows)
+```
+
+## Shared Event System (`crates/kazeterm-event-system/`)
+
+Holds the reusable event-system plumbing extracted from the app crate:
+
+```
+kazeterm-event-system/src/
+├── lib.rs            # Global sender, GPUI dispatch loop, public re-exports
+├── app_event.rs      # AppEvent enum + discriminants
+├── event_bus.rs      # Generic EventBus<T>
+├── event_sources.rs  # stdin/socket readers
+└── json_event.rs     # JSON event protocol + source config
 ```
 
 ### Startup Flow (main.rs)

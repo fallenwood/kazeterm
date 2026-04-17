@@ -19,6 +19,7 @@ clap = { version = "4", features = ["derive"] }
 serde_json = "1"
 
 config = { path = "../config" }
+kazeterm-event-system = { path = "../kazeterm-event-system" }
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
 terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty" }
@@ -48,7 +49,6 @@ image = { workspace = true }
 gpui = { workspace = true, features = ["windows-manifest"] }
 windows.workspace = true
 image.workspace = true
-uds_windows = "1"
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 gpui = { workspace = true, features = ["wayland"] }
