@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260416.2";
+pub const CURRENT_CONFIG_VERSION: &str = "20260417.2";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -129,6 +129,21 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260416.1",
       to_version: "20260416.2",
       migrate: migrate_v20260416_1_to_20260416_2,
+    },
+    Migration {
+      from_version: "20260416.2",
+      to_version: "20260416.3",
+      migrate: migrate_v20260416_2_to_20260416_3,
+    },
+    Migration {
+      from_version: "20260416.3",
+      to_version: "20260417.1",
+      migrate: migrate_v20260416_3_to_20260417_1,
+    },
+    Migration {
+      from_version: "20260417.1",
+      to_version: "20260417.2",
+      migrate: migrate_v20260417_1_to_20260417_2,
     },
   ]
 }
@@ -266,16 +281,29 @@ fn migrate_v20260407_1_to_20260411_1(value: &mut Value) {
   if let Value::Table(table) = value {
     // Add new_tab and new_tab_profile_N keybindings to existing keybindings section
     if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
+      let defaults = crate::KeybindingConfig::default();
+      let default_profile_bindings = [
+        &defaults.new_tab_profile_1,
+        &defaults.new_tab_profile_2,
+        &defaults.new_tab_profile_3,
+        &defaults.new_tab_profile_4,
+        &defaults.new_tab_profile_5,
+        &defaults.new_tab_profile_6,
+        &defaults.new_tab_profile_7,
+        &defaults.new_tab_profile_8,
+        &defaults.new_tab_profile_9,
+      ];
+
       if !kb.contains_key("new_tab") {
         kb.insert(
           "new_tab".to_string(),
-          Value::String("ctrl-shift-t".to_string()),
+          Value::String(defaults.new_tab.first().unwrap().to_string()),
         );
       }
-      for i in 1..=9 {
-        let key = format!("new_tab_profile_{}", i);
+      for (i, binding) in default_profile_bindings.iter().enumerate() {
+        let key = format!("new_tab_profile_{}", i + 1);
         if !kb.contains_key(&key) {
-          kb.insert(key, Value::String(format!("ctrl-shift-{}", i)));
+          kb.insert(key, Value::String(binding.first().unwrap().to_string()));
         }
       }
     }
@@ -568,9 +596,45 @@ fn migrate_v20260415_3_to_20260416_1(value: &mut Value) {
   }
 }
 
+/// Fix macOS legacy tab shortcuts that were inserted with non-macOS defaults.
 /// Add window.key_debug_mode configuration support.
 fn migrate_v20260416_1_to_20260416_2(value: &mut Value) {
   if let Value::Table(table) = value {
+    if cfg!(target_os = "macos") {
+      if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
+        let defaults = crate::KeybindingConfig::default();
+        let default_profile_bindings = [
+          &defaults.new_tab_profile_1,
+          &defaults.new_tab_profile_2,
+          &defaults.new_tab_profile_3,
+          &defaults.new_tab_profile_4,
+          &defaults.new_tab_profile_5,
+          &defaults.new_tab_profile_6,
+          &defaults.new_tab_profile_7,
+          &defaults.new_tab_profile_8,
+          &defaults.new_tab_profile_9,
+        ];
+
+        if matches!(kb.get("new_tab"), Some(Value::String(binding)) if binding == "ctrl-shift-t") {
+          kb.insert(
+            "new_tab".to_string(),
+            Value::String(defaults.new_tab.first().unwrap().to_string()),
+          );
+        }
+
+        for (i, default_binding) in default_profile_bindings.iter().enumerate() {
+          let key = format!("new_tab_profile_{}", i + 1);
+          let legacy_binding = format!("ctrl-shift-{}", i + 1);
+          if matches!(kb.get(&key), Some(Value::String(binding)) if binding == &legacy_binding) {
+            kb.insert(
+              key,
+              Value::String(default_binding.first().unwrap().to_string()),
+            );
+          }
+        }
+      }
+    }
+
     let window = table
       .entry("window")
       .or_insert_with(|| Value::Table(toml::map::Map::new()));
@@ -583,6 +647,86 @@ fn migrate_v20260416_1_to_20260416_2(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260416.2".to_string()),
+    );
+  }
+}
+
+/// Add direct tab selection keybindings (select_tab_1..9) to existing keybinding sections.
+fn migrate_v20260416_2_to_20260416_3(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
+      let defaults = crate::KeybindingConfig::default();
+      let select_tab_bindings = [
+        &defaults.select_tab_1,
+        &defaults.select_tab_2,
+        &defaults.select_tab_3,
+        &defaults.select_tab_4,
+        &defaults.select_tab_5,
+        &defaults.select_tab_6,
+        &defaults.select_tab_7,
+        &defaults.select_tab_8,
+        &defaults.select_tab_9,
+      ];
+
+      for (i, binding) in select_tab_bindings.iter().enumerate() {
+        let key = format!("select_tab_{}", i + 1);
+        if !kb.contains_key(&key) {
+          kb.insert(key, Value::String(binding.first().unwrap().to_string()));
+        }
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260416.3".to_string()),
+    );
+  }
+}
+
+/// Add directional split-pane focus keybindings to existing keybinding sections.
+fn migrate_v20260416_3_to_20260417_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
+      let defaults = crate::KeybindingConfig::default();
+      let directional_bindings = [
+        ("focus_pane_up", &defaults.focus_pane_up),
+        ("focus_pane_down", &defaults.focus_pane_down),
+        ("focus_pane_left", &defaults.focus_pane_left),
+        ("focus_pane_right", &defaults.focus_pane_right),
+      ];
+
+      for (key, binding) in directional_bindings {
+        if !kb.contains_key(key) {
+          kb.insert(
+            key.to_string(),
+            Value::String(binding.first().unwrap().to_string()),
+          );
+        }
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260417.1".to_string()),
+    );
+  }
+}
+
+/// Add terminal hover-to-focus configuration.
+fn migrate_v20260417_1_to_20260417_2(value: &mut Value) {
+  if let Value::Table(table) = value {
+    let terminal = table
+      .entry("terminal")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(terminal_table) = terminal
+      && !terminal_table.contains_key("focus_terminal_on_hover")
+    {
+      terminal_table.insert("focus_terminal_on_hover".to_string(), Value::Boolean(true));
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260417.2".to_string()),
     );
   }
 }
@@ -1142,16 +1286,13 @@ copy_on_select = false
   }
 
   #[test]
-  fn migrate_20260416_1_adds_key_debug_mode() {
+  fn migrate_20260407_1_adds_new_tab_keybindings_using_platform_defaults() {
     let mut config: Value = toml::from_str(
       r#"
-version = "20260416.1"
+version = "20260407.1"
 
-[window]
-width = 800.0
-height = 600.0
-start_maximized = false
-restore_workspace = true
+[keybindings]
+copy = "ctrl-shift-c"
 "#,
     )
     .unwrap();
@@ -1159,15 +1300,185 @@ restore_workspace = true
     let migrated = apply_migrations(&mut config);
     assert!(migrated);
     assert_eq!(
+      get_nested(&config, "keybindings", "new_tab")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      crate::KeybindingConfig::default().new_tab.first().unwrap()
+    );
+    assert_eq!(
+      get_nested(&config, "keybindings", "new_tab_profile_1")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      crate::KeybindingConfig::default()
+        .new_tab_profile_1
+        .first()
+        .unwrap()
+    );
+    assert_eq!(
       config.get("version").unwrap().as_str().unwrap(),
       CURRENT_CONFIG_VERSION
     );
+  }
+
+  #[test]
+  fn migrate_20260416_1_repairs_legacy_tab_shortcuts_only_on_macos() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260416.1"
+
+[keybindings]
+new_tab = "ctrl-shift-t"
+new_tab_profile_1 = "ctrl-shift-1"
+new_tab_profile_9 = "ctrl-shift-9"
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+
+    let default_keybindings = crate::KeybindingConfig::default();
+    let expected_new_tab = if cfg!(target_os = "macos") {
+      default_keybindings.new_tab.first().unwrap()
+    } else {
+      "ctrl-shift-t"
+    };
+    let expected_profile_1 = if cfg!(target_os = "macos") {
+      default_keybindings.new_tab_profile_1.first().unwrap()
+    } else {
+      "ctrl-shift-1"
+    };
+    let expected_profile_9 = if cfg!(target_os = "macos") {
+      default_keybindings.new_tab_profile_9.first().unwrap()
+    } else {
+      "ctrl-shift-9"
+    };
+
     assert_eq!(
-      get_nested(&config, "window", "key_debug_mode")
+      get_nested(&config, "keybindings", "new_tab")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      expected_new_tab
+    );
+    assert_eq!(
+      get_nested(&config, "keybindings", "new_tab_profile_1")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      expected_profile_1
+    );
+    assert_eq!(
+      get_nested(&config, "keybindings", "new_tab_profile_9")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      expected_profile_9
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260416_2_adds_select_tab_keybindings_using_platform_defaults() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260416.2"
+
+[keybindings]
+copy = "ctrl-shift-c"
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+
+    let default_keybindings = crate::KeybindingConfig::default();
+    assert_eq!(
+      get_nested(&config, "keybindings", "select_tab_1")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.select_tab_1.first().unwrap()
+    );
+    assert_eq!(
+      get_nested(&config, "keybindings", "select_tab_9")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.select_tab_9.first().unwrap()
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260416_3_adds_directional_pane_focus_keybindings_using_platform_defaults() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260416.3"
+
+[keybindings]
+copy = "ctrl-shift-c"
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+
+    let default_keybindings = crate::KeybindingConfig::default();
+    assert_eq!(
+      get_nested(&config, "keybindings", "focus_pane_up")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.focus_pane_up.first().unwrap()
+    );
+    assert_eq!(
+      get_nested(&config, "keybindings", "focus_pane_right")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.focus_pane_right.first().unwrap()
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260417_1_adds_focus_terminal_on_hover() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260417.1"
+
+[terminal]
+scrollback_lines = 10000
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      get_nested(&config, "terminal", "focus_terminal_on_hover")
         .unwrap()
         .as_bool()
         .unwrap(),
-      false
+      true
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
     );
   }
 }

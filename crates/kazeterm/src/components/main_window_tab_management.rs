@@ -77,6 +77,17 @@ fn resolve_tab_launch(
   )
 }
 
+pub(crate) fn tab_index_for_shortcut(total_tabs: usize, shortcut_number: usize) -> Option<usize> {
+  match shortcut_number {
+    1..=8 => {
+      let index = shortcut_number - 1;
+      (index < total_tabs).then_some(index)
+    }
+    9 => total_tabs.checked_sub(1),
+    _ => None,
+  }
+}
+
 impl MainWindow {
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.insert_new_tab_with_profile(None, None, window, cx);
@@ -392,6 +403,17 @@ impl MainWindow {
 
     cx.notify();
   }
+
+  pub(crate) fn select_tab_by_shortcut(
+    &mut self,
+    shortcut_number: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    if let Some(ix) = tab_index_for_shortcut(self.items.len(), shortcut_number) {
+      self.set_active_tab(ix, window, cx);
+    }
+  }
 }
 
 pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -> Option<PathBuf> {
@@ -416,7 +438,7 @@ pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -
 mod tests {
   use config::{Config, Profile, TerminalConfig};
 
-  use super::resolve_tab_launch;
+  use super::{resolve_tab_launch, tab_index_for_shortcut};
 
   #[test]
   fn resolve_profile_launch_uses_default_profile_args() {
@@ -461,5 +483,21 @@ mod tests {
     assert_eq!(args, vec!["--login"]);
     assert_eq!(tab_title, "login-shell");
     assert_eq!(shell_name, "bash");
+  }
+
+  #[test]
+  fn tab_shortcut_indexes_match_requested_tab_for_1_through_8() {
+    assert_eq!(tab_index_for_shortcut(8, 1), Some(0));
+    assert_eq!(tab_index_for_shortcut(8, 4), Some(3));
+    assert_eq!(tab_index_for_shortcut(8, 8), Some(7));
+    assert_eq!(tab_index_for_shortcut(3, 4), None);
+  }
+
+  #[test]
+  fn tab_shortcut_9_selects_last_tab() {
+    assert_eq!(tab_index_for_shortcut(0, 9), None);
+    assert_eq!(tab_index_for_shortcut(1, 9), Some(0));
+    assert_eq!(tab_index_for_shortcut(5, 9), Some(4));
+    assert_eq!(tab_index_for_shortcut(12, 9), Some(11));
   }
 }
