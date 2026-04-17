@@ -32,7 +32,7 @@ fn create_terminal_session(
       app_config,
     ),
     #[cfg(feature = "kernel-ghostty")]
-    TerminalKernel::Libghostty => terminal_kernel_ghostty::create_terminal_session(
+    TerminalKernel::Ghostty => terminal_kernel_ghostty::create_terminal_session(
       program,
       args,
       working_directory,

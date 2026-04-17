@@ -31,7 +31,7 @@ Terminal backends are selected through the terminal kernel abstraction:
 kernel = "alacritty"
 ```
 
-Reserved values such as `xterm`, `libghostty`, and `vte` are recognized for future backends. Unsupported kernels fail explicitly instead of silently falling back.
+Supported values are `alacritty` (default), `ghostty`, and `vte`. Unsupported kernels fail explicitly instead of silently falling back.
 
 ### Key debug overlay
 

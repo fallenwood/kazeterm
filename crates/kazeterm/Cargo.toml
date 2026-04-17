@@ -36,7 +36,7 @@ notify.workspace = true
 notify-debouncer-mini.workspace = true
 
 [features]
-default = ["kernel-alacritty", "kernel-vte", "kernel-ghostty"]
+default = ["kernel-alacritty"]
 kernel-alacritty = ["dep:terminal-kernel-alacritty"]
 kernel-vte = ["dep:terminal-kernel-vte"]
 kernel-ghostty = ["dep:terminal-kernel-ghostty"]
