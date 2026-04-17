@@ -3213,6 +3213,7 @@ dependencies = [
  "gpui-component",
  "gpui-macros",
  "image",
+ "kazeterm-event-system",
  "notify 8.2.0",
  "notify-debouncer-mini",
  "notify-rust",
@@ -3232,11 +3233,23 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
- "uds_windows",
  "which 8.0.2",
  "windows 0.62.2",
  "winresource",
  "x11rb",
+]
+
+[[package]]
+name = "kazeterm-event-system"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "serde",
+ "serde_json",
+ "smol",
+ "tracing",
+ "uds_windows",
 ]
 
 [[package]]

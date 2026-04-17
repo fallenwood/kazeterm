@@ -131,7 +131,6 @@ impl Terminal {
     term: &dyn terminal_kernel::TerminalBackend,
     search_state: &super::SearchState,
   ) -> Vec<std::ops::RangeInclusive<AlacPoint>> {
-
     fn is_word_char(c: char) -> bool {
       c.is_alphanumeric() || c == '_'
     }

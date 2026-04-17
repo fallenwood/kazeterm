@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "crates/config",
+  "crates/kazeterm-event-system",
   "crates/kazeterm",
   "crates/themeing",
   "crates/terminal",

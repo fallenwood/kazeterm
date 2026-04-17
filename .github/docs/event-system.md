@@ -37,8 +37,14 @@ Events are sent as JSON objects, one per line. The `event` field specifies the e
 {"event": "CloseActiveTab"}
 {"event": "SplitHorizontal"}
 {"event": "SplitVertical"}
+{"event": "FocusPaneUp"}
+{"event": "FocusPaneRight"}
+{"event": "ToggleFullscreen"}
 {"event": "ToggleSearch"}
+{"event": "NewWindow"}
+{"event": "Quit"}
 {"event": "ReloadConfig"}
+{"event": "ShowImportAlacrittyDialog"}
 {"event": "Custom", "name": "my.event", "data": "some data"}
 ```
 
@@ -56,10 +62,22 @@ Events are sent as JSON objects, one per line. The `event` field specifies the e
 | `SplitHorizontal` | Split the active pane horizontally |
 | `SplitVertical` | Split the active pane vertically |
 | `CloseActivePane` | Close the active pane within a split |
+| `FocusNextPane` | Focus the next pane in the active tab |
+| `FocusPreviousPane` | Focus the previous pane in the active tab |
+| `FocusPaneUp` | Focus the pane above the active pane |
+| `FocusPaneDown` | Focus the pane below the active pane |
+| `FocusPaneLeft` | Focus the pane to the left of the active pane |
+| `FocusPaneRight` | Focus the pane to the right of the active pane |
+| `SwapSplitPanes` | Swap the two panes in the current split |
 | `ToggleSearch` | Toggle the search bar visibility |
+| `ToggleFullscreen` | Toggle fullscreen for the active window |
+| `ToggleTabBar` | Toggle tab bar visibility |
 | `ShowAboutDialog` | Show the about dialog |
+| `ShowImportAlacrittyDialog` | Show the Alacritty import dialog |
 | `ReloadConfig` | Reload configuration and themes |
 | `FocusActiveTerminal` | Focus the active terminal |
+| `NewWindow` | Open a new Kazeterm window |
+| `Quit` | Quit the application |
 | `SendTextToTerminal { text }` | Send text to the active terminal |
 | `Custom { name, data }` | Custom event for extensions |
 
@@ -68,7 +86,7 @@ Events are sent as JSON objects, one per line. The `event` field specifies the e
 ### From within the application
 
 ```rust
-use crate::event_system::{AppEvent, send_event};
+use kazeterm_event_system::{AppEvent, send_event};
 
 // Create a new terminal with default profile
 send_event(AppEvent::NewTerminalWithDefaultProfile);
@@ -89,7 +107,7 @@ send_event(AppEvent::SendTextToTerminal {
 
 ```rust
 use std::thread;
-use crate::event_system::{AppEvent, send_event};
+use kazeterm_event_system::{AppEvent, send_event};
 
 // Spawn a background thread
 thread::spawn(|| {
@@ -104,7 +122,7 @@ thread::spawn(|| {
 ### Non-blocking send
 
 ```rust
-use crate::event_system::{AppEvent, try_send_event};
+use kazeterm_event_system::{AppEvent, try_send_event};
 
 // Try to send without blocking (useful in async contexts)
 if try_send_event(AppEvent::NextTab) {
@@ -125,7 +143,7 @@ send_event(AppEvent::Custom {
 });
 ```
 
-Custom events are logged and can be handled by extending the `handle_event` function in `event_system.rs`.
+Custom events are logged and can be handled by extending `build_default_event_bus` in `crates/kazeterm/src/event_system/mod.rs`.
 
 ## External Event Sources
 
@@ -190,9 +208,10 @@ Then connect using a Unix socket client (e.g., via Python, Node.js, or other lan
 ## Architecture
 
 The event system uses:
+- A shared `kazeterm-event-system` crate for `AppEvent`, JSON parsing, stdin/socket readers, and the generic dispatch runtime
 - A global `OnceLock<Sender<AppEvent>>` for thread-safe event sending
 - An async event loop running on GPUI's executor
 - `smol::channel` for efficient async communication
-- Optional external readers for stdin or socket/pipe input
+- Kazeterm-specific handlers registered in `crates/kazeterm/src/event_system/mod.rs`
 
 Events are processed sequentially to maintain UI consistency.

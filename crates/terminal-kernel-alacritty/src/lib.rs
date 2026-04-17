@@ -18,6 +18,8 @@ use terminal_kernel::{
 use terminal::kitty_graphics::GraphicsPtyFilter;
 #[cfg(not(unix))]
 use terminal::kitty_graphics::{WindowsDsrCursorFn, WindowsDsrFilter};
+#[cfg(unix)]
+use terminal_kernel::grid::Dimensions as _;
 
 /// PtySender implementation wrapping alacritty's EventLoopSender.
 pub struct AlacrittyPtySender(EventLoopSender);
