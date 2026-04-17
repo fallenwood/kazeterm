@@ -22,6 +22,8 @@ config = { path = "../config" }
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
 terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty" }
+terminal-kernel-vte = { path = "../terminal-kernel-vte" }
+terminal-kernel-xterm = { path = "../terminal-kernel-xterm" }
 themeing = { path = "../themeing" }
 toml.workspace = true
 serde.workspace = true

@@ -3226,6 +3226,8 @@ dependencies = [
  "terminal",
  "terminal-kernel",
  "terminal-kernel-alacritty",
+ "terminal-kernel-vte",
+ "terminal-kernel-xterm",
  "themeing",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
@@ -6144,6 +6146,28 @@ dependencies = [
 
 [[package]]
 name = "terminal-kernel-alacritty"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "config",
+ "futures",
+ "terminal",
+ "terminal-kernel",
+]
+
+[[package]]
+name = "terminal-kernel-vte"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "config",
+ "futures",
+ "terminal",
+ "terminal-kernel",
+]
+
+[[package]]
+name = "terminal-kernel-xterm"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",

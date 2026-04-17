@@ -7,6 +7,8 @@ members = [
   "crates/terminal",
   "crates/terminal-kernel",
   "crates/terminal-kernel-alacritty",
+  "crates/terminal-kernel-vte",
+  "crates/terminal-kernel-xterm",
 ]
 
 [workspace.package]

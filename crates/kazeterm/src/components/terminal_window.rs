@@ -21,8 +21,20 @@ fn create_terminal_session(
       working_directory,
       app_config,
     ),
+    TerminalKernel::Vte => terminal_kernel_vte::create_terminal_session(
+      program,
+      args,
+      working_directory,
+      app_config,
+    ),
+    TerminalKernel::Xterm => terminal_kernel_xterm::create_terminal_session(
+      program,
+      args,
+      working_directory,
+      app_config,
+    ),
     other => Err(format!(
-      "Terminal kernel '{other}' is not implemented yet. Currently supported kernels: alacritty."
+      "Terminal kernel '{other}' is not implemented yet. Currently supported kernels: alacritty, vte, xterm."
     )),
   }
 }

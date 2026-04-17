@@ -1,0 +1,15 @@
+[package]
+name = "terminal-kernel-vte"
+version = "0.1.0"
+publish.workspace = true
+edition.workspace = true
+
+[dependencies]
+alacritty_terminal.workspace = true
+config = { path = "../config" }
+futures.workspace = true
+terminal = { path = "../terminal" }
+terminal-kernel = { path = "../terminal-kernel" }
+
+[lints]
+workspace = true
