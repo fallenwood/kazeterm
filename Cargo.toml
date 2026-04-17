@@ -8,8 +8,21 @@ members = [
   "crates/terminal",
   "crates/terminal-kernel",
   "crates/terminal-kernel-alacritty",
+  "crates/terminal-kernel-unix-bundle",
   "crates/terminal-kernel-vte",
   "crates/terminal-kernel-ghostty",
+]
+# Keep the default root build working on Windows while Unix builds still pull
+# in the extra terminal kernels through the unix bundle crate.
+default-members = [
+  "crates/config",
+  "crates/kazeterm-event-system",
+  "crates/kazeterm",
+  "crates/themeing",
+  "crates/terminal",
+  "crates/terminal-kernel",
+  "crates/terminal-kernel-alacritty",
+  "crates/terminal-kernel-unix-bundle",
 ]
 
 [workspace.package]

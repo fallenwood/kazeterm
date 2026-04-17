@@ -1,6 +1,13 @@
 use std::path::PathBuf;
 
-#[cfg(any(feature = "kernel-alacritty", feature = "kernel-vte", feature = "kernel-ghostty"))]
+#[cfg(any(
+  feature = "kernel-alacritty",
+  all(any(target_os = "linux", target_os = "macos"), feature = "kernel-vte"),
+  all(
+    any(target_os = "linux", target_os = "macos"),
+    feature = "kernel-ghostty"
+  ),
+))]
 use config::TerminalKernel;
 use futures::{FutureExt, StreamExt as _};
 use gpui::{AppContext, Context, Entity};
@@ -24,24 +31,22 @@ fn create_terminal_session(
       working_directory,
       app_config,
     ),
-    #[cfg(feature = "kernel-vte")]
-    TerminalKernel::Vte => terminal_kernel_vte::create_terminal_session(
-      program,
-      args,
-      working_directory,
-      app_config,
-    ),
-    #[cfg(feature = "kernel-ghostty")]
-    TerminalKernel::Ghostty => terminal_kernel_ghostty::create_terminal_session(
-      program,
-      args,
-      working_directory,
-      app_config,
-    ),
+    #[cfg(all(any(target_os = "linux", target_os = "macos"), feature = "kernel-vte"))]
+    TerminalKernel::Vte => {
+      terminal_kernel_vte::create_terminal_session(program, args, working_directory, app_config)
+    }
+    #[cfg(all(
+      any(target_os = "linux", target_os = "macos"),
+      feature = "kernel-ghostty"
+    ))]
+    TerminalKernel::Ghostty => {
+      terminal_kernel_ghostty::create_terminal_session(program, args, working_directory, app_config)
+    }
     #[allow(unreachable_patterns)]
     other => Err(format!(
-      "Terminal kernel '{other}' is not available. Enable the corresponding feature to use it: \
-       kernel-alacritty, kernel-vte, kernel-ghostty."
+      "Terminal kernel '{other}' is not available. Enable the corresponding feature on a supported \
+       platform to use it: kernel-alacritty, kernel-vte (Linux/macOS), kernel-ghostty \
+       (Linux/macOS)."
     )),
   }
 }

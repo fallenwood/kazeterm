@@ -42,13 +42,24 @@ jobs:
             libxkbcommon-x11-dev
 
       - name: Build
+        if: runner.os == 'Windows'
         run: cargo build
+
+      - name: Build
+        if: runner.os != 'Windows'
+        run: cargo build --workspace
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
 
       - name: Run coverage (tests included)
-        if: ${{ !(runner.os == 'Windows' && runner.arch == 'ARM64') }}
+        if: runner.os == 'Windows' && runner.arch != 'ARM64'
+        run: |
+          mkdir -p ./coverage
+          cargo llvm-cov --workspace --all-features --exclude terminal-kernel-vte --exclude terminal-kernel-ghostty --lcov --output-path coverage/lcov.info
+
+      - name: Run coverage (tests included)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p ./coverage
           cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.info

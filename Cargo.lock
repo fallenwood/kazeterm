@@ -6221,6 +6221,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "terminal-kernel-unix-bundle"
+version = "0.1.0"
+dependencies = [
+ "terminal-kernel-ghostty",
+ "terminal-kernel-vte",
+]
+
+[[package]]
 name = "terminal-kernel-vte"
 version = "0.1.0"
 dependencies = [

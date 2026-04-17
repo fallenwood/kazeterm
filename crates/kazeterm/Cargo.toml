@@ -23,8 +23,6 @@ kazeterm-event-system = { path = "../kazeterm-event-system" }
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
 terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty", optional = true }
-terminal-kernel-vte = { path = "../terminal-kernel-vte", optional = true }
-terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty", optional = true }
 themeing = { path = "../themeing" }
 toml.workspace = true
 serde.workspace = true
@@ -40,6 +38,11 @@ default = ["kernel-alacritty"]
 kernel-alacritty = ["dep:terminal-kernel-alacritty"]
 kernel-vte = ["dep:terminal-kernel-vte"]
 kernel-ghostty = ["dep:terminal-kernel-ghostty"]
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+terminal-kernel-vte = { path = "../terminal-kernel-vte", optional = true }
+terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty", optional = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
 raw-window-handle = "0.6"

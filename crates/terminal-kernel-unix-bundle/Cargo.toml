@@ -1,0 +1,12 @@
+[package]
+name = "terminal-kernel-unix-bundle"
+version = "0.1.0"
+publish.workspace = true
+edition.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+terminal-kernel-vte = { path = "../terminal-kernel-vte" }
+terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty" }
+
+[lints]
+workspace = true
