@@ -14,7 +14,185 @@ pub enum SplitDirection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneFocusDirection {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PaneId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PaneBounds {
+  id: PaneId,
+  left: f32,
+  top: f32,
+  right: f32,
+  bottom: f32,
+}
+
+impl PaneBounds {
+  fn center_x(self) -> f32 {
+    (self.left + self.right) * 0.5
+  }
+
+  fn center_y(self) -> f32 {
+    (self.top + self.bottom) * 0.5
+  }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DirectionalPaneCandidate {
+  pane_id: PaneId,
+  primary_gap: f32,
+  perpendicular_gap: f32,
+  overlap: f32,
+  center_gap: f32,
+}
+
+const PANE_FOCUS_EPSILON: f32 = 0.000_01;
+
+fn axis_overlap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> f32 {
+  (a_end.min(b_end) - a_start.max(b_start)).max(0.0)
+}
+
+fn axis_gap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> f32 {
+  if a_end < b_start {
+    b_start - a_end
+  } else if b_end < a_start {
+    a_start - b_end
+  } else {
+    0.0
+  }
+}
+
+fn candidate_in_direction(
+  active: PaneBounds,
+  candidate: PaneBounds,
+  direction: PaneFocusDirection,
+) -> Option<DirectionalPaneCandidate> {
+  let (primary_gap, perpendicular_gap, overlap, center_gap) = match direction {
+    PaneFocusDirection::Up => {
+      let gap = active.top - candidate.bottom;
+      if gap < -PANE_FOCUS_EPSILON {
+        return None;
+      }
+      (
+        gap.max(0.0),
+        axis_gap(active.left, active.right, candidate.left, candidate.right),
+        axis_overlap(active.left, active.right, candidate.left, candidate.right),
+        (active.center_x() - candidate.center_x()).abs(),
+      )
+    }
+    PaneFocusDirection::Down => {
+      let gap = candidate.top - active.bottom;
+      if gap < -PANE_FOCUS_EPSILON {
+        return None;
+      }
+      (
+        gap.max(0.0),
+        axis_gap(active.left, active.right, candidate.left, candidate.right),
+        axis_overlap(active.left, active.right, candidate.left, candidate.right),
+        (active.center_x() - candidate.center_x()).abs(),
+      )
+    }
+    PaneFocusDirection::Left => {
+      let gap = active.left - candidate.right;
+      if gap < -PANE_FOCUS_EPSILON {
+        return None;
+      }
+      (
+        gap.max(0.0),
+        axis_gap(active.top, active.bottom, candidate.top, candidate.bottom),
+        axis_overlap(active.top, active.bottom, candidate.top, candidate.bottom),
+        (active.center_y() - candidate.center_y()).abs(),
+      )
+    }
+    PaneFocusDirection::Right => {
+      let gap = candidate.left - active.right;
+      if gap < -PANE_FOCUS_EPSILON {
+        return None;
+      }
+      (
+        gap.max(0.0),
+        axis_gap(active.top, active.bottom, candidate.top, candidate.bottom),
+        axis_overlap(active.top, active.bottom, candidate.top, candidate.bottom),
+        (active.center_y() - candidate.center_y()).abs(),
+      )
+    }
+  };
+
+  Some(DirectionalPaneCandidate {
+    pane_id: candidate.id,
+    primary_gap,
+    perpendicular_gap,
+    overlap,
+    center_gap,
+  })
+}
+
+fn is_better_directional_candidate(
+  candidate: DirectionalPaneCandidate,
+  current_best: DirectionalPaneCandidate,
+) -> bool {
+  let candidate_overlaps = candidate.perpendicular_gap <= PANE_FOCUS_EPSILON;
+  let best_overlaps = current_best.perpendicular_gap <= PANE_FOCUS_EPSILON;
+
+  if candidate_overlaps != best_overlaps {
+    return candidate_overlaps;
+  }
+  if candidate
+    .primary_gap
+    .total_cmp(&current_best.primary_gap)
+    .is_ne()
+  {
+    return candidate.primary_gap < current_best.primary_gap;
+  }
+  if candidate_overlaps && candidate.overlap.total_cmp(&current_best.overlap).is_ne() {
+    return candidate.overlap > current_best.overlap;
+  }
+  if !candidate_overlaps
+    && candidate
+      .perpendicular_gap
+      .total_cmp(&current_best.perpendicular_gap)
+      .is_ne()
+  {
+    return candidate.perpendicular_gap < current_best.perpendicular_gap;
+  }
+  if candidate
+    .center_gap
+    .total_cmp(&current_best.center_gap)
+    .is_ne()
+  {
+    return candidate.center_gap < current_best.center_gap;
+  }
+  candidate.pane_id.0 < current_best.pane_id.0
+}
+
+fn find_directional_pane(
+  panes: &[PaneBounds],
+  active_id: PaneId,
+  direction: PaneFocusDirection,
+) -> Option<PaneId> {
+  let active = panes.iter().find(|pane| pane.id == active_id).copied()?;
+  let mut best: Option<DirectionalPaneCandidate> = None;
+
+  for pane in panes {
+    if pane.id == active_id {
+      continue;
+    }
+    let Some(candidate) = candidate_in_direction(active, *pane, direction) else {
+      continue;
+    };
+    if best.is_none_or(|current_best| is_better_directional_candidate(candidate, current_best)) {
+      best = Some(candidate);
+    }
+  }
+
+  best.map(|candidate| candidate.pane_id)
+}
 
 /// Drag payload for resizing split pane dividers.
 #[derive(Clone)]
@@ -207,6 +385,54 @@ impl SplitPane {
         terminals
       }
     }
+  }
+
+  fn collect_pane_bounds(
+    &self,
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
+    bounds: &mut Vec<PaneBounds>,
+  ) {
+    match self {
+      SplitPane::Terminal { id, .. } => bounds.push(PaneBounds {
+        id: *id,
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+      }),
+      SplitPane::Split {
+        direction,
+        first,
+        second,
+        ratio,
+      } => match direction {
+        SplitDirection::Horizontal => {
+          let first_height = height * ratio;
+          first.collect_pane_bounds(left, top, width, first_height, bounds);
+          second.collect_pane_bounds(
+            left,
+            top + first_height,
+            width,
+            height - first_height,
+            bounds,
+          );
+        }
+        SplitDirection::Vertical => {
+          let first_width = width * ratio;
+          first.collect_pane_bounds(left, top, first_width, height, bounds);
+          second.collect_pane_bounds(left + first_width, top, width - first_width, height, bounds);
+        }
+      },
+    }
+  }
+
+  fn pane_bounds(&self) -> Vec<PaneBounds> {
+    let mut bounds = Vec::new();
+    self.collect_pane_bounds(0.0, 0.0, 1.0, 1.0, &mut bounds);
+    bounds
   }
 
   pub fn count_panes(&self) -> usize {
@@ -623,6 +849,17 @@ impl SplitContainer {
     }
   }
 
+  pub fn focus_pane_in_direction(
+    &mut self,
+    direction: PaneFocusDirection,
+  ) -> Option<Entity<TerminalView>> {
+    let active_id = self.active_pane_id?;
+    let bounds = self.root.pane_bounds();
+    let target_id = find_directional_pane(&bounds, active_id, direction)?;
+    self.active_pane_id = Some(target_id);
+    self.root.find_terminal(target_id)
+  }
+
   pub fn all_terminals(&self) -> Vec<(PaneId, Entity<TerminalView>)> {
     self.root.all_terminals()
   }
@@ -636,5 +873,79 @@ impl SplitContainer {
     self
       .root
       .render(self.active_pane_id, has_splits, vec![], window, cx)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{PaneBounds, PaneFocusDirection, PaneId, find_directional_pane};
+
+  #[test]
+  fn directional_focus_prefers_adjacent_overlapping_panes() {
+    let panes = vec![
+      PaneBounds {
+        id: PaneId(1),
+        left: 0.0,
+        top: 0.0,
+        right: 0.5,
+        bottom: 0.5,
+      },
+      PaneBounds {
+        id: PaneId(2),
+        left: 0.5,
+        top: 0.0,
+        right: 1.0,
+        bottom: 0.5,
+      },
+      PaneBounds {
+        id: PaneId(3),
+        left: 0.0,
+        top: 0.5,
+        right: 1.0,
+        bottom: 1.0,
+      },
+    ];
+
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(1), PaneFocusDirection::Right),
+      Some(PaneId(2))
+    );
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(1), PaneFocusDirection::Down),
+      Some(PaneId(3))
+    );
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(2), PaneFocusDirection::Left),
+      Some(PaneId(1))
+    );
+  }
+
+  #[test]
+  fn directional_focus_returns_none_when_no_pane_exists_in_that_direction() {
+    let panes = vec![
+      PaneBounds {
+        id: PaneId(1),
+        left: 0.0,
+        top: 0.0,
+        right: 0.5,
+        bottom: 1.0,
+      },
+      PaneBounds {
+        id: PaneId(2),
+        left: 0.5,
+        top: 0.0,
+        right: 1.0,
+        bottom: 1.0,
+      },
+    ];
+
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(1), PaneFocusDirection::Up),
+      None
+    );
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(2), PaneFocusDirection::Right),
+      None
+    );
   }
 }

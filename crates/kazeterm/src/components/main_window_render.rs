@@ -211,6 +211,26 @@ impl Render for MainWindow {
         {
           this.focus_prev_pane(window, cx);
         } else if keybindings
+          .focus_pane_up
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
+          this.focus_pane_up(window, cx);
+        } else if keybindings
+          .focus_pane_down
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
+          this.focus_pane_down(window, cx);
+        } else if keybindings
+          .focus_pane_left
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
+          this.focus_pane_left(window, cx);
+        } else if keybindings
+          .focus_pane_right
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
+          this.focus_pane_right(window, cx);
+        } else if keybindings
           .swap_split_panes
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {

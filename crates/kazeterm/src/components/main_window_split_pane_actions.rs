@@ -2,7 +2,7 @@ use gpui::{Context, Window};
 
 use super::main_window::MainWindow;
 use super::main_window_tab_management::get_working_directory_pathbuf;
-use crate::components::split_pane::SplitDirection;
+use crate::components::split_pane::{PaneFocusDirection, SplitDirection};
 
 impl MainWindow {
   /// Update `active_pane_id` to match the terminal pane that currently has
@@ -99,6 +99,8 @@ impl MainWindow {
   }
 
   pub fn focus_next_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.sync_active_pane_from_focus(window, cx);
+
     if let Some(item) = self.active_tab_item_mut() {
       if let Some(terminal) = item.split_container.focus_next_pane() {
         Self::focus_terminal(window, &terminal, cx);
@@ -108,12 +110,46 @@ impl MainWindow {
   }
 
   pub fn focus_prev_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.sync_active_pane_from_focus(window, cx);
+
     if let Some(item) = self.active_tab_item_mut() {
       if let Some(terminal) = item.split_container.focus_prev_pane() {
         Self::focus_terminal(window, &terminal, cx);
         cx.notify();
       }
     }
+  }
+
+  fn focus_pane_in_direction(
+    &mut self,
+    direction: PaneFocusDirection,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    self.sync_active_pane_from_focus(window, cx);
+
+    if let Some(item) = self.active_tab_item_mut() {
+      if let Some(terminal) = item.split_container.focus_pane_in_direction(direction) {
+        Self::focus_terminal(window, &terminal, cx);
+        cx.notify();
+      }
+    }
+  }
+
+  pub fn focus_pane_up(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.focus_pane_in_direction(PaneFocusDirection::Up, window, cx);
+  }
+
+  pub fn focus_pane_down(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.focus_pane_in_direction(PaneFocusDirection::Down, window, cx);
+  }
+
+  pub fn focus_pane_left(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.focus_pane_in_direction(PaneFocusDirection::Left, window, cx);
+  }
+
+  pub fn focus_pane_right(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.focus_pane_in_direction(PaneFocusDirection::Right, window, cx);
   }
 
   pub fn swap_split_panes(&mut self, _window: &mut Window, cx: &mut Context<Self>) {

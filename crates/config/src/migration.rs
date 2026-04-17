@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260416.3";
+pub const CURRENT_CONFIG_VERSION: &str = "20260417.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -134,6 +134,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260416.2",
       to_version: "20260416.3",
       migrate: migrate_v20260416_2_to_20260416_3,
+    },
+    Migration {
+      from_version: "20260416.3",
+      to_version: "20260417.1",
+      migrate: migrate_v20260416_3_to_20260417_1,
     },
   ]
 }
@@ -659,6 +664,35 @@ fn migrate_v20260416_2_to_20260416_3(value: &mut Value) {
     table.insert(
       "version".to_string(),
       Value::String("20260416.3".to_string()),
+    );
+  }
+}
+
+/// Add directional split-pane focus keybindings to existing keybinding sections.
+fn migrate_v20260416_3_to_20260417_1(value: &mut Value) {
+  if let Value::Table(table) = value {
+    if let Some(Value::Table(kb)) = table.get_mut("keybindings") {
+      let defaults = crate::KeybindingConfig::default();
+      let directional_bindings = [
+        ("focus_pane_up", &defaults.focus_pane_up),
+        ("focus_pane_down", &defaults.focus_pane_down),
+        ("focus_pane_left", &defaults.focus_pane_left),
+        ("focus_pane_right", &defaults.focus_pane_right),
+      ];
+
+      for (key, binding) in directional_bindings {
+        if !kb.contains_key(key) {
+          kb.insert(
+            key.to_string(),
+            Value::String(binding.first().unwrap().to_string()),
+          );
+        }
+      }
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260417.1".to_string()),
     );
   }
 }
@@ -1344,6 +1378,42 @@ copy = "ctrl-shift-c"
         .as_str()
         .unwrap(),
       default_keybindings.select_tab_9.first().unwrap()
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260416_3_adds_directional_pane_focus_keybindings_using_platform_defaults() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260416.3"
+
+[keybindings]
+copy = "ctrl-shift-c"
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+
+    let default_keybindings = crate::KeybindingConfig::default();
+    assert_eq!(
+      get_nested(&config, "keybindings", "focus_pane_up")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.focus_pane_up.first().unwrap()
+    );
+    assert_eq!(
+      get_nested(&config, "keybindings", "focus_pane_right")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      default_keybindings.focus_pane_right.first().unwrap()
     );
     assert_eq!(
       config.get("version").unwrap().as_str().unwrap(),

@@ -140,6 +140,14 @@ pub struct KeybindingConfig {
   pub focus_next_pane: KeybindingList,
   /// Focus previous split pane
   pub focus_previous_pane: KeybindingList,
+  /// Focus the split pane above the active pane
+  pub focus_pane_up: KeybindingList,
+  /// Focus the split pane below the active pane
+  pub focus_pane_down: KeybindingList,
+  /// Focus the split pane to the left of the active pane
+  pub focus_pane_left: KeybindingList,
+  /// Focus the split pane to the right of the active pane
+  pub focus_pane_right: KeybindingList,
   /// Swap the two halves of the current split
   pub swap_split_panes: KeybindingList,
   /// Toggle fullscreen mode
@@ -198,6 +206,10 @@ impl Default for KeybindingConfig {
         close_pane: KeybindingList::new("ctrl-shift-w"),
         focus_next_pane: KeybindingList::new("ctrl-shift-]"),
         focus_previous_pane: KeybindingList::new("ctrl-shift-["),
+        focus_pane_up: KeybindingList::new("cmd-alt-up"),
+        focus_pane_down: KeybindingList::new("cmd-alt-down"),
+        focus_pane_left: KeybindingList::new("cmd-alt-left"),
+        focus_pane_right: KeybindingList::new("cmd-alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
         toggle_fullscreen: KeybindingList::new("f12"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
@@ -238,6 +250,10 @@ impl Default for KeybindingConfig {
         close_pane: KeybindingList::new("ctrl-shift-w"),
         focus_next_pane: KeybindingList::new("ctrl-shift-]"),
         focus_previous_pane: KeybindingList::new("ctrl-shift-["),
+        focus_pane_up: KeybindingList::new("ctrl-alt-up"),
+        focus_pane_down: KeybindingList::new("ctrl-alt-down"),
+        focus_pane_left: KeybindingList::new("ctrl-alt-left"),
+        focus_pane_right: KeybindingList::new("ctrl-alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
         toggle_fullscreen: KeybindingList::new("f11"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
@@ -485,6 +501,14 @@ mod tests {
     }
   }
 
+  fn expected_default_directional_pane_binding(direction: &str) -> String {
+    if cfg!(target_os = "macos") {
+      format!("cmd-alt-{}", direction)
+    } else {
+      format!("ctrl-alt-{}", direction)
+    }
+  }
+
   fn expected_platform_modifier_label() -> &'static str {
     if cfg!(target_os = "macos") {
       "Cmd"
@@ -679,6 +703,20 @@ mod tests {
     } else {
       assert!(select_tab_9.matches(true, false, true, false, "9"));
     }
+
+    let focus_pane_up = ParsedKeybinding::parse(config.focus_pane_up.first().unwrap());
+    if cfg!(target_os = "macos") {
+      assert!(focus_pane_up.matches(false, false, true, true, "up"));
+    } else {
+      assert!(focus_pane_up.matches(true, false, true, false, "up"));
+    }
+
+    let focus_pane_right = ParsedKeybinding::parse(config.focus_pane_right.first().unwrap());
+    if cfg!(target_os = "macos") {
+      assert!(focus_pane_right.matches(false, false, true, true, "right"));
+    } else {
+      assert!(focus_pane_right.matches(true, false, true, false, "right"));
+    }
   }
 
   #[test]
@@ -702,6 +740,14 @@ mod tests {
     assert_eq!(
       config.select_tab_9.first().unwrap(),
       expected_default_select_tab_binding(9)
+    );
+    assert_eq!(
+      config.focus_pane_up.first().unwrap(),
+      expected_default_directional_pane_binding("up")
+    );
+    assert_eq!(
+      config.focus_pane_right.first().unwrap(),
+      expected_default_directional_pane_binding("right")
     );
   }
 
