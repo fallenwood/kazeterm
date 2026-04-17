@@ -1,9 +1,9 @@
-use alacritty_terminal::tty::Pty;
 #[cfg(target_os = "windows")]
 use std::num::NonZeroU32;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
+use terminal_kernel::tty::Pty;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::{Foundation::HANDLE, System::Threading::GetProcessId};

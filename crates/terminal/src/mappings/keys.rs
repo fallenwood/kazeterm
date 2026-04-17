@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use alacritty_terminal::term::TermMode;
 use gpui::Keystroke;
+use terminal_kernel::term::TermMode;
 
 pub enum KnownKeys {
   Tab,

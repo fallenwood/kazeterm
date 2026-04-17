@@ -1,10 +1,10 @@
 use std::cmp::{self, min};
 
-use alacritty_terminal::{
+use gpui::{Pixels, Point, px};
+use terminal_kernel::{
   grid::Dimensions as _,
   index::{Column as GridCol, Line as GridLine, Point as AlacPoint, Side},
 };
-use gpui::{Pixels, Point, px};
 
 use crate::TerminalBounds;
 

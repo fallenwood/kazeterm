@@ -36,9 +36,9 @@ mod unix {
   use std::sync::Arc;
   use std::sync::mpsc;
 
-  use alacritty_terminal::event::{OnResize, WindowSize};
-  use alacritty_terminal::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
   use polling::{Event, PollMode, Poller};
+  use terminal_kernel::event::{OnResize, WindowSize};
+  use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
 
   use super::super::command::RawGraphicsCommand;
   use crate::osc7;
@@ -622,9 +622,9 @@ mod windows {
   use std::io::{self, Read, Write};
   use std::sync::Arc;
 
-  use alacritty_terminal::event::{OnResize, WindowSize};
-  use alacritty_terminal::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
   use polling::{Event, PollMode, Poller};
+  use terminal_kernel::event::{OnResize, WindowSize};
+  use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
 
   /// Callback for DSR cursor position queries (DECXCPR).
   /// Returns `Some((row_1based, col_1based))` screen-relative, or `None` if lock unavailable.

@@ -1,14 +1,14 @@
 use std::ops::RangeInclusive;
 
-use alacritty_terminal::{
-  index::Point as AlacPoint,
-  vte::ansi::{Color, NamedColor},
-};
 use gpui::{
   App, Font, FontStyle, FontWeight, HighlightStyle, Pixels, StrikethroughStyle, TextRun, TextStyle,
   UnderlineStyle,
 };
 use itertools::Itertools;
+use terminal_kernel::{
+  index::Point as AlacPoint,
+  vte::ansi::{Color, NamedColor},
+};
 use themeing::{ActiveTheme as _, convert_color};
 
 use crate::{background_region::BackgroundRegion, indexed_cell::IndexedCell};
@@ -53,7 +53,7 @@ impl TerminalElement {
         let mut bg = cell.bg;
         if cell
           .flags
-          .contains(alacritty_terminal::term::cell::Flags::INVERSE)
+          .contains(terminal_kernel::term::cell::Flags::INVERSE)
         {
           std::mem::swap(&mut fg, &mut bg);
         }
@@ -62,13 +62,13 @@ impl TerminalElement {
         if bold_as_bright
           && cell
             .flags
-            .intersects(alacritty_terminal::term::cell::Flags::BOLD)
+            .intersects(terminal_kernel::term::cell::Flags::BOLD)
         {
           fg = to_bright_named(fg);
         }
 
-        if !matches!(bg, Color::Named(NamedColor::Background)) {
-          let color = convert_color(&bg, theme);
+        if !terminal_kernel::is_default_background(&bg) {
+          let color = convert_color(&terminal_kernel::to_themeing_color(&bg), theme);
           let col = cell.point.column.0 as i32;
 
           if let Some(last_region) = background_regions.last_mut() {
@@ -88,7 +88,7 @@ impl TerminalElement {
 
         if cell
           .flags
-          .contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR_SPACER)
+          .contains(terminal_kernel::term::cell::Flags::WIDE_CHAR_SPACER)
         {
           continue;
         }
@@ -165,47 +165,47 @@ impl TerminalElement {
   /// Converts the Alacritty cell styles to GPUI text styles and background color.
   fn cell_style(
     indexed: &IndexedCell,
-    fg: alacritty_terminal::vte::ansi::Color,
-    bg: alacritty_terminal::vte::ansi::Color,
+    fg: terminal_kernel::vte::ansi::Color,
+    bg: terminal_kernel::vte::ansi::Color,
     colors: &themeing::Theme,
     text_style: &TextStyle,
     hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
     minimum_contrast: f32,
   ) -> TextRun {
     let flags = indexed.cell.flags;
-    let mut fg = convert_color(&fg, colors);
-    let bg = convert_color(&bg, colors);
+    let mut fg = convert_color(&terminal_kernel::to_themeing_color(&fg), colors);
+    let bg = convert_color(&terminal_kernel::to_themeing_color(&bg), colors);
 
     if !is_decorative_character(indexed.c) {
       fg = crate::apca_contrast::ensure_minimum_contrast(fg, bg, minimum_contrast);
     }
 
-    if flags.intersects(alacritty_terminal::term::cell::Flags::DIM) {
+    if flags.intersects(terminal_kernel::term::cell::Flags::DIM) {
       fg.a *= 0.7;
     }
 
-    let underline = (flags.intersects(alacritty_terminal::term::cell::Flags::ALL_UNDERLINES)
+    let underline = (flags.intersects(terminal_kernel::term::cell::Flags::ALL_UNDERLINES)
       || indexed.cell.hyperlink().is_some())
     .then(|| UnderlineStyle {
       color: Some(fg),
       thickness: Pixels::from(1.0),
-      wavy: flags.contains(alacritty_terminal::term::cell::Flags::UNDERCURL),
+      wavy: flags.contains(terminal_kernel::term::cell::Flags::UNDERCURL),
     });
 
     let strikethrough = flags
-      .intersects(alacritty_terminal::term::cell::Flags::STRIKEOUT)
+      .intersects(terminal_kernel::term::cell::Flags::STRIKEOUT)
       .then(|| StrikethroughStyle {
         color: Some(fg),
         thickness: Pixels::from(1.0),
       });
 
-    let weight = if flags.intersects(alacritty_terminal::term::cell::Flags::BOLD) {
+    let weight = if flags.intersects(terminal_kernel::term::cell::Flags::BOLD) {
       FontWeight::BOLD
     } else {
       text_style.font_weight
     };
 
-    let style = if flags.intersects(alacritty_terminal::term::cell::Flags::ITALIC) {
+    let style = if flags.intersects(terminal_kernel::term::cell::Flags::ITALIC) {
       FontStyle::Italic
     } else {
       FontStyle::Normal

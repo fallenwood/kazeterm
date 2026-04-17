@@ -288,9 +288,34 @@ impl PaneConfig {
   }
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalKernel {
+  #[default]
+  Alacritty,
+  Xterm,
+  Libghostty,
+  Vte,
+}
+
+impl std::fmt::Display for TerminalKernel {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let value = match self {
+      Self::Alacritty => "alacritty",
+      Self::Xterm => "xterm",
+      Self::Libghostty => "libghostty",
+      Self::Vte => "vte",
+    };
+
+    f.write_str(value)
+  }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TerminalConfig {
+  /// Terminal kernel implementation to use.
+  pub kernel: TerminalKernel,
   /// Maximum number of lines in the scrollback buffer.
   /// Higher values use more memory. Default is 10000.
   pub scrollback_lines: u32,
@@ -321,6 +346,7 @@ pub struct TerminalConfig {
 impl Default for TerminalConfig {
   fn default() -> Self {
     Self {
+      kernel: TerminalKernel::default(),
       scrollback_lines: 10_000,
       osc52: "copy_only".to_string(),
       copy_on_select: false,

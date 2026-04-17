@@ -1,10 +1,10 @@
-use alacritty_terminal::{
+use gpui::{Context, Pixels, TouchPhase, px};
+use terminal_kernel::{
   grid::Scroll,
   index::{Direction, Point as AlacPoint},
   selection::{Selection, SelectionType},
   term::TermMode,
 };
-use gpui::{Context, Pixels, TouchPhase, px};
 
 use crate::mouse::grid_point_and_side;
 
@@ -416,7 +416,7 @@ impl Terminal {
 
   pub(super) fn process_hyperlink(
     &mut self,
-    hyperlink: (String, bool, alacritty_terminal::term::search::Match),
+    hyperlink: (String, bool, terminal_kernel::term::search::Match),
     open: bool,
     cx: &mut Context<Self>,
   ) {

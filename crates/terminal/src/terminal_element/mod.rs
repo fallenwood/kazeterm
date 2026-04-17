@@ -1,10 +1,10 @@
 use std::ops::RangeInclusive;
 
-use alacritty_terminal::{grid::Dimensions, index::Point as AlacPoint, term::TermMode};
 use gpui::{
   Entity, FocusHandle, Hsla, InteractiveElement, IntoElement, Pixels, Point, ShapedLine,
   StatefulInteractiveElement, TextStyle, point,
 };
+use terminal_kernel::{grid::Dimensions, index::Point as AlacPoint, term::TermMode};
 
 use crate::{cursor_layout::CursorLayout, minimap::MinimapState, scrollbar::ScrollbarState};
 

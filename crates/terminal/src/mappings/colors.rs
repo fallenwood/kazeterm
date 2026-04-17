@@ -1,5 +1,5 @@
-use alacritty_terminal::vte::ansi::Rgb as AlacRgb;
 use gpui::Rgba;
+use terminal_kernel::vte::ansi::Rgb as AlacRgb;
 
 //Convenience method to convert from a GPUI color to an alacritty Rgb
 pub fn to_alac_rgb(color: impl Into<Rgba>) -> AlacRgb {

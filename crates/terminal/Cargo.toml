@@ -7,7 +7,6 @@ edition = "2024"
 anyhow.workspace = true
 gpui = { workspace = true, default-features = false }
 gpui-macros.workspace = true
-alacritty_terminal.workspace = true
 itertools.workspace = true
 futures.workspace = true
 regex.workspace = true
@@ -22,6 +21,7 @@ base64 = "0.22"
 polling = "3"
 
 config = { path = "../config" }
+terminal-kernel = { path = "../terminal-kernel" }
 themeing = { path = "../themeing" }
 
 [target.'cfg(target_os = "windows")'.dependencies]

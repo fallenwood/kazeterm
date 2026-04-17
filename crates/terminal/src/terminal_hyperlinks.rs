@@ -1,4 +1,10 @@
-use alacritty_terminal::{
+use regex::Regex;
+use std::{
+  iter::{once, once_with},
+  ops::{Index, Range},
+  time::{Duration, Instant},
+};
+use terminal_kernel::{
   Term,
   event::EventListener,
   grid::Dimensions,
@@ -7,12 +13,6 @@ use alacritty_terminal::{
     cell::Flags,
     search::{Match, RegexIter, RegexSearch},
   },
-};
-use regex::Regex;
-use std::{
-  iter::{once, once_with},
-  ops::{Index, Range},
-  time::{Duration, Instant},
 };
 use url::Url;
 

@@ -1,5 +1,5 @@
-use alacritty_terminal::event::{Event as AlacTermEvent, EventListener};
 use futures::channel::mpsc::UnboundedSender;
+use terminal_kernel::event::{Event as AlacTermEvent, EventListener};
 
 #[derive(Clone)]
 pub struct TerminalEventListener(pub UnboundedSender<AlacTermEvent>);

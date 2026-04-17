@@ -3204,7 +3204,6 @@ dependencies = [
 name = "kazeterm"
 version = "0.1.0"
 dependencies = [
- "alacritty_terminal",
  "anyhow",
  "clap",
  "config",
@@ -3225,6 +3224,8 @@ dependencies = [
  "serde_json",
  "smol",
  "terminal",
+ "terminal-kernel",
+ "terminal-kernel-alacritty",
  "themeing",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
@@ -6111,7 +6112,6 @@ dependencies = [
 name = "terminal"
 version = "0.1.0"
 dependencies = [
- "alacritty_terminal",
  "anyhow",
  "base64",
  "config",
@@ -6125,6 +6125,7 @@ dependencies = [
  "regex",
  "smol",
  "sysinfo 0.38.4",
+ "terminal-kernel",
  "themeing",
  "tracing",
  "url",
@@ -6133,10 +6134,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "themeing"
+name = "terminal-kernel"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
+ "futures",
+ "themeing",
+]
+
+[[package]]
+name = "terminal-kernel-alacritty"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "config",
+ "futures",
+ "terminal",
+ "terminal-kernel",
+]
+
+[[package]]
+name = "themeing"
+version = "0.1.0"
+dependencies = [
  "config",
  "gpui",
  "gpui-component",

@@ -1,6 +1,6 @@
 use super::terminal_bounds::TerminalBounds;
-use alacritty_terminal::index::Point as AlacPoint;
 use gpui::{Bounds, Hsla, Pixels, Point, Window, fill, point};
+use terminal_kernel::index::Point as AlacPoint;
 
 #[derive(Clone, Debug, Default)]
 pub struct LayoutRect {

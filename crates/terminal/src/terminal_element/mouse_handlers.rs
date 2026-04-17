@@ -4,8 +4,8 @@ use crate::terminal::Terminal;
 
 use super::{TerminalElement, is_mouse_from_touch};
 
-use alacritty_terminal::term::TermMode;
 use gpui::{Bounds, Pixels, Window};
+use terminal_kernel::term::TermMode;
 
 impl TerminalElement {
   pub(super) fn generic_button_handler<E>(

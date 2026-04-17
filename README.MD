@@ -22,6 +22,17 @@ imports = ["~/kazeterm.windows.toml"]
 
 Relative import paths are resolved from the file that declares them, and nested imports are supported.
 
+### Terminal kernel
+
+Terminal backends are selected through the terminal kernel abstraction:
+
+```toml
+[terminal]
+kernel = "alacritty"
+```
+
+Reserved values such as `xterm`, `libghostty`, and `vte` are recognized for future backends. Unsupported kernels fail explicitly instead of silently falling back.
+
 ### Key debug overlay
 
 Enable the bottom-right shortcut inspector with:

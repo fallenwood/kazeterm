@@ -1,5 +1,5 @@
-use alacritty_terminal::term::TermMode;
 use gpui::{App, Bounds, Entity, InputHandler, Pixels, Point, UTF16Selection, Window};
+use terminal_kernel::term::TermMode;
 
 use crate::{Terminal, TerminalView};
 

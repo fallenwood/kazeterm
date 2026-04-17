@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use alacritty_terminal::index::Point;
+use terminal_kernel::index::Point;
 
 #[derive(Debug)]
 pub struct HoverTarget {

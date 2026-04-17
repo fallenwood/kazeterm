@@ -1,0 +1,13 @@
+[package]
+name = "terminal-kernel"
+version = "0.1.0"
+publish.workspace = true
+edition.workspace = true
+
+[dependencies]
+alacritty_terminal.workspace = true
+futures.workspace = true
+themeing = { path = "../themeing" }
+
+[lints]
+workspace = true

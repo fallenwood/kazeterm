@@ -1,4 +1,3 @@
-use alacritty_terminal::term::TermMode;
 use gpui::*;
 use gpui_component::{h_flex, menu::ContextMenuExt, v_flex};
 use terminal::TerminalView;
@@ -559,8 +558,7 @@ impl SplitPane {
           let main_window = cx.entity().clone();
           base
             .context_menu(move |menu, window, cx| {
-              let mode = terminal.read(cx).terminal.read(cx).last_content.mode;
-              if mode.intersects(TermMode::MOUSE_MODE) {
+              if terminal.read(cx).mouse_reporting_enabled(cx) {
                 return menu;
               }
               build_terminal_context_menu(menu, &terminal, &main_window, window, cx)

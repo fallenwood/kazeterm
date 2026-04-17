@@ -1,10 +1,7 @@
 use std::ops::RangeInclusive;
 
-use alacritty_terminal::{
-  index::Point as AlacPoint,
-  vte::ansi::{Color, NamedColor},
-};
 use gpui::{Pixels, Point};
+use terminal_kernel::index::Point as AlacPoint;
 
 use crate::{
   background_region::BackgroundRegion, highlighted_range_line::HighlightedRangeLine,
@@ -49,7 +46,7 @@ pub(crate) fn is_blank(cell: &IndexedCell) -> bool {
     return false;
   }
 
-  if cell.bg != Color::Named(NamedColor::Background) {
+  if !terminal_kernel::is_default_background(&cell.bg) {
     return false;
   }
 
@@ -58,9 +55,9 @@ pub(crate) fn is_blank(cell: &IndexedCell) -> bool {
   }
 
   if cell.flags.intersects(
-    alacritty_terminal::term::cell::Flags::ALL_UNDERLINES
-      | alacritty_terminal::term::cell::Flags::INVERSE
-      | alacritty_terminal::term::cell::Flags::STRIKEOUT,
+    terminal_kernel::term::cell::Flags::ALL_UNDERLINES
+      | terminal_kernel::term::cell::Flags::INVERSE
+      | terminal_kernel::term::cell::Flags::STRIKEOUT,
   ) {
     return false;
   }

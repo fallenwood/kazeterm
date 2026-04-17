@@ -1,7 +1,7 @@
 use gpui::{AbsoluteLength, TextRun, Window};
 
 use super::terminal_bounds::TerminalBounds;
-use alacritty_terminal::index::Point as AlacPoint;
+use terminal_kernel::index::Point as AlacPoint;
 
 #[derive(Debug)]
 pub struct BatchedTextRun {

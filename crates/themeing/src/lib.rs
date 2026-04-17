@@ -1,8 +1,54 @@
 use std::sync::Arc;
 
-use alacritty_terminal::vte::ansi::{Color, NamedColor};
 use config::Palette;
 use gpui::{App, Global, Hsla, SharedString, UpdateGlobal};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AnsiRgb {
+  pub r: u8,
+  pub g: u8,
+  pub b: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnsiNamedColor {
+  Black,
+  Red,
+  Green,
+  Yellow,
+  Blue,
+  Magenta,
+  Cyan,
+  White,
+  BrightBlack,
+  BrightRed,
+  BrightGreen,
+  BrightYellow,
+  BrightBlue,
+  BrightMagenta,
+  BrightCyan,
+  BrightWhite,
+  Foreground,
+  Background,
+  Cursor,
+  DimBlack,
+  DimRed,
+  DimGreen,
+  DimYellow,
+  DimBlue,
+  DimMagenta,
+  DimCyan,
+  DimWhite,
+  BrightForeground,
+  DimForeground,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnsiColor {
+  Named(AnsiNamedColor),
+  Spec(AnsiRgb),
+  Indexed(u8),
+}
 
 /// Zoom state for terminal font size adjustment
 #[derive(Clone, Debug)]
@@ -73,45 +119,45 @@ impl Theme {
 }
 
 /// Converts a 2, 8, or 24 bit color ANSI color to the GPUI equivalent.
-pub fn convert_color(fg: &Color, theme: &Theme) -> Hsla {
+pub fn convert_color(fg: &AnsiColor, theme: &Theme) -> Hsla {
   let colors = theme.colors();
   match fg {
     // Named and theme defined colors
-    Color::Named(n) => match n {
-      NamedColor::Black => colors.terminal_ansi_black,
-      NamedColor::Red => colors.terminal_ansi_red,
-      NamedColor::Green => colors.terminal_ansi_green,
-      NamedColor::Yellow => colors.terminal_ansi_yellow,
-      NamedColor::Blue => colors.terminal_ansi_blue,
-      NamedColor::Magenta => colors.terminal_ansi_magenta,
-      NamedColor::Cyan => colors.terminal_ansi_cyan,
-      NamedColor::White => colors.terminal_ansi_white,
-      NamedColor::BrightBlack => colors.terminal_ansi_bright_black,
-      NamedColor::BrightRed => colors.terminal_ansi_bright_red,
-      NamedColor::BrightGreen => colors.terminal_ansi_bright_green,
-      NamedColor::BrightYellow => colors.terminal_ansi_bright_yellow,
-      NamedColor::BrightBlue => colors.terminal_ansi_bright_blue,
-      NamedColor::BrightMagenta => colors.terminal_ansi_bright_magenta,
-      NamedColor::BrightCyan => colors.terminal_ansi_bright_cyan,
-      NamedColor::BrightWhite => colors.terminal_ansi_bright_white,
-      NamedColor::Foreground => colors.terminal_foreground,
-      NamedColor::Background => colors.terminal_ansi_background,
-      NamedColor::Cursor => colors.terminal_cursor,
-      NamedColor::DimBlack => colors.terminal_ansi_dim_black,
-      NamedColor::DimRed => colors.terminal_ansi_dim_red,
-      NamedColor::DimGreen => colors.terminal_ansi_dim_green,
-      NamedColor::DimYellow => colors.terminal_ansi_dim_yellow,
-      NamedColor::DimBlue => colors.terminal_ansi_dim_blue,
-      NamedColor::DimMagenta => colors.terminal_ansi_dim_magenta,
-      NamedColor::DimCyan => colors.terminal_ansi_dim_cyan,
-      NamedColor::DimWhite => colors.terminal_ansi_dim_white,
-      NamedColor::BrightForeground => colors.terminal_bright_foreground,
-      NamedColor::DimForeground => colors.terminal_dim_foreground,
+    AnsiColor::Named(n) => match n {
+      AnsiNamedColor::Black => colors.terminal_ansi_black,
+      AnsiNamedColor::Red => colors.terminal_ansi_red,
+      AnsiNamedColor::Green => colors.terminal_ansi_green,
+      AnsiNamedColor::Yellow => colors.terminal_ansi_yellow,
+      AnsiNamedColor::Blue => colors.terminal_ansi_blue,
+      AnsiNamedColor::Magenta => colors.terminal_ansi_magenta,
+      AnsiNamedColor::Cyan => colors.terminal_ansi_cyan,
+      AnsiNamedColor::White => colors.terminal_ansi_white,
+      AnsiNamedColor::BrightBlack => colors.terminal_ansi_bright_black,
+      AnsiNamedColor::BrightRed => colors.terminal_ansi_bright_red,
+      AnsiNamedColor::BrightGreen => colors.terminal_ansi_bright_green,
+      AnsiNamedColor::BrightYellow => colors.terminal_ansi_bright_yellow,
+      AnsiNamedColor::BrightBlue => colors.terminal_ansi_bright_blue,
+      AnsiNamedColor::BrightMagenta => colors.terminal_ansi_bright_magenta,
+      AnsiNamedColor::BrightCyan => colors.terminal_ansi_bright_cyan,
+      AnsiNamedColor::BrightWhite => colors.terminal_ansi_bright_white,
+      AnsiNamedColor::Foreground => colors.terminal_foreground,
+      AnsiNamedColor::Background => colors.terminal_ansi_background,
+      AnsiNamedColor::Cursor => colors.terminal_cursor,
+      AnsiNamedColor::DimBlack => colors.terminal_ansi_dim_black,
+      AnsiNamedColor::DimRed => colors.terminal_ansi_dim_red,
+      AnsiNamedColor::DimGreen => colors.terminal_ansi_dim_green,
+      AnsiNamedColor::DimYellow => colors.terminal_ansi_dim_yellow,
+      AnsiNamedColor::DimBlue => colors.terminal_ansi_dim_blue,
+      AnsiNamedColor::DimMagenta => colors.terminal_ansi_dim_magenta,
+      AnsiNamedColor::DimCyan => colors.terminal_ansi_dim_cyan,
+      AnsiNamedColor::DimWhite => colors.terminal_ansi_dim_white,
+      AnsiNamedColor::BrightForeground => colors.terminal_bright_foreground,
+      AnsiNamedColor::DimForeground => colors.terminal_dim_foreground,
     },
     // 'True' colors
-    Color::Spec(rgb) => rgba_color(rgb.r, rgb.g, rgb.b),
+    AnsiColor::Spec(rgb) => rgba_color(rgb.r, rgb.g, rgb.b),
     // 8 bit, indexed colors
-    Color::Indexed(i) => get_color_at_index(*i as usize, theme),
+    AnsiColor::Indexed(i) => get_color_at_index(*i as usize, theme),
   }
 }
 
@@ -314,7 +360,6 @@ impl ActiveTheme for App {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
 
   fn assert_rgb(color: Hsla, r: u8, g: u8, b: u8) {
     let rgba = color.to_rgb();
@@ -369,36 +414,36 @@ mod tests {
 
     // Named
     assert_eq!(
-      convert_color(&Color::Named(NamedColor::Red), &theme),
+      convert_color(&AnsiColor::Named(AnsiNamedColor::Red), &theme),
       colors.terminal_ansi_red
     );
     assert_eq!(
-      convert_color(&Color::Named(NamedColor::BrightBlue), &theme),
+      convert_color(&AnsiColor::Named(AnsiNamedColor::BrightBlue), &theme),
       colors.terminal_ansi_bright_blue
     );
     assert_eq!(
-      convert_color(&Color::Named(NamedColor::Cursor), &theme),
+      convert_color(&AnsiColor::Named(AnsiNamedColor::Cursor), &theme),
       colors.terminal_cursor
     );
 
     // Indexed
     assert_eq!(
-      convert_color(&Color::Indexed(0), &theme),
+      convert_color(&AnsiColor::Indexed(0), &theme),
       colors.terminal_ansi_black
     );
     assert_eq!(
-      convert_color(&Color::Indexed(9), &theme),
+      convert_color(&AnsiColor::Indexed(9), &theme),
       colors.terminal_ansi_bright_red
     );
 
     // 6x6x6 cube
-    let c = convert_color(&Color::Indexed(16 + 36 * 1 + 6 * 2 + 3), &theme);
+    let c = convert_color(&AnsiColor::Indexed(16 + 36 * 1 + 6 * 2 + 3), &theme);
     // r=1,g=2,b=3 -> (95, 135, 175)
     assert_rgb(c, 95, 135, 175);
 
     // Spec
     let spec = convert_color(
-      &Color::Spec(Rgb {
+      &AnsiColor::Spec(AnsiRgb {
         r: 10,
         g: 20,
         b: 30,

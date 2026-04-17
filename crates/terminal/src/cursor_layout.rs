@@ -1,7 +1,7 @@
-use alacritty_terminal::vte::ansi::CursorShape;
 use gpui::{
   AnyElement, App, BorderStyle, Bounds, Hsla, Pixels, ShapedLine, Window, fill, outline, px, size,
 };
+use terminal_kernel::vte::ansi::CursorShape;
 
 pub struct CursorLayout {
   origin: gpui::Point<Pixels>,

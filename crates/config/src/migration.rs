@@ -1,7 +1,7 @@
 use toml::Value;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260417.2";
+pub const CURRENT_CONFIG_VERSION: &str = "20260417.3";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -144,6 +144,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260417.1",
       to_version: "20260417.2",
       migrate: migrate_v20260417_1_to_20260417_2,
+    },
+    Migration {
+      from_version: "20260417.2",
+      to_version: "20260417.3",
+      migrate: migrate_v20260417_2_to_20260417_3,
     },
   ]
 }
@@ -731,6 +736,25 @@ fn migrate_v20260417_1_to_20260417_2(value: &mut Value) {
   }
 }
 
+/// Add terminal kernel selection.
+fn migrate_v20260417_2_to_20260417_3(value: &mut Value) {
+  if let Value::Table(table) = value {
+    let terminal = table
+      .entry("terminal")
+      .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    if let Value::Table(terminal_table) = terminal
+      && !terminal_table.contains_key("kernel")
+    {
+      terminal_table.insert("kernel".to_string(), Value::String("alacritty".to_string()));
+    }
+
+    table.insert(
+      "version".to_string(),
+      Value::String("20260417.3".to_string()),
+    );
+  }
+}
+
 /// Apply all necessary migrations to bring the config up to `CURRENT_CONFIG_VERSION`.
 /// Returns `true` if any migrations were applied, `false` if the config was already current.
 pub fn apply_migrations(value: &mut Value) -> bool {
@@ -1162,6 +1186,7 @@ start_maximized = false
     assert_eq!(config.tab.label_min_width, 60.0);
     assert_eq!(config.tab.label_max_width, 200.0);
     assert!(!config.terminal.hide_mouse_when_typing);
+    assert_eq!(config.terminal.kernel, crate::TerminalKernel::Alacritty);
   }
 
   #[test]
@@ -1475,6 +1500,34 @@ scrollback_lines = 10000
         .as_bool()
         .unwrap(),
       true
+    );
+    assert_eq!(
+      config.get("version").unwrap().as_str().unwrap(),
+      CURRENT_CONFIG_VERSION
+    );
+  }
+
+  #[test]
+  fn migrate_20260417_2_adds_terminal_kernel() {
+    let mut config: Value = toml::from_str(
+      r#"
+version = "20260417.2"
+
+[terminal]
+scrollback_lines = 10000
+focus_terminal_on_hover = true
+"#,
+    )
+    .unwrap();
+
+    let migrated = apply_migrations(&mut config);
+    assert!(migrated);
+    assert_eq!(
+      get_nested(&config, "terminal", "kernel")
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      "alacritty"
     );
     assert_eq!(
       config.get("version").unwrap().as_str().unwrap(),

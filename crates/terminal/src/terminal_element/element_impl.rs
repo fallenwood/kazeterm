@@ -1,9 +1,9 @@
-use alacritty_terminal::{grid::Dimensions, vte::ansi::CursorShape as AlacCursorShape};
 use gpui::{
   AbsoluteLength, App, Bounds, Element, FontFeatures, FontStyle, FontWeight, HighlightStyle, Hsla,
   MouseButton, Pixels, Point, TextRun, TextStyle, UnderlineStyle, WhiteSpace, Window, fill, px,
   relative,
 };
+use terminal_kernel::{grid::Dimensions, vte::ansi::CursorShape as AlacCursorShape};
 use themeing::ActiveTheme as _;
 
 use crate::{
@@ -533,7 +533,7 @@ impl Element for TerminalElement {
             } else {
               let new_offset = scrollbar_state_for_down.position_to_offset(position_ratio);
               terminal_for_down.update(cx, |terminal, cx| {
-                terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+                terminal.scroll(terminal_kernel::grid::Scroll::Delta(
                   new_offset as i32 - terminal.last_content.display_offset as i32,
                 ));
                 cx.notify();
@@ -583,7 +583,7 @@ impl Element for TerminalElement {
                 let current_offset = terminal_content.display_offset;
                 if new_offset != current_offset {
                   terminal_for_move.update(cx, |terminal, cx| {
-                    terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+                    terminal.scroll(terminal_kernel::grid::Scroll::Delta(
                       new_offset as i32 - terminal.last_content.display_offset as i32,
                     ));
                     cx.notify();
@@ -643,7 +643,7 @@ impl Element for TerminalElement {
             let position_ratio: f32 = (relative_y / minimap_bounds.size.height).into();
             let new_offset = minimap_state_clone.position_to_offset(position_ratio);
             terminal_for_minimap.update(cx, |terminal, cx| {
-              terminal.scroll(alacritty_terminal::grid::Scroll::Delta(
+              terminal.scroll(terminal_kernel::grid::Scroll::Delta(
                 new_offset as i32 - terminal.last_content.display_offset as i32,
               ));
               cx.notify();

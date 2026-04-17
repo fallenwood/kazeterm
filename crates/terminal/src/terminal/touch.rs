@@ -1,8 +1,8 @@
-use alacritty_terminal::{
+use gpui::{Pixels, px};
+use terminal_kernel::{
   grid::Scroll,
   selection::{Selection, SelectionType},
 };
-use gpui::{Pixels, px};
 
 use crate::mouse::grid_point_and_side;
 

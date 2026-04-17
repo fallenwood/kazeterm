@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use alacritty_terminal::{
+use terminal_kernel::{
   index::{Column, Line, Point as AlacPoint},
   selection::SelectionRange,
   term::{RenderableCursor, TermMode},
@@ -38,7 +38,7 @@ impl Default for TerminalContent {
       selection_text: Default::default(),
       selection: Default::default(),
       cursor: RenderableCursor {
-        shape: alacritty_terminal::vte::ansi::CursorShape::Block,
+        shape: terminal_kernel::vte::ansi::CursorShape::Block,
         point: AlacPoint::new(Line(0), Column(0)),
       },
       cursor_char: Default::default(),

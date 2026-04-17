@@ -1,4 +1,3 @@
-use alacritty_terminal::vte::ansi::{Color, NamedColor};
 use gpui::{BorderStyle, Bounds, Hsla, Pixels, Point, Window, fill, px};
 use themeing::convert_color;
 
@@ -133,16 +132,17 @@ pub fn paint_minimap(
     // Get the cell color
     let fg = if cell
       .flags
-      .contains(alacritty_terminal::term::cell::Flags::INVERSE)
+      .contains(terminal_kernel::term::cell::Flags::INVERSE)
     {
       cell.bg
     } else {
       cell.fg
     };
 
-    let color = match fg {
-      Color::Named(NamedColor::Foreground) => theme.colors().terminal_foreground,
-      _ => convert_color(&fg, theme),
+    let color = if terminal_kernel::is_default_foreground(&fg) {
+      theme.colors().terminal_foreground
+    } else {
+      convert_color(&terminal_kernel::to_themeing_color(&fg), theme)
     };
 
     // Calculate position in minimap

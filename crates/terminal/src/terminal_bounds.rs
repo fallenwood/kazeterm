@@ -1,5 +1,5 @@
-use alacritty_terminal::{event::WindowSize, grid::Dimensions};
 use gpui::{Bounds, Pixels, Point, Size, px};
+use terminal_kernel::{event::WindowSize, grid::Dimensions};
 
 const DEBUG_TERMINAL_WIDTH: Pixels = px(500.);
 const DEBUG_TERMINAL_HEIGHT: Pixels = px(30.);

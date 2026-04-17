@@ -2,12 +2,12 @@ use std::{ops::Range, time::Duration};
 
 use crate::mappings::keys::KnownKeys;
 use crate::{TerminalBounds, hover_target::HoverTarget, ime_state::ImeState};
-use alacritty_terminal::{grid::Scroll as AlacScroll, term::TermMode};
 use gpui::{
   App, Context, Entity, EventEmitter, FocusHandle, InteractiveElement, IntoElement, KeyContext,
   ParentElement, Pixels, Render, Styled, Task, UpdateGlobal, Window, actions, div,
 };
 use smol::Timer;
+use terminal_kernel::{grid::Scroll as AlacScroll, term::TermMode};
 
 actions!(
   terminal,
@@ -424,6 +424,15 @@ impl TerminalView {
 
   pub fn terminal(&self) -> &Entity<Terminal> {
     &self.terminal
+  }
+
+  pub fn mouse_reporting_enabled(&self, cx: &App) -> bool {
+    self
+      .terminal
+      .read(cx)
+      .last_content
+      .mode
+      .intersects(terminal_kernel::term::TermMode::MOUSE_MODE)
   }
 
   fn next_blink_epoch(&mut self) -> usize {

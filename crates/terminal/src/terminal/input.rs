@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 use std::process::ExitStatus;
 
-use alacritty_terminal::{
+use gpui::{Context, Keystroke};
+use terminal_kernel::{
   event::Notify,
   grid::{Dimensions as _, Scroll},
   index::{Column, Point as AlacPoint},
 };
-use gpui::{Context, Keystroke};
 
 use super::{Event, InternalEvent, Terminal};
 
@@ -134,10 +134,10 @@ impl Terminal {
 
   /// Execute the search against the current terminal grid content.
   pub(super) fn execute_search(
-    term: &alacritty_terminal::Term<super::TerminalEventListener>,
+    term: &terminal_kernel::Term<super::TerminalEventListener>,
     search_state: &super::SearchState,
   ) -> Vec<std::ops::RangeInclusive<AlacPoint>> {
-    use alacritty_terminal::grid::Dimensions as _;
+    use terminal_kernel::grid::Dimensions as _;
 
     fn is_word_char(c: char) -> bool {
       c.is_alphanumeric() || c == '_'

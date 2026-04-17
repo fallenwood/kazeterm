@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use alacritty_terminal::{index::Point as AlacPoint, term::cell::Cell};
+use terminal_kernel::{index::Point as AlacPoint, term::cell::Cell};
 
 #[derive(Debug, Clone)]
 pub struct IndexedCell {

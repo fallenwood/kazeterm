@@ -4,7 +4,9 @@ members = [
   "crates/config",
   "crates/kazeterm",
   "crates/themeing",
-  "crates/terminal"
+  "crates/terminal",
+  "crates/terminal-kernel",
+  "crates/terminal-kernel-alacritty",
 ]
 
 [workspace.package]

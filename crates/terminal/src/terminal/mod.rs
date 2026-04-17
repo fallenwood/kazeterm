@@ -12,7 +12,8 @@ use crate::{
   terminal_content::TerminalContent,
   terminal_hyperlinks::RegexSearches,
 };
-use alacritty_terminal::{
+use gpui::{Context, EventEmitter, Pixels, Window, px};
+use terminal_kernel::{
   Term,
   event::Event as AlacTermEvent,
   event_loop::{EventLoopSender, Msg, Notifier},
@@ -21,7 +22,6 @@ use alacritty_terminal::{
   selection::Selection,
   sync::FairMutex,
 };
-use gpui::{Context, EventEmitter, Pixels, Window, px};
 use themeing::ActiveTheme;
 
 mod events;
@@ -44,10 +44,7 @@ pub enum InternalEvent {
   SetSelection(Option<(Selection, AlacPoint)>),
   UpdateSelection(gpui::Point<Pixels>),
   FindHyperlink(gpui::Point<Pixels>, bool),
-  ProcessHyperlink(
-    (String, bool, alacritty_terminal::term::search::Match),
-    bool,
-  ),
+  ProcessHyperlink((String, bool, terminal_kernel::term::search::Match), bool),
   Copy(Option<bool>),
   /// Auto-copy selection to clipboard (triggered by copy_on_select config)
   CopySelectionToClipboard,
@@ -731,7 +728,7 @@ impl Terminal {
           self.last_content.terminal_bounds,
           term.grid().display_offset(),
         )
-        .grid_clamp(term, alacritty_terminal::index::Boundary::Grid);
+        .grid_clamp(term, terminal_kernel::index::Boundary::Grid);
 
         match crate::terminal_hyperlinks::find_from_grid_point(
           term,
