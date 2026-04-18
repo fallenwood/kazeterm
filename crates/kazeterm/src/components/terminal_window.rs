@@ -26,7 +26,6 @@ fn create_terminal_session(
     TerminalKernel::Vte => {
       terminal_kernel_vte::create_terminal_session(program, args, working_directory, app_config)
     }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     TerminalKernel::Ghostty => {
       terminal_kernel_ghostty::create_terminal_session(program, args, working_directory, app_config)
     }

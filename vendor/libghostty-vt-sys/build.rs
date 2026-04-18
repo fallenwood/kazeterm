@@ -18,9 +18,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=GHOSTTY_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=TARGET");
     println!("cargo:rerun-if-env-changed=HOST");
-    println!("cargo:rerun-if-env-changed=PROFILE");
-    println!("cargo:rerun-if-env-changed=DEBUG");
-    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=crates/libghostty-vt-sys/build.rs");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR must be set"));
     let target = env::var("TARGET").expect("TARGET must be set");
@@ -43,29 +41,20 @@ fn main() {
     // Build libghostty-vt via zig.
     let install_prefix = out_dir.join("ghostty-install");
 
-    let mut build = Command::new("zig");
-    build
-        .arg("build")
-        .arg("-Demit-lib-vt")
-        .arg(format!("-Doptimize={}", zig_optimize_mode()))
-        .arg("--prefix")
-        .arg(&install_prefix)
-        .current_dir(&ghostty_dir);
+    build_ghostty(&ghostty_dir, &install_prefix, &target, &host);
 
-    // Only pass -Dtarget when cross-compiling. For native builds, let zig
-    // auto-detect the host (matches how ghostty's own CMakeLists.txt works).
-    if target != host {
-        let zig_target = zig_target(&target);
-        build.arg(format!("-Dtarget={zig_target}"));
-    }
-
-    run(build, "zig build");
-
-    let lib_dir = install_prefix.join("lib");
     let include_dir = install_prefix.join("include");
     let search_dirs = library_search_dirs(&target, &install_prefix);
     let candidates = library_artifact_candidates(&target);
 
+    let found = search_dirs
+        .iter()
+        .any(|dir| candidates.iter().any(|name| dir.join(name).exists()));
+    assert!(
+        found,
+        "no library artifact found; searched {:?} for {:?}",
+        search_dirs, candidates
+    );
     assert!(
         include_dir.join("ghostty").join("vt.h").exists(),
         "expected header at {}",
@@ -73,11 +62,110 @@ fn main() {
     );
 
     for dir in &search_dirs {
-      println!("cargo:rustc-link-search=native={}", dir.display());
+        println!("cargo:rustc-link-search=native={}", dir.display());
     }
-
     println!("cargo:rustc-link-lib=dylib=ghostty-vt");
     println!("cargo:include={}", include_dir.display());
+}
+
+fn build_ghostty(ghostty_dir: &Path, install_prefix: &Path, target: &str, host: &str) {
+    // Zig 0.15.2 on Windows can assert during Ghostty's configure phase when
+    // helper binaries are launched from Ghostty's normal working directory.
+    // Running the same build from the cached `uucode` package avoids the bad
+    // path conversion while still using Ghostty's real build.zig and cache.
+    if host.contains("windows") && target.contains("windows") {
+        build_ghostty_from_uucode_cache(ghostty_dir, install_prefix, target, host);
+        return;
+    }
+
+    let mut build = Command::new("zig");
+    configure_ghostty_build(
+        &mut build,
+        ghostty_dir,
+        install_prefix,
+        target,
+        host,
+    );
+    run(build, "zig build");
+}
+
+fn build_ghostty_from_uucode_cache(
+    ghostty_dir: &Path,
+    install_prefix: &Path,
+    target: &str,
+    host: &str,
+) {
+    let ghostty_build_file = ghostty_dir.join("build.zig");
+    let local_cache_dir = ghostty_dir.join(".zig-cache");
+    let global_cache_dir = zig_global_cache_dir();
+    let isDebug = std::env::var("DEBUG").map_or(false, |v| v == "true");
+    let optimize = if isDebug { "Debug" } else { "ReleaseFast" };
+
+    let mut fetch = Command::new("zig");
+    fetch
+        .arg("build")
+        .arg("--fetch=needed")
+        .arg("--build-file")
+        .arg(&ghostty_build_file)
+        .arg("--cache-dir")
+        .arg(&local_cache_dir)
+        .arg("--global-cache-dir")
+        .arg(&global_cache_dir)
+        .arg("-Demit-lib-vt")
+        .arg(format!("-Doptimize={}", optimize))
+        .current_dir(ghostty_dir);
+    maybe_add_target_arg(&mut fetch, target, host);
+    run(fetch, "zig build --fetch=needed");
+
+    let uucode_dir = global_cache_dir
+        .join("p")
+        .join(read_zig_dependency_hash(ghostty_dir, "uucode"));
+
+    assert!(
+        uucode_dir.join("build.zig").exists(),
+        "expected cached uucode package at {}",
+        uucode_dir.display()
+    );
+
+    let mut build = Command::new("zig");
+    build
+        .arg("build")
+        .arg("--build-file")
+        .arg(&ghostty_build_file)
+        .arg("--cache-dir")
+        .arg(&local_cache_dir)
+        .arg("--global-cache-dir")
+        .arg(&global_cache_dir)
+        .arg("-Demit-lib-vt")
+        .arg("--prefix")
+        .arg(install_prefix)
+        .current_dir(&uucode_dir);
+    maybe_add_target_arg(&mut build, target, host);
+    run(build, "zig build");
+}
+
+fn configure_ghostty_build(
+    build: &mut Command,
+    ghostty_dir: &Path,
+    install_prefix: &Path,
+    target: &str,
+    host: &str,
+) {
+    build
+        .arg("build")
+        .arg("-Demit-lib-vt")
+        .arg("--prefix")
+        .arg(install_prefix)
+        .current_dir(ghostty_dir);
+    maybe_add_target_arg(build, target, host);
+}
+
+fn maybe_add_target_arg(build: &mut Command, target: &str, host: &str) {
+    // Only pass -Dtarget when cross-compiling. For native builds, let zig
+    // auto-detect the host (matches how ghostty's own CMakeLists.txt works).
+    if target != host {
+        build.arg(format!("-Dtarget={}", zig_target(target)));
+    }
 }
 
 /// Clone ghostty at the pinned commit into OUT_DIR/ghostty-src.
@@ -130,12 +218,40 @@ fn run(mut command: Command, context: &str) {
     assert!(status.success(), "{context} failed with status {status}");
 }
 
-fn zig_optimize_mode() -> &'static str {
-    match env::var("DEBUG").as_deref() {
-        Ok("false") => "ReleaseFast",
-        _ => "Debug",
-    }
+fn zig_global_cache_dir() -> PathBuf {
+    PathBuf::from(
+        env::var_os("LOCALAPPDATA")
+            .unwrap_or_else(|| panic!("LOCALAPPDATA must be set for Windows Ghostty builds")),
+    )
+    .join("zig")
 }
+
+fn read_zig_dependency_hash(ghostty_dir: &Path, dependency_name: &str) -> String {
+    let zon = std::fs::read_to_string(ghostty_dir.join("build.zig.zon"))
+        .unwrap_or_else(|error| panic!("failed to read Ghostty build.zig.zon: {error}"));
+
+    let dependency_marker = format!(".{dependency_name} = .{{");
+    let dependency_start = zon.find(&dependency_marker).unwrap_or_else(|| {
+        panic!(
+            "failed to locate dependency {dependency_name} in {}",
+            ghostty_dir.join("build.zig.zon").display()
+        )
+    });
+
+    let dependency_body = &zon[dependency_start..];
+    let hash_marker = ".hash = \"";
+    let hash_start = dependency_body.find(hash_marker).unwrap_or_else(|| {
+        panic!("failed to locate .hash for dependency {dependency_name} in Ghostty build.zig.zon")
+    });
+
+    let hash_value = &dependency_body[hash_start + hash_marker.len()..];
+    let hash_end = hash_value.find('"').unwrap_or_else(|| {
+        panic!("failed to parse .hash for dependency {dependency_name} in Ghostty build.zig.zon")
+    });
+
+    hash_value[..hash_end].to_owned()
+}
+
 /// Returns directories to search for the built library artifact.
 /// On Windows, Zig may place the DLL in `bin/` and the import lib in `lib/`,
 /// so both are included.
@@ -148,8 +264,8 @@ fn library_search_dirs(target: &str, install_prefix: &Path) -> Vec<PathBuf> {
 }
 
 /// Returns candidate filenames for the shared library artifact, ordered by
-/// preference.  The build assertion succeeds if any one of these exists in
-/// any of the search directories.
+/// preference. The build assertion succeeds if any one of these exists in any
+/// of the search directories.
 fn library_artifact_candidates(target: &str) -> &'static [&'static str] {
     if target.contains("darwin") {
         &["libghostty-vt.0.1.0.dylib", "libghostty-vt.dylib"]

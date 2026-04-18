@@ -4,13 +4,16 @@
 use std::borrow::Cow;
 use std::io::{self, Read, Write};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
+use std::time::Duration;
 
 use parking_lot::Mutex;
-use terminal_kernel::event::WindowSize;
+use terminal_kernel::event::{OnResize, WindowSize};
 use terminal_kernel::index::{Column, Line, Point as AlacPoint};
 use terminal_kernel::term::TermMode;
 use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
+use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite};
 use terminal_kernel::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor, Rgb};
 
 use libghostty_vt::render::{CellIterator, CursorVisualStyle, RowIterator};
@@ -31,30 +34,31 @@ pub enum GhosttyMsg {
 pub type GhosttyMsgSender = std::sync::mpsc::Sender<GhosttyMsg>;
 
 /// Event loop that owns a ghostty `Terminal` (which is `!Send + !Sync`) and
-/// drives it from a dedicated thread.  PTY I/O and channel messages are
+/// drives it from a dedicated thread. PTY I/O and channel messages are
 /// interleaved using non-blocking reads.
 pub struct GhosttyEventLoop {
   tx: GhosttyMsgSender,
   rx: std::sync::mpsc::Receiver<GhosttyMsg>,
-  pty_reader: std::fs::File,
-  pty_writer: std::fs::File,
+  pty: terminal_kernel::tty::Pty,
   state: Arc<Mutex<GhosttyTermInner>>,
   event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
   #[cfg(unix)]
   pty_raw_fd: i32,
-  /// Keeps the child process alive for the lifetime of the event loop.
-  _pty: terminal_kernel::tty::Pty,
   /// Initial terminal dimensions.
   initial_cols: u16,
   initial_rows: u16,
   max_scrollback: usize,
 }
 
+enum PtyReadStatus {
+  Data(usize),
+  WouldBlock,
+  Eof,
+}
+
 impl GhosttyEventLoop {
   pub fn new(
     pty: terminal_kernel::tty::Pty,
-    pty_reader: std::fs::File,
-    pty_writer: std::fs::File,
     state: Arc<Mutex<GhosttyTermInner>>,
     event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
     #[cfg(unix)] pty_raw_fd: i32,
@@ -66,13 +70,11 @@ impl GhosttyEventLoop {
     Self {
       tx,
       rx,
-      pty_reader,
-      pty_writer,
+      pty,
       state,
       event_tx,
       #[cfg(unix)]
       pty_raw_fd,
-      _pty: pty,
       initial_cols,
       initial_rows,
       max_scrollback,
@@ -92,6 +94,96 @@ impl GhosttyEventLoop {
         self.run();
       })
       .expect("spawn ghostty event loop")
+  }
+
+  fn read_pty(&mut self, buf: &mut [u8]) -> io::Result<PtyReadStatus> {
+    let read_result = self.pty.reader().read(buf);
+    match read_result {
+      Ok(0) => {
+        #[cfg(windows)]
+        {
+          return Ok(match self.pty.next_child_event() {
+            Some(ChildEvent::Exited(_)) => PtyReadStatus::Eof,
+            None => PtyReadStatus::WouldBlock,
+          });
+        }
+
+        #[cfg(not(windows))]
+        {
+          Ok(PtyReadStatus::Eof)
+        }
+      }
+      Ok(n) => Ok(PtyReadStatus::Data(n)),
+      Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(PtyReadStatus::WouldBlock),
+      Err(error) => {
+        #[cfg(windows)]
+        {
+          return match self.pty.next_child_event() {
+            Some(ChildEvent::Exited(_)) => Ok(PtyReadStatus::Eof),
+            None => Err(error),
+          };
+        }
+
+        #[cfg(not(windows))]
+        {
+          Err(error)
+        }
+      }
+    }
+  }
+
+  fn write_pty(&mut self, mut bytes: &[u8]) -> io::Result<()> {
+    while !bytes.is_empty() {
+      let write_result = self.pty.writer().write(bytes);
+      match write_result {
+        Ok(0) => {
+          #[cfg(windows)]
+          {
+            if matches!(self.pty.next_child_event(), Some(ChildEvent::Exited(_))) {
+              return Err(io::Error::new(io::ErrorKind::BrokenPipe, "pty exited"));
+            }
+
+            thread::sleep(Duration::from_millis(1));
+            continue;
+          }
+
+          #[cfg(not(windows))]
+          {
+            return Err(io::Error::new(
+              io::ErrorKind::WriteZero,
+              "pty write returned zero bytes",
+            ));
+          }
+        }
+        Ok(written) => {
+          bytes = &bytes[written..];
+        }
+        Err(ref error) if error.kind() == io::ErrorKind::WouldBlock => {
+          thread::sleep(Duration::from_millis(1));
+        }
+        Err(error) => {
+          #[cfg(windows)]
+          {
+            if matches!(self.pty.next_child_event(), Some(ChildEvent::Exited(_))) {
+              return Err(io::Error::new(io::ErrorKind::BrokenPipe, "pty exited"));
+            }
+          }
+
+          return Err(error);
+        }
+      }
+    }
+
+    self.pty.writer().flush()
+  }
+
+  fn drain_pty_writebacks(&mut self, pty_write_rx: &Receiver<Vec<u8>>) -> io::Result<()> {
+    loop {
+      match pty_write_rx.try_recv() {
+        Ok(bytes) => self.write_pty(&bytes)?,
+        Err(TryRecvError::Empty | TryRecvError::Disconnected) => return Ok(()),
+      }
+    }
   }
 
   fn run(mut self) {
@@ -149,15 +241,14 @@ impl GhosttyEventLoop {
       }
     };
 
-    // Wire up PTY write-back for query responses.
+    let (pty_write_tx, pty_write_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+
+    // Queue PTY write-back for query responses so the loop can flush them using
+    // the platform-specific PTY writer it already owns.
     {
-      let mut writer = self
-        .pty_writer
-        .try_clone()
-        .expect("clone pty writer for ghostty effect");
+      let pty_write_tx = pty_write_tx.clone();
       let _ = terminal.on_pty_write(move |_term, data| {
-        let _ = writer.write_all(data);
-        let _ = writer.flush();
+        let _ = pty_write_tx.send(data.to_vec());
       });
     }
 
@@ -230,22 +321,23 @@ impl GhosttyEventLoop {
       loop {
         match self.rx.try_recv() {
           Ok(GhosttyMsg::Input(bytes)) => {
-            let _ = self.pty_writer.write_all(&bytes);
-            let _ = self.pty_writer.flush();
+            if self.write_pty(&bytes).is_err() {
+              sync_to_inner(
+                &terminal,
+                &mut render_state,
+                &mut row_iter,
+                &mut cell_iter,
+                &self.state,
+                &mut prev_scrollback_count,
+              );
+              let _ = self
+                .event_tx
+                .unbounded_send(terminal_kernel::event::Event::Exit);
+              return;
+            }
           }
           Ok(GhosttyMsg::Resize(size)) => {
-            #[cfg(unix)]
-            {
-              let win = libc::winsize {
-                ws_row: size.num_lines,
-                ws_col: size.num_cols,
-                ws_xpixel: size.cell_width.saturating_mul(size.num_cols),
-                ws_ypixel: size.cell_height.saturating_mul(size.num_lines),
-              };
-              unsafe {
-                libc::ioctl(self.pty_raw_fd, libc::TIOCSWINSZ, &win as *const _);
-              }
-            }
+            self.pty.on_resize(size);
             let _ = terminal.resize(
               size.num_cols,
               size.num_lines,
@@ -262,14 +354,29 @@ impl GhosttyEventLoop {
             );
           }
           Ok(GhosttyMsg::Shutdown) => return,
-          Err(std::sync::mpsc::TryRecvError::Empty) => break,
-          Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
+          Err(TryRecvError::Empty) => break,
+          Err(TryRecvError::Disconnected) => return,
         }
       }
 
+      if self.drain_pty_writebacks(&pty_write_rx).is_err() {
+        sync_to_inner(
+          &terminal,
+          &mut render_state,
+          &mut row_iter,
+          &mut cell_iter,
+          &self.state,
+          &mut prev_scrollback_count,
+        );
+        let _ = self
+          .event_tx
+          .unbounded_send(terminal_kernel::event::Event::Exit);
+        return;
+      }
+
       // Read from PTY (non-blocking on Unix).
-      match self.pty_reader.read(&mut buf) {
-        Ok(0) => {
+      match self.read_pty(&mut buf) {
+        Ok(PtyReadStatus::Eof) => {
           // EOF — child process exited.
           sync_to_inner(
             &terminal,
@@ -284,8 +391,22 @@ impl GhosttyEventLoop {
             .unbounded_send(terminal_kernel::event::Event::Exit);
           return;
         }
-        Ok(n) => {
+        Ok(PtyReadStatus::Data(n)) => {
           terminal.vt_write(&buf[..n]);
+          if self.drain_pty_writebacks(&pty_write_rx).is_err() {
+            sync_to_inner(
+              &terminal,
+              &mut render_state,
+              &mut row_iter,
+              &mut cell_iter,
+              &self.state,
+              &mut prev_scrollback_count,
+            );
+            let _ = self
+              .event_tx
+              .unbounded_send(terminal_kernel::event::Event::Exit);
+            return;
+          }
           sync_to_inner(
             &terminal,
             &mut render_state,
@@ -298,8 +419,8 @@ impl GhosttyEventLoop {
             .event_tx
             .unbounded_send(terminal_kernel::event::Event::Wakeup);
         }
-        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-          thread::sleep(std::time::Duration::from_millis(2));
+        Ok(PtyReadStatus::WouldBlock) => {
+          thread::sleep(Duration::from_millis(2));
         }
         Err(_) => {
           sync_to_inner(

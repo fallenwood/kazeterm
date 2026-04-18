@@ -166,19 +166,8 @@ pub fn create_terminal_session(
     let child_pid = pty.child().id();
     let pty_info = PtyProcessInfo::from_raw(raw_fd, child_pid);
 
-    let reader = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty reader: {e}"))?;
-    let writer = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty writer: {e}"))?;
-
     let event_loop = GhosttyEventLoop::new(
       pty,
-      reader,
-      writer,
       state.clone(),
       events_tx.clone(),
       raw_fd,
@@ -195,19 +184,9 @@ pub fn create_terminal_session(
   #[cfg(not(unix))]
   let (tx, pty_info) = {
     let pty_info = PtyProcessInfo::new(&pty);
-    let reader = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty reader: {e}"))?;
-    let writer = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty writer: {e}"))?;
 
     let event_loop = GhosttyEventLoop::new(
       pty,
-      reader,
-      writer,
       state.clone(),
       events_tx.clone(),
       num_cols as u16,
