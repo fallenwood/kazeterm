@@ -22,7 +22,7 @@ config = { path = "../config" }
 kazeterm-event-system = { path = "../kazeterm-event-system" }
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
-terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty", optional = true }
+terminal-kernel-alacritty = { path = "../terminal-kernel-alacritty" }
 themeing = { path = "../themeing" }
 toml.workspace = true
 serde.workspace = true
@@ -33,15 +33,8 @@ tracing-subscriber.workspace = true
 notify.workspace = true
 notify-debouncer-mini.workspace = true
 
-[features]
-default = ["kernel-alacritty"]
-kernel-alacritty = ["dep:terminal-kernel-alacritty"]
-kernel-vte = ["dep:terminal-kernel-vte"]
-kernel-ghostty = ["dep:terminal-kernel-ghostty"]
-
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
-terminal-kernel-vte = { path = "../terminal-kernel-vte", optional = true }
-terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty", optional = true }
+terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
@@ -50,6 +43,7 @@ raw-window-handle = "0.6"
 # Use native notification APIs on macOS and Windows.
 # notify-rust is only needed on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
+terminal-kernel-vte = { path = "../terminal-kernel-vte" }
 notify-rust = { workspace = true }
 which.workspace = true
 raw-window-handle = "0.6"
