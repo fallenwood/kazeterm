@@ -264,11 +264,15 @@ impl TerminalBackend for GhosttyBackend {
       point: s.cursor.point,
     };
 
-    let selection = s.selection.as_ref().map(|_| {
-      // Selection range approximation is not precise without Term —
-      // return None for now.
-      None::<terminal_kernel::selection::SelectionRange>
-    }).flatten();
+    let selection = s
+      .selection
+      .as_ref()
+      .map(|_| {
+        // Selection range approximation is not precise without Term —
+        // return None for now.
+        None::<terminal_kernel::selection::SelectionRange>
+      })
+      .flatten();
 
     RenderableSnapshot {
       cells,
@@ -297,7 +301,11 @@ impl TerminalBackend for GhosttyBackend {
     let end_line = end.line.0;
 
     for line in start_line..=end_line {
-      let start_col = if line == start_line { start.column.0 } else { 0 };
+      let start_col = if line == start_line {
+        start.column.0
+      } else {
+        0
+      };
       let end_col = if line == end_line {
         end.column.0
       } else {
@@ -601,10 +609,7 @@ impl TerminalBackend for GhosttyBackend {
       }
     }
 
-    AlacPoint::new(
-      Line(target_line),
-      Column(s.num_cols.saturating_sub(1)),
-    )
+    AlacPoint::new(Line(target_line), Column(s.num_cols.saturating_sub(1)))
   }
 
   fn find_hyperlink_at(

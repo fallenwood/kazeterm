@@ -284,7 +284,13 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
   match change_type {
     FileChangeType::Config => {
       // Reload the entire config (which includes theme settings)
-      let new_config = Config::load();
+      let new_config = match Config::load() {
+        Ok(config) => config,
+        Err(error) => {
+          tracing::error!("Failed to reload config: {}", error);
+          return;
+        }
+      };
       tracing::info!("Reloaded config: theme={}", new_config.colors.theme);
 
       // Update the themes path if it changed

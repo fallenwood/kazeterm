@@ -225,7 +225,14 @@ fn main() {
     )
     .init();
 
-  let config = Config::load();
+  let config = match Config::load() {
+    Ok(config) => config,
+    Err(error) => {
+      tracing::error!("Failed to load config: {error}");
+      eprintln!("Failed to load config: {error}");
+      std::process::exit(1);
+    }
+  };
 
   // Initialize theme system with embedded assets and custom path
   init_theme_system(&config);

@@ -309,6 +309,44 @@ impl std::fmt::Display for TerminalKernel {
   }
 }
 
+impl TerminalKernel {
+  pub fn is_supported_on_current_platform(self) -> bool {
+    match self {
+      Self::Alacritty => true,
+      Self::Ghostty => cfg!(any(target_os = "linux", target_os = "macos")),
+      Self::Vte => cfg!(target_os = "linux"),
+    }
+  }
+
+  pub fn supported_kernels_for_current_platform() -> &'static [&'static str] {
+    #[cfg(target_os = "linux")]
+    {
+      &["alacritty", "ghostty", "vte"]
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+      &["alacritty", "ghostty"]
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+      &["alacritty"]
+    }
+  }
+
+  pub fn validate_on_current_platform(self) -> Result<(), String> {
+    if self.is_supported_on_current_platform() {
+      return Ok(());
+    }
+
+    Err(format!(
+      "Terminal kernel '{self}' is not available on this platform. Supported kernels are: {}.",
+      Self::supported_kernels_for_current_platform().join(", ")
+    ))
+  }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TerminalConfig {
@@ -464,39 +502,49 @@ impl Default for Config {
 }
 
 impl Config {
-  pub fn load() -> Self {
+  pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
     let config_path = Self::get_config_file_path_impl();
 
     if !config_path.exists() {
-      // #[cfg(not(debug_assertions))]
-      {
-        // Create default config file
-        if let Err(e) = Self::create_default_config(&config_path) {
-          tracing::error!("Failed to create default config: {}", e);
-          return Self::default();
-        } else {
-          tracing::info!("Created default config at: {}", config_path.display());
-        }
-      }
+      Self::create_default_config(&config_path)?;
+      tracing::info!("Created default config at: {}", config_path.display());
     }
 
-    match Self::load_from_path(&config_path) {
-      Ok(config) => {
-        tracing::info!("Loaded config from: {}", config_path.display());
-        tracing::debug!("Config: {:?}", config);
-        return config;
-      }
-      Err(e) => {
-        tracing::error!(
-          "Failed to load config from {}: {}",
-          config_path.display(),
-          e
-        );
-      }
+    let config = Self::load_from_path(&config_path)?;
+    tracing::info!("Loaded config from: {}", config_path.display());
+    tracing::debug!("Config: {:?}", config);
+    Ok(config)
+  }
+
+  fn current_platform_name() -> &'static str {
+    #[cfg(target_os = "linux")]
+    {
+      "linux"
     }
 
-    tracing::info!("Using default config");
-    Self::default()
+    #[cfg(target_os = "macos")]
+    {
+      "macOS"
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+      "Windows"
+    }
+  }
+
+  fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+    self
+      .terminal
+      .kernel
+      .validate_on_current_platform()
+      .map_err(|message| {
+        std::io::Error::other(format!(
+          "{message} Current platform: {}.",
+          Self::current_platform_name()
+        ))
+      })?;
+    Ok(())
   }
 
   fn get_config_path_impl() -> PathBuf {
@@ -595,6 +643,7 @@ impl Config {
 
     let mut config: Config = merged.try_into()?;
     config.container_profiles = profiles::detect_container_profiles();
+    config.validate()?;
 
     if migrated {
       tracing::info!("Config migrated to version {}", config.version);
@@ -944,6 +993,83 @@ EXTRA = "present"
     assert_eq!(config.keybindings.paste, "ctrl-alt-v");
     assert_eq!(config.terminal.env.get("BASE").unwrap(), "from-overlay");
     assert_eq!(config.terminal.env.get("EXTRA").unwrap(), "present");
+
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn load_from_path_rejects_unknown_terminal_kernel() {
+    let dir = test_dir("invalid-kernel");
+    let base_path = dir.join("kazeterm.toml");
+
+    std::fs::write(
+      &base_path,
+      format!(
+        r#"version = "{}"
+
+[terminal]
+kernel = "does-not-exist"
+"#,
+        CURRENT_CONFIG_VERSION,
+      ),
+    )
+    .unwrap();
+
+    let error = Config::load_from_path(&base_path).unwrap_err().to_string();
+
+    assert!(error.contains("does-not-exist"));
+
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn load_from_path_rejects_platform_unsupported_terminal_kernel() {
+    let dir = test_dir("unsupported-kernel");
+    let base_path = dir.join("kazeterm.toml");
+
+    std::fs::write(
+      &base_path,
+      format!(
+        r#"version = "{}"
+
+[terminal]
+kernel = "vte"
+"#,
+        CURRENT_CONFIG_VERSION,
+      ),
+    )
+    .unwrap();
+
+    let error = Config::load_from_path(&base_path).unwrap_err().to_string();
+
+    assert!(error.contains("Terminal kernel 'vte' is not available on this platform"));
+
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn load_from_path_rejects_platform_unsupported_terminal_kernel() {
+    let dir = test_dir("unsupported-kernel");
+    let base_path = dir.join("kazeterm.toml");
+
+    std::fs::write(
+      &base_path,
+      format!(
+        r#"version = "{}"
+
+[terminal]
+kernel = "ghostty"
+"#,
+        CURRENT_CONFIG_VERSION,
+      ),
+    )
+    .unwrap();
+
+    let error = Config::load_from_path(&base_path).unwrap_err().to_string();
+
+    assert!(error.contains("Terminal kernel 'ghostty' is not available on this platform"));
 
     std::fs::remove_dir_all(dir).unwrap();
   }

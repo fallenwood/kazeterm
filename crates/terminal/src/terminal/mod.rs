@@ -258,7 +258,9 @@ impl Terminal {
     for line_idx in 0..total_lines {
       let original_line = line_idx as i32 - history_size as i32;
       for col_idx in 0..columns {
-        let cell = self.term.cell_at(AlacPoint::new(AlacLine(original_line), AlacColumn(col_idx)));
+        let cell = self
+          .term
+          .cell_at(AlacPoint::new(AlacLine(original_line), AlacColumn(col_idx)));
         if cell.c != ' ' && cell.c != '\t' && cell.c != '\0' {
           cells.push(IndexedCell {
             point: AlacPoint::new(AlacLine(line_idx as i32), AlacColumn(col_idx)),
@@ -527,10 +529,7 @@ impl Terminal {
     }
   }
 
-  fn make_content(
-    term: &dyn TerminalBackend,
-    last_content: &TerminalContent,
-  ) -> TerminalContent {
+  fn make_content(term: &dyn TerminalBackend, last_content: &TerminalContent) -> TerminalContent {
     let content = term.renderable_snapshot();
 
     let cells: Vec<IndexedCell> = content
@@ -671,14 +670,18 @@ impl Terminal {
 
         self.last_content.terminal_bounds = new_bounds;
         self.pty_tx.send_resize(new_bounds.into());
-        self.term.resize(new_bounds.num_lines(), new_bounds.num_columns());
+        self
+          .term
+          .resize(new_bounds.num_lines(), new_bounds.num_columns());
       }
       InternalEvent::Clear => {}
       InternalEvent::Scroll(scroll) => {
         self.term.scroll_display(*scroll);
       }
       InternalEvent::SetSelection(selection) => {
-        self.term.set_selection(selection.as_ref().map(|(sel, _)| sel.clone()));
+        self
+          .term
+          .set_selection(selection.as_ref().map(|(sel, _)| sel.clone()));
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         if let Some(selection_text) = self.term.selection_to_string() {
@@ -735,7 +738,9 @@ impl Terminal {
           self.last_content.terminal_bounds,
           self.term.display_offset(),
         );
-        let point = self.term.grid_clamp(point, terminal_kernel::index::Boundary::Grid);
+        let point = self
+          .term
+          .grid_clamp(point, terminal_kernel::index::Boundary::Grid);
 
         match crate::terminal_hyperlinks::find_from_grid_point(
           &*self.term,

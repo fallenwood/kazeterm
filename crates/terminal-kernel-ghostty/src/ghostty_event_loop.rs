@@ -9,8 +9,8 @@ use std::thread;
 use parking_lot::Mutex;
 use terminal_kernel::event::WindowSize;
 use terminal_kernel::index::{Column, Line, Point as AlacPoint};
-use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
 use terminal_kernel::term::TermMode;
+use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
 use terminal_kernel::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor, Rgb};
 
 use libghostty_vt::render::{CellIterator, CursorVisualStyle, RowIterator};
@@ -113,10 +113,14 @@ impl GhosttyEventLoop {
       Ok(t) => t,
       Err(e) => {
         eprintln!("ghostty: failed to create terminal: {e:?}");
-        self
-          .state
-          .lock()
-          .sync_from_ghostty(vec![], AlacPoint::default(), CursorStyle::default(), TermMode::empty(), [None; 256], vec![]);
+        self.state.lock().sync_from_ghostty(
+          vec![],
+          AlacPoint::default(),
+          CursorStyle::default(),
+          TermMode::empty(),
+          [None; 256],
+          vec![],
+        );
         return;
       }
     };
@@ -176,16 +180,12 @@ impl GhosttyEventLoop {
 
     // XTVERSION → respond with kazeterm identification.
     {
-      let _ = terminal.on_xtversion(|_term| {
-        Some(concat!("kazeterm ", env!("CARGO_PKG_VERSION")))
-      });
+      let _ = terminal.on_xtversion(|_term| Some(concat!("kazeterm ", env!("CARGO_PKG_VERSION"))));
     }
 
     // ENQ → respond with empty string (standard).
     {
-      let _ = terminal.on_enquiry(|_term| {
-        Some("")
-      });
+      let _ = terminal.on_enquiry(|_term| Some(""));
     }
 
     // Device attributes → respond as VT220-compatible terminal.
@@ -279,7 +279,9 @@ impl GhosttyEventLoop {
             &self.state,
             &mut prev_scrollback_count,
           );
-          let _ = self.event_tx.unbounded_send(terminal_kernel::event::Event::Exit);
+          let _ = self
+            .event_tx
+            .unbounded_send(terminal_kernel::event::Event::Exit);
           return;
         }
         Ok(n) => {
@@ -292,7 +294,9 @@ impl GhosttyEventLoop {
             &self.state,
             &mut prev_scrollback_count,
           );
-          let _ = self.event_tx.unbounded_send(terminal_kernel::event::Event::Wakeup);
+          let _ = self
+            .event_tx
+            .unbounded_send(terminal_kernel::event::Event::Wakeup);
         }
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
           thread::sleep(std::time::Duration::from_millis(2));
@@ -306,7 +310,9 @@ impl GhosttyEventLoop {
             &self.state,
             &mut prev_scrollback_count,
           );
-          let _ = self.event_tx.unbounded_send(terminal_kernel::event::Event::Exit);
+          let _ = self
+            .event_tx
+            .unbounded_send(terminal_kernel::event::Event::Exit);
           return;
         }
       }
@@ -349,7 +355,10 @@ fn sync_to_inner<'a>(
 
       if let Ok(mut cell_iteration) = cell_iter.update(&row) {
         while let Some(cell) = cell_iteration.next() {
-          let alac_cell = convert_ghostty_cell(&cell, is_wrapped && row_cells.len() == num_cols.saturating_sub(1));
+          let alac_cell = convert_ghostty_cell(
+            &cell,
+            is_wrapped && row_cells.len() == num_cols.saturating_sub(1),
+          );
           row_cells.push(alac_cell);
         }
       }

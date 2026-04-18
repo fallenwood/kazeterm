@@ -43,7 +43,8 @@ pub(super) fn find_from_grid_point(
     if is_url && !is_osc8 {
       let (sanitized_url, sanitized_match) = sanitize_url_punctuation(url, range, backend);
       // Apply file:// path handling.
-      let (final_url, final_is_url, final_match) = handle_file_url(sanitized_url, true, sanitized_match);
+      let (final_url, final_is_url, final_match) =
+        handle_file_url(sanitized_url, true, sanitized_match);
       return Some((final_url, final_is_url, final_match));
     }
     // OSC8: apply file:// handling but no sanitization.
@@ -161,9 +162,8 @@ fn path_match(
 
   // Build cell-accurate string from the grid line. bounds_to_string compresses
   // tabs into single spaces, so we iterate cells directly instead.
-  let mut line = String::with_capacity(
-    (line_end.line.0 - line_start.line.0 + 1) as usize * backend.columns(),
-  );
+  let mut line =
+    String::with_capacity((line_end.line.0 - line_start.line.0 + 1) as usize * backend.columns());
   let first_cell = backend.cell_at(line_start);
   let mut prev_len = 0;
   line.push(first_cell.c);
@@ -229,8 +229,7 @@ fn path_match(
     |path_range: Range<usize>, link_range: Range<usize>, position: Option<(u32, Option<u32>)>| {
       let advance_point_by_str = |mut point: AlacPoint, s: &str| {
         for _ in s.chars() {
-          point = backend
-            .expand_wide(point, AlacDirection::Right);
+          point = backend.expand_wide(point, AlacDirection::Right);
           point = backend.point_add(point, Boundary::Grid, 1);
         }
 

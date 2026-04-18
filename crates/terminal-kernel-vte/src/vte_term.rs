@@ -9,9 +9,7 @@ use terminal_kernel::index::{Boundary, Column, Direction, Line, Point as AlacPoi
 use terminal_kernel::selection::Selection;
 use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
 use terminal_kernel::term::{RenderableCursor, TermMode};
-use terminal_kernel::vte::ansi::{
-    Color, CursorShape, CursorStyle, NamedColor, Rgb,
-};
+use terminal_kernel::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor, Rgb};
 use terminal_kernel::{RenderableSnapshot, TerminalBackend};
 
 // ---------------------------------------------------------------------------
@@ -19,53 +17,53 @@ use terminal_kernel::{RenderableSnapshot, TerminalBackend};
 // ---------------------------------------------------------------------------
 
 struct CursorState {
-    point: AlacPoint,
-    style: CursorStyle,
+  point: AlacPoint,
+  style: CursorStyle,
 }
 
 struct SavedCursor {
-    point: AlacPoint,
-    template_cell: Cell,
+  point: AlacPoint,
+  template_cell: Cell,
 }
 
 pub struct VteTermInner {
-    // Primary screen buffer (num_lines rows × num_cols cols).
-    rows: Vec<Vec<Cell>>,
-    // Scrollback buffer (most recent at the back).
-    scrollback: VecDeque<Vec<Cell>>,
-    // Alternate screen buffer.
-    alt_rows: Vec<Vec<Cell>>,
+  // Primary screen buffer (num_lines rows × num_cols cols).
+  rows: Vec<Vec<Cell>>,
+  // Scrollback buffer (most recent at the back).
+  scrollback: VecDeque<Vec<Cell>>,
+  // Alternate screen buffer.
+  alt_rows: Vec<Vec<Cell>>,
 
-    num_lines: usize,
-    num_cols: usize,
-    max_scrollback: usize,
+  num_lines: usize,
+  num_cols: usize,
+  max_scrollback: usize,
 
-    cursor: CursorState,
-    saved_cursor: Option<SavedCursor>,
+  cursor: CursorState,
+  saved_cursor: Option<SavedCursor>,
 
-    mode: TermMode,
-    display_offset: usize,
-    selection: Option<Selection>,
+  mode: TermMode,
+  display_offset: usize,
+  selection: Option<Selection>,
 
-    // Scroll region (0-indexed, inclusive).
-    scroll_top: usize,
-    scroll_bottom: usize,
+  // Scroll region (0-indexed, inclusive).
+  scroll_top: usize,
+  scroll_bottom: usize,
 
-    // Attributes applied to newly-written cells.
-    template_cell: Cell,
+  // Attributes applied to newly-written cells.
+  template_cell: Cell,
 
-    tab_stops: Vec<bool>,
-    title: String,
-    colors: [Option<Rgb>; 256],
+  tab_stops: Vec<bool>,
+  title: String,
+  colors: [Option<Rgb>; 256],
 
-    using_alt_screen: bool,
-    pending_wrap: bool,
+  using_alt_screen: bool,
+  pending_wrap: bool,
 
-    // Channel for events consumed by the Terminal UI layer.
-    event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
+  // Channel for events consumed by the Terminal UI layer.
+  event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
 
-    // Channel for OSC 7 working directory updates.
-    osc7_tx: Option<std::sync::mpsc::Sender<std::path::PathBuf>>,
+  // Channel for OSC 7 working directory updates.
+  osc7_tx: Option<std::sync::mpsc::Sender<std::path::PathBuf>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -73,179 +71,182 @@ pub struct VteTermInner {
 // ---------------------------------------------------------------------------
 
 fn blank_row(cols: usize) -> Vec<Cell> {
-    vec![Cell::default(); cols]
+  vec![Cell::default(); cols]
 }
 
 fn blank_grid(lines: usize, cols: usize) -> Vec<Vec<Cell>> {
-    (0..lines).map(|_| blank_row(cols)).collect()
+  (0..lines).map(|_| blank_row(cols)).collect()
 }
 
 fn default_tab_stops(cols: usize) -> Vec<bool> {
-    (0..cols).map(|c| c % 8 == 0).collect()
+  (0..cols).map(|c| c % 8 == 0).collect()
 }
 
 impl VteTermInner {
-    pub fn new(
-        lines: usize,
-        cols: usize,
-        max_scrollback: usize,
-        event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
-        osc7_tx: Option<std::sync::mpsc::Sender<std::path::PathBuf>>,
-    ) -> Self {
-        Self {
-            rows: blank_grid(lines, cols),
-            scrollback: VecDeque::new(),
-            alt_rows: blank_grid(lines, cols),
-            num_lines: lines,
-            num_cols: cols,
-            max_scrollback,
-            cursor: CursorState {
-                point: AlacPoint::new(Line(0), Column(0)),
-                style: CursorStyle { shape: CursorShape::Block, blinking: true },
-            },
-            saved_cursor: None,
-            mode: TermMode::SHOW_CURSOR | TermMode::LINE_WRAP,
-            display_offset: 0,
-            selection: None,
-            scroll_top: 0,
-            scroll_bottom: lines.saturating_sub(1),
-            template_cell: Cell::default(),
-            tab_stops: default_tab_stops(cols),
-            title: String::new(),
-            colors: [None; 256],
-            using_alt_screen: false,
-            pending_wrap: false,
-            event_tx,
-            osc7_tx,
-        }
+  pub fn new(
+    lines: usize,
+    cols: usize,
+    max_scrollback: usize,
+    event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
+    osc7_tx: Option<std::sync::mpsc::Sender<std::path::PathBuf>>,
+  ) -> Self {
+    Self {
+      rows: blank_grid(lines, cols),
+      scrollback: VecDeque::new(),
+      alt_rows: blank_grid(lines, cols),
+      num_lines: lines,
+      num_cols: cols,
+      max_scrollback,
+      cursor: CursorState {
+        point: AlacPoint::new(Line(0), Column(0)),
+        style: CursorStyle {
+          shape: CursorShape::Block,
+          blinking: true,
+        },
+      },
+      saved_cursor: None,
+      mode: TermMode::SHOW_CURSOR | TermMode::LINE_WRAP,
+      display_offset: 0,
+      selection: None,
+      scroll_top: 0,
+      scroll_bottom: lines.saturating_sub(1),
+      template_cell: Cell::default(),
+      tab_stops: default_tab_stops(cols),
+      title: String::new(),
+      colors: [None; 256],
+      using_alt_screen: false,
+      pending_wrap: false,
+      event_tx,
+      osc7_tx,
+    }
+  }
+
+  // -- Grid helpers -------------------------------------------------------
+
+  /// Scroll the scroll-region up by one line (content moves up, blank line at bottom).
+  fn scroll_up_in_region(&mut self) {
+    let top = self.scroll_top;
+    let bottom = self.scroll_bottom;
+    let removed = self.rows.remove(top);
+    // If the scroll region is the full screen, push to scrollback.
+    if top == 0 && bottom == self.num_lines - 1 && !self.using_alt_screen {
+      self.scrollback.push_back(removed);
+      while self.scrollback.len() > self.max_scrollback {
+        self.scrollback.pop_front();
+      }
+    }
+    self.rows.insert(bottom, blank_row(self.num_cols));
+  }
+
+  /// Scroll the scroll-region down by one line (content moves down, blank line at top).
+  fn scroll_down_in_region(&mut self) {
+    let top = self.scroll_top;
+    let bottom = self.scroll_bottom;
+    self.rows.remove(bottom);
+    self.rows.insert(top, blank_row(self.num_cols));
+  }
+
+  fn linefeed(&mut self) {
+    let row = self.cursor.point.line.0 as usize;
+    if row == self.scroll_bottom {
+      self.scroll_up_in_region();
+    } else if row + 1 < self.num_lines {
+      self.cursor.point.line.0 += 1;
+    }
+  }
+
+  fn reverse_index(&mut self) {
+    let row = self.cursor.point.line.0 as usize;
+    if row == self.scroll_top {
+      self.scroll_down_in_region();
+    } else if row > 0 {
+      self.cursor.point.line.0 -= 1;
+    }
+  }
+
+  fn erase_cell(cell: &mut Cell) {
+    *cell = Cell::default();
+  }
+
+  pub fn do_resize(&mut self, new_lines: usize, new_cols: usize) {
+    if new_lines == 0 || new_cols == 0 {
+      return;
     }
 
-    // -- Grid helpers -------------------------------------------------------
-
-    /// Scroll the scroll-region up by one line (content moves up, blank line at bottom).
-    fn scroll_up_in_region(&mut self) {
-        let top = self.scroll_top;
-        let bottom = self.scroll_bottom;
-        let removed = self.rows.remove(top);
-        // If the scroll region is the full screen, push to scrollback.
-        if top == 0 && bottom == self.num_lines - 1 && !self.using_alt_screen {
-            self.scrollback.push_back(removed);
-            while self.scrollback.len() > self.max_scrollback {
-                self.scrollback.pop_front();
-            }
+    // Resize each row in the primary screen.
+    for row in &mut self.rows {
+      row.resize(new_cols, Cell::default());
+    }
+    // Add or remove lines.
+    while self.rows.len() < new_lines {
+      self.rows.push(blank_row(new_cols));
+    }
+    while self.rows.len() > new_lines {
+      let removed = self.rows.remove(0);
+      if !self.using_alt_screen {
+        self.scrollback.push_back(removed);
+        while self.scrollback.len() > self.max_scrollback {
+          self.scrollback.pop_front();
         }
-        self.rows.insert(bottom, blank_row(self.num_cols));
+      }
     }
 
-    /// Scroll the scroll-region down by one line (content moves down, blank line at top).
-    fn scroll_down_in_region(&mut self) {
-        let top = self.scroll_top;
-        let bottom = self.scroll_bottom;
-        self.rows.remove(bottom);
-        self.rows.insert(top, blank_row(self.num_cols));
+    // Resize alt screen.
+    for row in &mut self.alt_rows {
+      row.resize(new_cols, Cell::default());
+    }
+    while self.alt_rows.len() < new_lines {
+      self.alt_rows.push(blank_row(new_cols));
+    }
+    self.alt_rows.truncate(new_lines);
+
+    // Resize scrollback rows.
+    for row in &mut self.scrollback {
+      row.resize(new_cols, Cell::default());
     }
 
-    fn linefeed(&mut self) {
-        let row = self.cursor.point.line.0 as usize;
-        if row == self.scroll_bottom {
-            self.scroll_up_in_region();
-        } else if row + 1 < self.num_lines {
-            self.cursor.point.line.0 += 1;
-        }
+    self.num_lines = new_lines;
+    self.num_cols = new_cols;
+    self.scroll_top = 0;
+    self.scroll_bottom = new_lines.saturating_sub(1);
+    self.tab_stops = default_tab_stops(new_cols);
+
+    // Clamp cursor.
+    self.cursor.point.line.0 = self.cursor.point.line.0.min(new_lines as i32 - 1).max(0);
+    self.cursor.point.column.0 = self.cursor.point.column.0.min(new_cols.saturating_sub(1));
+    self.pending_wrap = false;
+    self.display_offset = self.display_offset.min(self.scrollback.len());
+  }
+
+  pub(crate) fn send_event(&self, event: terminal_kernel::event::Event) {
+    let _ = self.event_tx.unbounded_send(event);
+  }
+
+  // -- Alternate screen ---------------------------------------------------
+
+  fn enter_alt_screen(&mut self) {
+    if self.using_alt_screen {
+      return;
     }
-
-    fn reverse_index(&mut self) {
-        let row = self.cursor.point.line.0 as usize;
-        if row == self.scroll_top {
-            self.scroll_down_in_region();
-        } else if row > 0 {
-            self.cursor.point.line.0 -= 1;
-        }
+    self.using_alt_screen = true;
+    std::mem::swap(&mut self.rows, &mut self.alt_rows);
+    // Clear alt screen.
+    for row in &mut self.rows {
+      for cell in row.iter_mut() {
+        Self::erase_cell(cell);
+      }
     }
+    self.mode.insert(TermMode::ALT_SCREEN);
+  }
 
-    fn erase_cell(cell: &mut Cell) {
-        *cell = Cell::default();
+  fn exit_alt_screen(&mut self) {
+    if !self.using_alt_screen {
+      return;
     }
-
-    pub fn do_resize(&mut self, new_lines: usize, new_cols: usize) {
-        if new_lines == 0 || new_cols == 0 {
-            return;
-        }
-
-        // Resize each row in the primary screen.
-        for row in &mut self.rows {
-            row.resize(new_cols, Cell::default());
-        }
-        // Add or remove lines.
-        while self.rows.len() < new_lines {
-            self.rows.push(blank_row(new_cols));
-        }
-        while self.rows.len() > new_lines {
-            let removed = self.rows.remove(0);
-            if !self.using_alt_screen {
-                self.scrollback.push_back(removed);
-                while self.scrollback.len() > self.max_scrollback {
-                    self.scrollback.pop_front();
-                }
-            }
-        }
-
-        // Resize alt screen.
-        for row in &mut self.alt_rows {
-            row.resize(new_cols, Cell::default());
-        }
-        while self.alt_rows.len() < new_lines {
-            self.alt_rows.push(blank_row(new_cols));
-        }
-        self.alt_rows.truncate(new_lines);
-
-        // Resize scrollback rows.
-        for row in &mut self.scrollback {
-            row.resize(new_cols, Cell::default());
-        }
-
-        self.num_lines = new_lines;
-        self.num_cols = new_cols;
-        self.scroll_top = 0;
-        self.scroll_bottom = new_lines.saturating_sub(1);
-        self.tab_stops = default_tab_stops(new_cols);
-
-        // Clamp cursor.
-        self.cursor.point.line.0 = self.cursor.point.line.0.min(new_lines as i32 - 1).max(0);
-        self.cursor.point.column.0 = self.cursor.point.column.0.min(new_cols.saturating_sub(1));
-        self.pending_wrap = false;
-        self.display_offset = self.display_offset.min(self.scrollback.len());
-    }
-
-    pub(crate) fn send_event(&self, event: terminal_kernel::event::Event) {
-        let _ = self.event_tx.unbounded_send(event);
-    }
-
-    // -- Alternate screen ---------------------------------------------------
-
-    fn enter_alt_screen(&mut self) {
-        if self.using_alt_screen {
-            return;
-        }
-        self.using_alt_screen = true;
-        std::mem::swap(&mut self.rows, &mut self.alt_rows);
-        // Clear alt screen.
-        for row in &mut self.rows {
-            for cell in row.iter_mut() {
-                Self::erase_cell(cell);
-            }
-        }
-        self.mode.insert(TermMode::ALT_SCREEN);
-    }
-
-    fn exit_alt_screen(&mut self) {
-        if !self.using_alt_screen {
-            return;
-        }
-        self.using_alt_screen = false;
-        std::mem::swap(&mut self.rows, &mut self.alt_rows);
-        self.mode.remove(TermMode::ALT_SCREEN);
-    }
+    self.using_alt_screen = false;
+    std::mem::swap(&mut self.rows, &mut self.alt_rows);
+    self.mode.remove(TermMode::ALT_SCREEN);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -253,481 +254,509 @@ impl VteTermInner {
 // ---------------------------------------------------------------------------
 
 impl vte::Perform for VteTermInner {
-    fn print(&mut self, c: char) {
-        if self.pending_wrap {
-            // Mark the current cell as wrapped.
+  fn print(&mut self, c: char) {
+    if self.pending_wrap {
+      // Mark the current cell as wrapped.
+      let row = self.cursor.point.line.0 as usize;
+      let col = self.cursor.point.column.0;
+      if row < self.num_lines && col < self.num_cols {
+        self.rows[row][col].flags.insert(CellFlags::WRAPLINE);
+      }
+      self.cursor.point.column.0 = 0;
+      self.linefeed();
+      self.pending_wrap = false;
+    }
+
+    let row = self.cursor.point.line.0 as usize;
+    let col = self.cursor.point.column.0;
+    if row < self.num_lines && col < self.num_cols {
+      let cell = &mut self.rows[row][col];
+      cell.c = c;
+      cell.fg = self.template_cell.fg.clone();
+      cell.bg = self.template_cell.bg.clone();
+      cell.flags = self.template_cell.flags;
+    }
+
+    if col + 1 < self.num_cols {
+      self.cursor.point.column.0 += 1;
+    } else {
+      self.pending_wrap = true;
+    }
+  }
+
+  fn execute(&mut self, byte: u8) {
+    match byte {
+      // Backspace.
+      0x08 => {
+        self.pending_wrap = false;
+        if self.cursor.point.column.0 > 0 {
+          self.cursor.point.column.0 -= 1;
+        }
+      }
+      // Horizontal tab.
+      0x09 => {
+        self.pending_wrap = false;
+        let col = self.cursor.point.column.0;
+        let next = self
+          .tab_stops
+          .iter()
+          .enumerate()
+          .skip(col + 1)
+          .find(|(_, stop)| **stop)
+          .map(|(i, _)| i)
+          .unwrap_or(self.num_cols.saturating_sub(1));
+        self.cursor.point.column.0 = next;
+      }
+      // LF / VT / FF — line feed.
+      0x0A | 0x0B | 0x0C => {
+        self.linefeed();
+        self.pending_wrap = false;
+      }
+      // CR — carriage return.
+      0x0D => {
+        self.cursor.point.column.0 = 0;
+        self.pending_wrap = false;
+      }
+      // BEL.
+      0x07 => {
+        self.send_event(terminal_kernel::event::Event::Bell);
+      }
+      // SO / SI — charset switching (ignored).
+      0x0E | 0x0F => {}
+      _ => {}
+    }
+  }
+
+  fn csi_dispatch(
+    &mut self,
+    params: &vte::Params,
+    intermediates: &[u8],
+    _ignore: bool,
+    action: char,
+  ) {
+    let params_vec: Vec<u16> = params.iter().flat_map(|sub| sub.iter().copied()).collect();
+    let p = |idx: usize, default: u16| -> u16 {
+      params_vec
+        .get(idx)
+        .copied()
+        .filter(|&v| v != 0)
+        .unwrap_or(default)
+    };
+
+    match action {
+      // CUU — cursor up.
+      'A' => {
+        let n = p(0, 1) as i32;
+        self.cursor.point.line.0 = (self.cursor.point.line.0 - n).max(self.scroll_top as i32);
+        self.pending_wrap = false;
+      }
+      // CUD — cursor down.
+      'B' => {
+        let n = p(0, 1) as i32;
+        self.cursor.point.line.0 = (self.cursor.point.line.0 + n).min(self.scroll_bottom as i32);
+        self.pending_wrap = false;
+      }
+      // CUF — cursor forward (right).
+      'C' => {
+        let n = p(0, 1) as usize;
+        self.cursor.point.column.0 =
+          (self.cursor.point.column.0 + n).min(self.num_cols.saturating_sub(1));
+        self.pending_wrap = false;
+      }
+      // CUB — cursor backward (left).
+      'D' => {
+        let n = p(0, 1) as usize;
+        self.cursor.point.column.0 = self.cursor.point.column.0.saturating_sub(n);
+        self.pending_wrap = false;
+      }
+      // CUP — cursor position.
+      'H' | 'f' => {
+        let row = p(0, 1) as usize;
+        let col = p(1, 1) as usize;
+        self.cursor.point.line.0 =
+          (row.saturating_sub(1)).min(self.num_lines.saturating_sub(1)) as i32;
+        self.cursor.point.column.0 = (col.saturating_sub(1)).min(self.num_cols.saturating_sub(1));
+        self.pending_wrap = false;
+      }
+      // ED — erase in display.
+      'J' => {
+        let mode = p(0, 0);
+        match mode {
+          0 => {
+            // Erase from cursor to end of screen.
             let row = self.cursor.point.line.0 as usize;
             let col = self.cursor.point.column.0;
-            if row < self.num_lines && col < self.num_cols {
-                self.rows[row][col].flags.insert(CellFlags::WRAPLINE);
+            if row < self.num_lines {
+              for c in col..self.num_cols {
+                Self::erase_cell(&mut self.rows[row][c]);
+              }
+              for r in (row + 1)..self.num_lines {
+                for c in 0..self.num_cols {
+                  Self::erase_cell(&mut self.rows[r][c]);
+                }
+              }
             }
-            self.cursor.point.column.0 = 0;
-            self.linefeed();
-            self.pending_wrap = false;
+          }
+          1 => {
+            // Erase from start of screen to cursor.
+            let row = self.cursor.point.line.0 as usize;
+            let col = self.cursor.point.column.0;
+            for r in 0..row {
+              for c in 0..self.num_cols {
+                Self::erase_cell(&mut self.rows[r][c]);
+              }
+            }
+            if row < self.num_lines {
+              for c in 0..=col.min(self.num_cols.saturating_sub(1)) {
+                Self::erase_cell(&mut self.rows[row][c]);
+              }
+            }
+          }
+          2 => {
+            // Erase entire screen.
+            for r in 0..self.num_lines {
+              for c in 0..self.num_cols {
+                Self::erase_cell(&mut self.rows[r][c]);
+              }
+            }
+          }
+          3 => {
+            // Erase screen + scrollback.
+            for r in 0..self.num_lines {
+              for c in 0..self.num_cols {
+                Self::erase_cell(&mut self.rows[r][c]);
+              }
+            }
+            self.scrollback.clear();
+            self.display_offset = 0;
+          }
+          _ => {}
         }
-
+      }
+      // EL — erase in line.
+      'K' => {
+        let mode = p(0, 0);
         let row = self.cursor.point.line.0 as usize;
         let col = self.cursor.point.column.0;
-        if row < self.num_lines && col < self.num_cols {
-            let cell = &mut self.rows[row][col];
-            cell.c = c;
-            cell.fg = self.template_cell.fg.clone();
-            cell.bg = self.template_cell.bg.clone();
-            cell.flags = self.template_cell.flags;
-        }
-
-        if col + 1 < self.num_cols {
-            self.cursor.point.column.0 += 1;
-        } else {
-            self.pending_wrap = true;
-        }
-    }
-
-    fn execute(&mut self, byte: u8) {
-        match byte {
-            // Backspace.
-            0x08 => {
-                self.pending_wrap = false;
-                if self.cursor.point.column.0 > 0 {
-                    self.cursor.point.column.0 -= 1;
-                }
+        if row < self.num_lines {
+          match mode {
+            0 => {
+              for c in col..self.num_cols {
+                Self::erase_cell(&mut self.rows[row][c]);
+              }
             }
-            // Horizontal tab.
-            0x09 => {
-                self.pending_wrap = false;
-                let col = self.cursor.point.column.0;
-                let next = self
-                    .tab_stops
-                    .iter()
-                    .enumerate()
-                    .skip(col + 1)
-                    .find(|(_, stop)| **stop)
-                    .map(|(i, _)| i)
-                    .unwrap_or(self.num_cols.saturating_sub(1));
-                self.cursor.point.column.0 = next;
+            1 => {
+              for c in 0..=col.min(self.num_cols.saturating_sub(1)) {
+                Self::erase_cell(&mut self.rows[row][c]);
+              }
             }
-            // LF / VT / FF — line feed.
-            0x0A | 0x0B | 0x0C => {
-                self.linefeed();
-                self.pending_wrap = false;
+            2 => {
+              for c in 0..self.num_cols {
+                Self::erase_cell(&mut self.rows[row][c]);
+              }
             }
-            // CR — carriage return.
-            0x0D => {
-                self.cursor.point.column.0 = 0;
-                self.pending_wrap = false;
-            }
-            // BEL.
-            0x07 => {
-                self.send_event(terminal_kernel::event::Event::Bell);
-            }
-            // SO / SI — charset switching (ignored).
-            0x0E | 0x0F => {}
             _ => {}
+          }
         }
-    }
-
-    fn csi_dispatch(
-        &mut self,
-        params: &vte::Params,
-        intermediates: &[u8],
-        _ignore: bool,
-        action: char,
-    ) {
-        let params_vec: Vec<u16> = params.iter().flat_map(|sub| sub.iter().copied()).collect();
-        let p = |idx: usize, default: u16| -> u16 {
-            params_vec.get(idx).copied().filter(|&v| v != 0).unwrap_or(default)
+      }
+      // IL — insert lines.
+      'L' => {
+        let n = p(0, 1) as usize;
+        let row = self.cursor.point.line.0 as usize;
+        if row >= self.scroll_top && row <= self.scroll_bottom {
+          for _ in 0..n {
+            if self.scroll_bottom < self.rows.len() {
+              self.rows.remove(self.scroll_bottom);
+            }
+            self.rows.insert(row, blank_row(self.num_cols));
+          }
+        }
+        self.pending_wrap = false;
+      }
+      // DL — delete lines.
+      'M' => {
+        let n = p(0, 1) as usize;
+        let row = self.cursor.point.line.0 as usize;
+        if row >= self.scroll_top && row <= self.scroll_bottom {
+          for _ in 0..n {
+            if row < self.rows.len() {
+              self.rows.remove(row);
+            }
+            self
+              .rows
+              .insert(self.scroll_bottom, blank_row(self.num_cols));
+          }
+        }
+        self.pending_wrap = false;
+      }
+      // DCH — delete characters.
+      'P' => {
+        let n = p(0, 1) as usize;
+        let row = self.cursor.point.line.0 as usize;
+        let col = self.cursor.point.column.0;
+        if row < self.num_lines {
+          for _ in 0..n.min(self.num_cols - col) {
+            if col < self.rows[row].len() {
+              self.rows[row].remove(col);
+              self.rows[row].push(Cell::default());
+            }
+          }
+        }
+      }
+      // ICH — insert characters.
+      '@' => {
+        let n = p(0, 1) as usize;
+        let row = self.cursor.point.line.0 as usize;
+        let col = self.cursor.point.column.0;
+        if row < self.num_lines {
+          for _ in 0..n.min(self.num_cols - col) {
+            self.rows[row].insert(col, Cell::default());
+            self.rows[row].truncate(self.num_cols);
+          }
+        }
+      }
+      // SU — scroll up.
+      'S' => {
+        let n = p(0, 1) as usize;
+        for _ in 0..n {
+          self.scroll_up_in_region();
+        }
+      }
+      // SD — scroll down.
+      'T' => {
+        let n = p(0, 1) as usize;
+        for _ in 0..n {
+          self.scroll_down_in_region();
+        }
+      }
+      // SGR — select graphic rendition.
+      'm' => {
+        self.handle_sgr(&params_vec);
+      }
+      // DECSTBM — set scroll region.
+      'r' => {
+        let top = p(0, 1) as usize;
+        let bottom = p(1, self.num_lines as u16) as usize;
+        self.scroll_top = top.saturating_sub(1).min(self.num_lines.saturating_sub(1));
+        self.scroll_bottom = bottom
+          .saturating_sub(1)
+          .min(self.num_lines.saturating_sub(1));
+        if self.scroll_top >= self.scroll_bottom {
+          self.scroll_top = 0;
+          self.scroll_bottom = self.num_lines.saturating_sub(1);
+        }
+        // Reset cursor to top-left.
+        self.cursor.point.line.0 = 0;
+        self.cursor.point.column.0 = 0;
+        self.pending_wrap = false;
+      }
+      // SM/RM — set/reset mode.
+      'h' | 'l' => {
+        let set = action == 'h';
+        let private = intermediates.first() == Some(&b'?');
+        for &val in &params_vec {
+          if private {
+            self.handle_private_mode(val, set);
+          } else {
+            // Standard modes.
+            match val {
+              4 => {
+                if set {
+                  self.mode.insert(TermMode::INSERT);
+                } else {
+                  self.mode.remove(TermMode::INSERT);
+                }
+              }
+              20 => {
+                if set {
+                  self.mode.insert(TermMode::LINE_FEED_NEW_LINE);
+                } else {
+                  self.mode.remove(TermMode::LINE_FEED_NEW_LINE);
+                }
+              }
+              _ => {}
+            }
+          }
+        }
+      }
+      // CHA — cursor character absolute.
+      'G' | '`' => {
+        let col = p(0, 1) as usize;
+        self.cursor.point.column.0 = col.saturating_sub(1).min(self.num_cols.saturating_sub(1));
+        self.pending_wrap = false;
+      }
+      // VPA — vertical position absolute.
+      'd' => {
+        let row = p(0, 1) as usize;
+        self.cursor.point.line.0 =
+          row.saturating_sub(1).min(self.num_lines.saturating_sub(1)) as i32;
+        self.pending_wrap = false;
+      }
+      // ECH — erase characters.
+      'X' => {
+        let n = p(0, 1) as usize;
+        let row = self.cursor.point.line.0 as usize;
+        let col = self.cursor.point.column.0;
+        if row < self.num_lines {
+          for c in col..(col + n).min(self.num_cols) {
+            Self::erase_cell(&mut self.rows[row][c]);
+          }
+        }
+      }
+      // DECSC (save cursor via CSI s).
+      's' if intermediates.is_empty() => {
+        self.saved_cursor = Some(SavedCursor {
+          point: self.cursor.point,
+          template_cell: self.template_cell.clone(),
+        });
+      }
+      // DECRC (restore cursor via CSI u).
+      'u' if intermediates.is_empty() => {
+        if let Some(saved) = self.saved_cursor.take() {
+          self.cursor.point = saved.point;
+          self.template_cell = saved.template_cell;
+          self.pending_wrap = false;
+        }
+      }
+      // CNL — cursor next line.
+      'E' => {
+        let n = p(0, 1) as i32;
+        self.cursor.point.line.0 = (self.cursor.point.line.0 + n).min(self.scroll_bottom as i32);
+        self.cursor.point.column.0 = 0;
+        self.pending_wrap = false;
+      }
+      // CPL — cursor preceding line.
+      'F' => {
+        let n = p(0, 1) as i32;
+        self.cursor.point.line.0 = (self.cursor.point.line.0 - n).max(self.scroll_top as i32);
+        self.cursor.point.column.0 = 0;
+        self.pending_wrap = false;
+      }
+      // DA — device attributes (respond with VT100-compatible).
+      'c' if intermediates.is_empty() || intermediates == [b'?'] => {
+        // Ignored — DA responses are sent by the PTY filter or not needed.
+      }
+      // DSR — device status report.
+      'n' => {
+        // Ignored — DSR responses are handled externally.
+      }
+      // DECSCUSR — set cursor style.
+      'q' if intermediates.first() == Some(&b' ') => {
+        let style = p(0, 0);
+        self.cursor.style = match style {
+          0 | 1 => CursorStyle {
+            shape: CursorShape::Block,
+            blinking: true,
+          },
+          2 => CursorStyle {
+            shape: CursorShape::Block,
+            blinking: false,
+          },
+          3 => CursorStyle {
+            shape: CursorShape::Underline,
+            blinking: true,
+          },
+          4 => CursorStyle {
+            shape: CursorShape::Underline,
+            blinking: false,
+          },
+          5 => CursorStyle {
+            shape: CursorShape::Beam,
+            blinking: true,
+          },
+          6 => CursorStyle {
+            shape: CursorShape::Beam,
+            blinking: false,
+          },
+          _ => self.cursor.style,
         };
-
-        match action {
-            // CUU — cursor up.
-            'A' => {
-                let n = p(0, 1) as i32;
-                self.cursor.point.line.0 = (self.cursor.point.line.0 - n).max(self.scroll_top as i32);
-                self.pending_wrap = false;
-            }
-            // CUD — cursor down.
-            'B' => {
-                let n = p(0, 1) as i32;
-                self.cursor.point.line.0 = (self.cursor.point.line.0 + n).min(self.scroll_bottom as i32);
-                self.pending_wrap = false;
-            }
-            // CUF — cursor forward (right).
-            'C' => {
-                let n = p(0, 1) as usize;
-                self.cursor.point.column.0 = (self.cursor.point.column.0 + n).min(self.num_cols.saturating_sub(1));
-                self.pending_wrap = false;
-            }
-            // CUB — cursor backward (left).
-            'D' => {
-                let n = p(0, 1) as usize;
-                self.cursor.point.column.0 = self.cursor.point.column.0.saturating_sub(n);
-                self.pending_wrap = false;
-            }
-            // CUP — cursor position.
-            'H' | 'f' => {
-                let row = p(0, 1) as usize;
-                let col = p(1, 1) as usize;
-                self.cursor.point.line.0 = (row.saturating_sub(1)).min(self.num_lines.saturating_sub(1)) as i32;
-                self.cursor.point.column.0 = (col.saturating_sub(1)).min(self.num_cols.saturating_sub(1));
-                self.pending_wrap = false;
-            }
-            // ED — erase in display.
-            'J' => {
-                let mode = p(0, 0);
-                match mode {
-                    0 => {
-                        // Erase from cursor to end of screen.
-                        let row = self.cursor.point.line.0 as usize;
-                        let col = self.cursor.point.column.0;
-                        if row < self.num_lines {
-                            for c in col..self.num_cols {
-                                Self::erase_cell(&mut self.rows[row][c]);
-                            }
-                            for r in (row + 1)..self.num_lines {
-                                for c in 0..self.num_cols {
-                                    Self::erase_cell(&mut self.rows[r][c]);
-                                }
-                            }
-                        }
-                    }
-                    1 => {
-                        // Erase from start of screen to cursor.
-                        let row = self.cursor.point.line.0 as usize;
-                        let col = self.cursor.point.column.0;
-                        for r in 0..row {
-                            for c in 0..self.num_cols {
-                                Self::erase_cell(&mut self.rows[r][c]);
-                            }
-                        }
-                        if row < self.num_lines {
-                            for c in 0..=col.min(self.num_cols.saturating_sub(1)) {
-                                Self::erase_cell(&mut self.rows[row][c]);
-                            }
-                        }
-                    }
-                    2 => {
-                        // Erase entire screen.
-                        for r in 0..self.num_lines {
-                            for c in 0..self.num_cols {
-                                Self::erase_cell(&mut self.rows[r][c]);
-                            }
-                        }
-                    }
-                    3 => {
-                        // Erase screen + scrollback.
-                        for r in 0..self.num_lines {
-                            for c in 0..self.num_cols {
-                                Self::erase_cell(&mut self.rows[r][c]);
-                            }
-                        }
-                        self.scrollback.clear();
-                        self.display_offset = 0;
-                    }
-                    _ => {}
-                }
-            }
-            // EL — erase in line.
-            'K' => {
-                let mode = p(0, 0);
-                let row = self.cursor.point.line.0 as usize;
-                let col = self.cursor.point.column.0;
-                if row < self.num_lines {
-                    match mode {
-                        0 => {
-                            for c in col..self.num_cols {
-                                Self::erase_cell(&mut self.rows[row][c]);
-                            }
-                        }
-                        1 => {
-                            for c in 0..=col.min(self.num_cols.saturating_sub(1)) {
-                                Self::erase_cell(&mut self.rows[row][c]);
-                            }
-                        }
-                        2 => {
-                            for c in 0..self.num_cols {
-                                Self::erase_cell(&mut self.rows[row][c]);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            // IL — insert lines.
-            'L' => {
-                let n = p(0, 1) as usize;
-                let row = self.cursor.point.line.0 as usize;
-                if row >= self.scroll_top && row <= self.scroll_bottom {
-                    for _ in 0..n {
-                        if self.scroll_bottom < self.rows.len() {
-                            self.rows.remove(self.scroll_bottom);
-                        }
-                        self.rows.insert(row, blank_row(self.num_cols));
-                    }
-                }
-                self.pending_wrap = false;
-            }
-            // DL — delete lines.
-            'M' => {
-                let n = p(0, 1) as usize;
-                let row = self.cursor.point.line.0 as usize;
-                if row >= self.scroll_top && row <= self.scroll_bottom {
-                    for _ in 0..n {
-                        if row < self.rows.len() {
-                            self.rows.remove(row);
-                        }
-                        self.rows.insert(self.scroll_bottom, blank_row(self.num_cols));
-                    }
-                }
-                self.pending_wrap = false;
-            }
-            // DCH — delete characters.
-            'P' => {
-                let n = p(0, 1) as usize;
-                let row = self.cursor.point.line.0 as usize;
-                let col = self.cursor.point.column.0;
-                if row < self.num_lines {
-                    for _ in 0..n.min(self.num_cols - col) {
-                        if col < self.rows[row].len() {
-                            self.rows[row].remove(col);
-                            self.rows[row].push(Cell::default());
-                        }
-                    }
-                }
-            }
-            // ICH — insert characters.
-            '@' => {
-                let n = p(0, 1) as usize;
-                let row = self.cursor.point.line.0 as usize;
-                let col = self.cursor.point.column.0;
-                if row < self.num_lines {
-                    for _ in 0..n.min(self.num_cols - col) {
-                        self.rows[row].insert(col, Cell::default());
-                        self.rows[row].truncate(self.num_cols);
-                    }
-                }
-            }
-            // SU — scroll up.
-            'S' => {
-                let n = p(0, 1) as usize;
-                for _ in 0..n {
-                    self.scroll_up_in_region();
-                }
-            }
-            // SD — scroll down.
-            'T' => {
-                let n = p(0, 1) as usize;
-                for _ in 0..n {
-                    self.scroll_down_in_region();
-                }
-            }
-            // SGR — select graphic rendition.
-            'm' => {
-                self.handle_sgr(&params_vec);
-            }
-            // DECSTBM — set scroll region.
-            'r' => {
-                let top = p(0, 1) as usize;
-                let bottom = p(1, self.num_lines as u16) as usize;
-                self.scroll_top = top.saturating_sub(1).min(self.num_lines.saturating_sub(1));
-                self.scroll_bottom = bottom.saturating_sub(1).min(self.num_lines.saturating_sub(1));
-                if self.scroll_top >= self.scroll_bottom {
-                    self.scroll_top = 0;
-                    self.scroll_bottom = self.num_lines.saturating_sub(1);
-                }
-                // Reset cursor to top-left.
-                self.cursor.point.line.0 = 0;
-                self.cursor.point.column.0 = 0;
-                self.pending_wrap = false;
-            }
-            // SM/RM — set/reset mode.
-            'h' | 'l' => {
-                let set = action == 'h';
-                let private = intermediates.first() == Some(&b'?');
-                for &val in &params_vec {
-                    if private {
-                        self.handle_private_mode(val, set);
-                    } else {
-                        // Standard modes.
-                        match val {
-                            4 => {
-                                if set {
-                                    self.mode.insert(TermMode::INSERT);
-                                } else {
-                                    self.mode.remove(TermMode::INSERT);
-                                }
-                            }
-                            20 => {
-                                if set {
-                                    self.mode.insert(TermMode::LINE_FEED_NEW_LINE);
-                                } else {
-                                    self.mode.remove(TermMode::LINE_FEED_NEW_LINE);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            // CHA — cursor character absolute.
-            'G' | '`' => {
-                let col = p(0, 1) as usize;
-                self.cursor.point.column.0 = col.saturating_sub(1).min(self.num_cols.saturating_sub(1));
-                self.pending_wrap = false;
-            }
-            // VPA — vertical position absolute.
-            'd' => {
-                let row = p(0, 1) as usize;
-                self.cursor.point.line.0 = row.saturating_sub(1).min(self.num_lines.saturating_sub(1)) as i32;
-                self.pending_wrap = false;
-            }
-            // ECH — erase characters.
-            'X' => {
-                let n = p(0, 1) as usize;
-                let row = self.cursor.point.line.0 as usize;
-                let col = self.cursor.point.column.0;
-                if row < self.num_lines {
-                    for c in col..(col + n).min(self.num_cols) {
-                        Self::erase_cell(&mut self.rows[row][c]);
-                    }
-                }
-            }
-            // DECSC (save cursor via CSI s).
-            's' if intermediates.is_empty() => {
-                self.saved_cursor = Some(SavedCursor {
-                    point: self.cursor.point,
-                    template_cell: self.template_cell.clone(),
-                });
-            }
-            // DECRC (restore cursor via CSI u).
-            'u' if intermediates.is_empty() => {
-                if let Some(saved) = self.saved_cursor.take() {
-                    self.cursor.point = saved.point;
-                    self.template_cell = saved.template_cell;
-                    self.pending_wrap = false;
-                }
-            }
-            // CNL — cursor next line.
-            'E' => {
-                let n = p(0, 1) as i32;
-                self.cursor.point.line.0 = (self.cursor.point.line.0 + n).min(self.scroll_bottom as i32);
-                self.cursor.point.column.0 = 0;
-                self.pending_wrap = false;
-            }
-            // CPL — cursor preceding line.
-            'F' => {
-                let n = p(0, 1) as i32;
-                self.cursor.point.line.0 = (self.cursor.point.line.0 - n).max(self.scroll_top as i32);
-                self.cursor.point.column.0 = 0;
-                self.pending_wrap = false;
-            }
-            // DA — device attributes (respond with VT100-compatible).
-            'c' if intermediates.is_empty() || intermediates == [b'?'] => {
-                // Ignored — DA responses are sent by the PTY filter or not needed.
-            }
-            // DSR — device status report.
-            'n' => {
-                // Ignored — DSR responses are handled externally.
-            }
-            // DECSCUSR — set cursor style.
-            'q' if intermediates.first() == Some(&b' ') => {
-                let style = p(0, 0);
-                self.cursor.style = match style {
-                    0 | 1 => CursorStyle { shape: CursorShape::Block, blinking: true },
-                    2 => CursorStyle { shape: CursorShape::Block, blinking: false },
-                    3 => CursorStyle { shape: CursorShape::Underline, blinking: true },
-                    4 => CursorStyle { shape: CursorShape::Underline, blinking: false },
-                    5 => CursorStyle { shape: CursorShape::Beam, blinking: true },
-                    6 => CursorStyle { shape: CursorShape::Beam, blinking: false },
-                    _ => self.cursor.style,
-                };
-            }
-            _ => {}
-        }
+      }
+      _ => {}
     }
+  }
 
-    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
-        match (byte, intermediates) {
-            // RI — reverse index.
-            (b'M', []) => {
-                self.reverse_index();
-                self.pending_wrap = false;
-            }
-            // IND — index (line feed).
-            (b'D', []) => {
-                self.linefeed();
-                self.pending_wrap = false;
-            }
-            // NEL — next line.
-            (b'E', []) => {
-                self.linefeed();
-                self.cursor.point.column.0 = 0;
-                self.pending_wrap = false;
-            }
-            // DECSC — save cursor.
-            (b'7', []) => {
-                self.saved_cursor = Some(SavedCursor {
-                    point: self.cursor.point,
-                    template_cell: self.template_cell.clone(),
-                });
-            }
-            // DECRC — restore cursor.
-            (b'8', []) => {
-                if let Some(saved) = self.saved_cursor.take() {
-                    self.cursor.point = saved.point;
-                    self.template_cell = saved.template_cell;
-                    self.pending_wrap = false;
-                }
-            }
-            // HTS — horizontal tab set.
-            (b'H', []) => {
-                let col = self.cursor.point.column.0;
-                if col < self.tab_stops.len() {
-                    self.tab_stops[col] = true;
-                }
-            }
-            _ => {}
+  fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
+    match (byte, intermediates) {
+      // RI — reverse index.
+      (b'M', []) => {
+        self.reverse_index();
+        self.pending_wrap = false;
+      }
+      // IND — index (line feed).
+      (b'D', []) => {
+        self.linefeed();
+        self.pending_wrap = false;
+      }
+      // NEL — next line.
+      (b'E', []) => {
+        self.linefeed();
+        self.cursor.point.column.0 = 0;
+        self.pending_wrap = false;
+      }
+      // DECSC — save cursor.
+      (b'7', []) => {
+        self.saved_cursor = Some(SavedCursor {
+          point: self.cursor.point,
+          template_cell: self.template_cell.clone(),
+        });
+      }
+      // DECRC — restore cursor.
+      (b'8', []) => {
+        if let Some(saved) = self.saved_cursor.take() {
+          self.cursor.point = saved.point;
+          self.template_cell = saved.template_cell;
+          self.pending_wrap = false;
         }
+      }
+      // HTS — horizontal tab set.
+      (b'H', []) => {
+        let col = self.cursor.point.column.0;
+        if col < self.tab_stops.len() {
+          self.tab_stops[col] = true;
+        }
+      }
+      _ => {}
     }
+  }
 
-    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        if params.is_empty() {
-            return;
-        }
-        let cmd = std::str::from_utf8(params[0]).unwrap_or("");
-        match cmd {
-            "0" | "2" => {
-                // Set window title.
-                if let Some(title) = params.get(1) {
-                    self.title = String::from_utf8_lossy(title).to_string();
-                    self.send_event(terminal_kernel::event::Event::Title(self.title.clone()));
-                }
-            }
-            "7" => {
-                // Set working directory.
-                if let Some(uri) = params.get(1) {
-                    let uri_str = String::from_utf8_lossy(uri);
-                    // Parse file:// URI.
-                    if let Some(path) = uri_str.strip_prefix("file://") {
-                        // Strip hostname if present.
-                        let path = if let Some(idx) = path.find('/') {
-                            &path[idx..]
-                        } else {
-                            path
-                        };
-                        if let Some(tx) = &self.osc7_tx {
-                            let _ = tx.send(std::path::PathBuf::from(path));
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
+  fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+    if params.is_empty() {
+      return;
     }
+    let cmd = std::str::from_utf8(params[0]).unwrap_or("");
+    match cmd {
+      "0" | "2" => {
+        // Set window title.
+        if let Some(title) = params.get(1) {
+          self.title = String::from_utf8_lossy(title).to_string();
+          self.send_event(terminal_kernel::event::Event::Title(self.title.clone()));
+        }
+      }
+      "7" => {
+        // Set working directory.
+        if let Some(uri) = params.get(1) {
+          let uri_str = String::from_utf8_lossy(uri);
+          // Parse file:// URI.
+          if let Some(path) = uri_str.strip_prefix("file://") {
+            // Strip hostname if present.
+            let path = if let Some(idx) = path.find('/') {
+              &path[idx..]
+            } else {
+              path
+            };
+            if let Some(tx) = &self.osc7_tx {
+              let _ = tx.send(std::path::PathBuf::from(path));
+            }
+          }
+        }
+      }
+      _ => {}
+    }
+  }
 
-    fn hook(&mut self, _params: &vte::Params, _intermediates: &[u8], _ignore: bool, _action: char) {
-    }
-    fn put(&mut self, _byte: u8) {}
-    fn unhook(&mut self) {}
+  fn hook(&mut self, _params: &vte::Params, _intermediates: &[u8], _ignore: bool, _action: char) {}
+  fn put(&mut self, _byte: u8) {}
+  fn unhook(&mut self) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -735,228 +764,225 @@ impl vte::Perform for VteTermInner {
 // ---------------------------------------------------------------------------
 
 impl VteTermInner {
-    fn handle_sgr(&mut self, params: &[u16]) {
-        if params.is_empty() {
-            self.reset_sgr();
-            return;
-        }
-        let mut i = 0;
-        while i < params.len() {
-            match params[i] {
-                0 => self.reset_sgr(),
-                1 => self.template_cell.flags.insert(CellFlags::BOLD),
-                2 => self.template_cell.flags.insert(CellFlags::DIM),
-                3 => self.template_cell.flags.insert(CellFlags::ITALIC),
-                4 => self.template_cell.flags.insert(CellFlags::UNDERLINE),
-                7 => self.template_cell.flags.insert(CellFlags::INVERSE),
-                8 => self.template_cell.flags.insert(CellFlags::HIDDEN),
-                9 => self.template_cell.flags.insert(CellFlags::STRIKEOUT),
-                22 => self
-                    .template_cell
-                    .flags
-                    .remove(CellFlags::BOLD | CellFlags::DIM),
-                23 => self.template_cell.flags.remove(CellFlags::ITALIC),
-                24 => self
-                    .template_cell
-                    .flags
-                    .remove(CellFlags::ALL_UNDERLINES),
-                27 => self.template_cell.flags.remove(CellFlags::INVERSE),
-                28 => self.template_cell.flags.remove(CellFlags::HIDDEN),
-                29 => self.template_cell.flags.remove(CellFlags::STRIKEOUT),
-                // Foreground colours.
-                30..=37 => {
-                    self.template_cell.fg = Color::Indexed(params[i] as u8 - 30);
-                }
-                38 => {
-                    i += 1;
-                    self.parse_extended_color(params, &mut i, true);
-                    continue; // `parse_extended_color` advances `i`.
-                }
-                39 => {
-                    self.template_cell.fg = Color::Named(NamedColor::Foreground);
-                }
-                // Background colours.
-                40..=47 => {
-                    self.template_cell.bg = Color::Indexed(params[i] as u8 - 40);
-                }
-                48 => {
-                    i += 1;
-                    self.parse_extended_color(params, &mut i, false);
-                    continue;
-                }
-                49 => {
-                    self.template_cell.bg = Color::Named(NamedColor::Background);
-                }
-                // Bright foreground.
-                90..=97 => {
-                    self.template_cell.fg = Color::Indexed(params[i] as u8 - 90 + 8);
-                }
-                // Bright background.
-                100..=107 => {
-                    self.template_cell.bg = Color::Indexed(params[i] as u8 - 100 + 8);
-                }
-                _ => {}
-            }
-            i += 1;
-        }
+  fn handle_sgr(&mut self, params: &[u16]) {
+    if params.is_empty() {
+      self.reset_sgr();
+      return;
     }
+    let mut i = 0;
+    while i < params.len() {
+      match params[i] {
+        0 => self.reset_sgr(),
+        1 => self.template_cell.flags.insert(CellFlags::BOLD),
+        2 => self.template_cell.flags.insert(CellFlags::DIM),
+        3 => self.template_cell.flags.insert(CellFlags::ITALIC),
+        4 => self.template_cell.flags.insert(CellFlags::UNDERLINE),
+        7 => self.template_cell.flags.insert(CellFlags::INVERSE),
+        8 => self.template_cell.flags.insert(CellFlags::HIDDEN),
+        9 => self.template_cell.flags.insert(CellFlags::STRIKEOUT),
+        22 => self
+          .template_cell
+          .flags
+          .remove(CellFlags::BOLD | CellFlags::DIM),
+        23 => self.template_cell.flags.remove(CellFlags::ITALIC),
+        24 => self.template_cell.flags.remove(CellFlags::ALL_UNDERLINES),
+        27 => self.template_cell.flags.remove(CellFlags::INVERSE),
+        28 => self.template_cell.flags.remove(CellFlags::HIDDEN),
+        29 => self.template_cell.flags.remove(CellFlags::STRIKEOUT),
+        // Foreground colours.
+        30..=37 => {
+          self.template_cell.fg = Color::Indexed(params[i] as u8 - 30);
+        }
+        38 => {
+          i += 1;
+          self.parse_extended_color(params, &mut i, true);
+          continue; // `parse_extended_color` advances `i`.
+        }
+        39 => {
+          self.template_cell.fg = Color::Named(NamedColor::Foreground);
+        }
+        // Background colours.
+        40..=47 => {
+          self.template_cell.bg = Color::Indexed(params[i] as u8 - 40);
+        }
+        48 => {
+          i += 1;
+          self.parse_extended_color(params, &mut i, false);
+          continue;
+        }
+        49 => {
+          self.template_cell.bg = Color::Named(NamedColor::Background);
+        }
+        // Bright foreground.
+        90..=97 => {
+          self.template_cell.fg = Color::Indexed(params[i] as u8 - 90 + 8);
+        }
+        // Bright background.
+        100..=107 => {
+          self.template_cell.bg = Color::Indexed(params[i] as u8 - 100 + 8);
+        }
+        _ => {}
+      }
+      i += 1;
+    }
+  }
 
-    fn reset_sgr(&mut self) {
-        self.template_cell.fg = Color::Named(NamedColor::Foreground);
-        self.template_cell.bg = Color::Named(NamedColor::Background);
-        self.template_cell.flags = CellFlags::empty();
-    }
+  fn reset_sgr(&mut self) {
+    self.template_cell.fg = Color::Named(NamedColor::Foreground);
+    self.template_cell.bg = Color::Named(NamedColor::Background);
+    self.template_cell.flags = CellFlags::empty();
+  }
 
-    /// Parse `38;5;N` / `38;2;R;G;B` (and `48` equivalents).
-    fn parse_extended_color(&mut self, params: &[u16], i: &mut usize, is_fg: bool) {
-        if *i >= params.len() {
-            return;
-        }
-        match params[*i] {
-            // 256-colour.
-            5 => {
-                *i += 1;
-                if *i < params.len() {
-                    let color = Color::Indexed(params[*i] as u8);
-                    if is_fg {
-                        self.template_cell.fg = color;
-                    } else {
-                        self.template_cell.bg = color;
-                    }
-                    *i += 1;
-                }
-            }
-            // RGB.
-            2 => {
-                if *i + 3 < params.len() {
-                    let r = params[*i + 1] as u8;
-                    let g = params[*i + 2] as u8;
-                    let b = params[*i + 3] as u8;
-                    let color = Color::Spec(Rgb { r, g, b });
-                    if is_fg {
-                        self.template_cell.fg = color;
-                    } else {
-                        self.template_cell.bg = color;
-                    }
-                    *i += 4;
-                }
-            }
-            _ => {
-                *i += 1;
-            }
-        }
+  /// Parse `38;5;N` / `38;2;R;G;B` (and `48` equivalents).
+  fn parse_extended_color(&mut self, params: &[u16], i: &mut usize, is_fg: bool) {
+    if *i >= params.len() {
+      return;
     }
+    match params[*i] {
+      // 256-colour.
+      5 => {
+        *i += 1;
+        if *i < params.len() {
+          let color = Color::Indexed(params[*i] as u8);
+          if is_fg {
+            self.template_cell.fg = color;
+          } else {
+            self.template_cell.bg = color;
+          }
+          *i += 1;
+        }
+      }
+      // RGB.
+      2 => {
+        if *i + 3 < params.len() {
+          let r = params[*i + 1] as u8;
+          let g = params[*i + 2] as u8;
+          let b = params[*i + 3] as u8;
+          let color = Color::Spec(Rgb { r, g, b });
+          if is_fg {
+            self.template_cell.fg = color;
+          } else {
+            self.template_cell.bg = color;
+          }
+          *i += 4;
+        }
+      }
+      _ => {
+        *i += 1;
+      }
+    }
+  }
 
-    fn handle_private_mode(&mut self, mode: u16, set: bool) {
-        match mode {
-            // DECCKM — application cursor keys.
-            1 => {
-                if set {
-                    self.mode.insert(TermMode::APP_CURSOR);
-                } else {
-                    self.mode.remove(TermMode::APP_CURSOR);
-                }
-            }
-            // DECAWM — auto-wrap mode.
-            7 => {
-                if set {
-                    self.mode.insert(TermMode::LINE_WRAP);
-                } else {
-                    self.mode.remove(TermMode::LINE_WRAP);
-                }
-            }
-            // Cursor blink.
-            12 => {
-                self.cursor.style.blinking = set;
-            }
-            // DECTCEM — show cursor.
-            25 => {
-                if set {
-                    self.mode.insert(TermMode::SHOW_CURSOR);
-                } else {
-                    self.mode.remove(TermMode::SHOW_CURSOR);
-                }
-            }
-            // Alternate screen buffer.
-            47 | 1047 => {
-                if set {
-                    self.enter_alt_screen();
-                } else {
-                    self.exit_alt_screen();
-                }
-            }
-            // 1049 — alternate screen + save/restore cursor.
-            1049 => {
-                if set {
-                    self.saved_cursor = Some(SavedCursor {
-                        point: self.cursor.point,
-                        template_cell: self.template_cell.clone(),
-                    });
-                    self.enter_alt_screen();
-                } else {
-                    self.exit_alt_screen();
-                    if let Some(saved) = self.saved_cursor.take() {
-                        self.cursor.point = saved.point;
-                        self.template_cell = saved.template_cell;
-                    }
-                }
-            }
-            // Bracketed paste.
-            2004 => {
-                if set {
-                    self.mode.insert(TermMode::BRACKETED_PASTE);
-                } else {
-                    self.mode.remove(TermMode::BRACKETED_PASTE);
-                }
-            }
-            // Mouse modes.
-            1000 => {
-                if set {
-                    self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
-                } else {
-                    self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
-                }
-            }
-            1002 => {
-                if set {
-                    self.mode.insert(TermMode::MOUSE_DRAG);
-                } else {
-                    self.mode.remove(TermMode::MOUSE_DRAG);
-                }
-            }
-            1003 => {
-                if set {
-                    self.mode.insert(TermMode::MOUSE_MOTION);
-                } else {
-                    self.mode.remove(TermMode::MOUSE_MOTION);
-                }
-            }
-            1006 => {
-                if set {
-                    self.mode.insert(TermMode::SGR_MOUSE);
-                } else {
-                    self.mode.remove(TermMode::SGR_MOUSE);
-                }
-            }
-            // Alternate scroll mode.
-            1007 => {
-                if set {
-                    self.mode.insert(TermMode::ALTERNATE_SCROLL);
-                } else {
-                    self.mode.remove(TermMode::ALTERNATE_SCROLL);
-                }
-            }
-            // Focus in/out events.
-            1004 => {
-                if set {
-                    self.mode.insert(TermMode::FOCUS_IN_OUT);
-                } else {
-                    self.mode.remove(TermMode::FOCUS_IN_OUT);
-                }
-            }
-            _ => {}
+  fn handle_private_mode(&mut self, mode: u16, set: bool) {
+    match mode {
+      // DECCKM — application cursor keys.
+      1 => {
+        if set {
+          self.mode.insert(TermMode::APP_CURSOR);
+        } else {
+          self.mode.remove(TermMode::APP_CURSOR);
         }
+      }
+      // DECAWM — auto-wrap mode.
+      7 => {
+        if set {
+          self.mode.insert(TermMode::LINE_WRAP);
+        } else {
+          self.mode.remove(TermMode::LINE_WRAP);
+        }
+      }
+      // Cursor blink.
+      12 => {
+        self.cursor.style.blinking = set;
+      }
+      // DECTCEM — show cursor.
+      25 => {
+        if set {
+          self.mode.insert(TermMode::SHOW_CURSOR);
+        } else {
+          self.mode.remove(TermMode::SHOW_CURSOR);
+        }
+      }
+      // Alternate screen buffer.
+      47 | 1047 => {
+        if set {
+          self.enter_alt_screen();
+        } else {
+          self.exit_alt_screen();
+        }
+      }
+      // 1049 — alternate screen + save/restore cursor.
+      1049 => {
+        if set {
+          self.saved_cursor = Some(SavedCursor {
+            point: self.cursor.point,
+            template_cell: self.template_cell.clone(),
+          });
+          self.enter_alt_screen();
+        } else {
+          self.exit_alt_screen();
+          if let Some(saved) = self.saved_cursor.take() {
+            self.cursor.point = saved.point;
+            self.template_cell = saved.template_cell;
+          }
+        }
+      }
+      // Bracketed paste.
+      2004 => {
+        if set {
+          self.mode.insert(TermMode::BRACKETED_PASTE);
+        } else {
+          self.mode.remove(TermMode::BRACKETED_PASTE);
+        }
+      }
+      // Mouse modes.
+      1000 => {
+        if set {
+          self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
+        } else {
+          self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
+        }
+      }
+      1002 => {
+        if set {
+          self.mode.insert(TermMode::MOUSE_DRAG);
+        } else {
+          self.mode.remove(TermMode::MOUSE_DRAG);
+        }
+      }
+      1003 => {
+        if set {
+          self.mode.insert(TermMode::MOUSE_MOTION);
+        } else {
+          self.mode.remove(TermMode::MOUSE_MOTION);
+        }
+      }
+      1006 => {
+        if set {
+          self.mode.insert(TermMode::SGR_MOUSE);
+        } else {
+          self.mode.remove(TermMode::SGR_MOUSE);
+        }
+      }
+      // Alternate scroll mode.
+      1007 => {
+        if set {
+          self.mode.insert(TermMode::ALTERNATE_SCROLL);
+        } else {
+          self.mode.remove(TermMode::ALTERNATE_SCROLL);
+        }
+      }
+      // Focus in/out events.
+      1004 => {
+        if set {
+          self.mode.insert(TermMode::FOCUS_IN_OUT);
+        } else {
+          self.mode.remove(TermMode::FOCUS_IN_OUT);
+        }
+      }
+      _ => {}
     }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -964,18 +990,18 @@ impl VteTermInner {
 // ---------------------------------------------------------------------------
 
 pub struct VteBackend {
-    state: Arc<Mutex<VteTermInner>>,
+  state: Arc<Mutex<VteTermInner>>,
 }
 
 impl VteBackend {
-    pub fn new(state: Arc<Mutex<VteTermInner>>) -> Self {
-        Self { state }
-    }
+  pub fn new(state: Arc<Mutex<VteTermInner>>) -> Self {
+    Self { state }
+  }
 
-    #[allow(dead_code)]
-    pub fn state(&self) -> &Arc<Mutex<VteTermInner>> {
-        &self.state
-    }
+  #[allow(dead_code)]
+  pub fn state(&self) -> &Arc<Mutex<VteTermInner>> {
+    &self.state
+  }
 }
 
 // SAFETY: parking_lot::Mutex is Send + Sync.
@@ -983,468 +1009,470 @@ unsafe impl Send for VteBackend {}
 unsafe impl Sync for VteBackend {}
 
 impl TerminalBackend for VteBackend {
-    fn history_size(&self) -> usize {
-        self.state.lock().scrollback.len()
+  fn history_size(&self) -> usize {
+    self.state.lock().scrollback.len()
+  }
+
+  fn screen_lines(&self) -> usize {
+    self.state.lock().num_lines
+  }
+
+  fn columns(&self) -> usize {
+    self.state.lock().num_cols
+  }
+
+  fn topmost_line(&self) -> Line {
+    let s = self.state.lock();
+    Line(-(s.scrollback.len() as i32))
+  }
+
+  fn bottommost_line(&self) -> Line {
+    let s = self.state.lock();
+    Line(s.num_lines as i32 - 1)
+  }
+
+  fn last_column(&self) -> Column {
+    let s = self.state.lock();
+    Column(s.num_cols.saturating_sub(1))
+  }
+
+  fn cell_at(&self, point: AlacPoint) -> Cell {
+    let s = self.state.lock();
+    let line = point.line.0;
+    let col = point.column.0;
+
+    if line < 0 {
+      // Scrollback region.
+      let sb_idx = s.scrollback.len() as i32 + line;
+      if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+        let row = &s.scrollback[sb_idx as usize];
+        if col < row.len() {
+          return row[col].clone();
+        }
+      }
+    } else {
+      let row_idx = line as usize;
+      if row_idx < s.num_lines && col < s.num_cols {
+        return s.rows[row_idx][col].clone();
+      }
     }
+    Cell::default()
+  }
 
-    fn screen_lines(&self) -> usize {
-        self.state.lock().num_lines
-    }
+  fn display_offset(&self) -> usize {
+    self.state.lock().display_offset
+  }
 
-    fn columns(&self) -> usize {
-        self.state.lock().num_cols
-    }
+  fn cursor_point(&self) -> AlacPoint {
+    self.state.lock().cursor.point
+  }
 
-    fn topmost_line(&self) -> Line {
-        let s = self.state.lock();
-        Line(-(s.scrollback.len() as i32))
-    }
+  fn cursor_style(&self) -> CursorStyle {
+    self.state.lock().cursor.style
+  }
 
-    fn bottommost_line(&self) -> Line {
-        let s = self.state.lock();
-        Line(s.num_lines as i32 - 1)
-    }
+  fn renderable_snapshot(&self) -> RenderableSnapshot {
+    let s = self.state.lock();
+    let offset = s.display_offset;
+    let mut cells = Vec::new();
 
-    fn last_column(&self) -> Column {
-        let s = self.state.lock();
-        Column(s.num_cols.saturating_sub(1))
-    }
-
-    fn cell_at(&self, point: AlacPoint) -> Cell {
-        let s = self.state.lock();
-        let line = point.line.0;
-        let col = point.column.0;
-
-        if line < 0 {
-            // Scrollback region.
-            let sb_idx = s.scrollback.len() as i32 + line;
-            if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-                let row = &s.scrollback[sb_idx as usize];
-                if col < row.len() {
-                    return row[col].clone();
-                }
-            }
+    for vis_row in 0..s.num_lines {
+      // Map visible row to absolute line.
+      let abs_line = vis_row as i32 - offset as i32;
+      for col in 0..s.num_cols {
+        let cell = if abs_line < 0 {
+          let sb_idx = s.scrollback.len() as i32 + abs_line;
+          if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+            s.scrollback[sb_idx as usize]
+              .get(col)
+              .cloned()
+              .unwrap_or_default()
+          } else {
+            Cell::default()
+          }
         } else {
-            let row_idx = line as usize;
-            if row_idx < s.num_lines && col < s.num_cols {
-                return s.rows[row_idx][col].clone();
-            }
-        }
-        Cell::default()
-    }
-
-    fn display_offset(&self) -> usize {
-        self.state.lock().display_offset
-    }
-
-    fn cursor_point(&self) -> AlacPoint {
-        self.state.lock().cursor.point
-    }
-
-    fn cursor_style(&self) -> CursorStyle {
-        self.state.lock().cursor.style
-    }
-
-    fn renderable_snapshot(&self) -> RenderableSnapshot {
-        let s = self.state.lock();
-        let offset = s.display_offset;
-        let mut cells = Vec::new();
-
-        for vis_row in 0..s.num_lines {
-            // Map visible row to absolute line.
-            let abs_line = vis_row as i32 - offset as i32;
-            for col in 0..s.num_cols {
-                let cell = if abs_line < 0 {
-                    let sb_idx = s.scrollback.len() as i32 + abs_line;
-                    if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-                        s.scrollback[sb_idx as usize]
-                            .get(col)
-                            .cloned()
-                            .unwrap_or_default()
-                    } else {
-                        Cell::default()
-                    }
-                } else {
-                    let row_idx = abs_line as usize;
-                    if row_idx < s.num_lines {
-                        s.rows[row_idx].get(col).cloned().unwrap_or_default()
-                    } else {
-                        Cell::default()
-                    }
-                };
-
-                let point = AlacPoint::new(
-                    Line(abs_line),
-                    Column(col),
-                );
-                cells.push((point, cell));
-            }
-        }
-
-        let cursor = RenderableCursor {
-            shape: s.cursor.style.shape,
-            point: s.cursor.point,
+          let row_idx = abs_line as usize;
+          if row_idx < s.num_lines {
+            s.rows[row_idx].get(col).cloned().unwrap_or_default()
+          } else {
+            Cell::default()
+          }
         };
 
-        let selection = s.selection.as_ref().and_then(|sel| {
-            // Approximate selection range from Selection.
-            // Selection doesn't expose a to_range without Term, so we return None.
-            let _ = sel;
-            None
-        });
-
-        RenderableSnapshot {
-            cells,
-            mode: s.mode,
-            display_offset: offset,
-            cursor,
-            selection,
-        }
+        let point = AlacPoint::new(Line(abs_line), Column(col));
+        cells.push((point, cell));
+      }
     }
 
-    fn color_at(&self, index: usize) -> Option<Rgb> {
-        let s = self.state.lock();
-        if index < 256 { s.colors[index] } else { None }
+    let cursor = RenderableCursor {
+      shape: s.cursor.style.shape,
+      point: s.cursor.point,
+    };
+
+    let selection = s.selection.as_ref().and_then(|sel| {
+      // Approximate selection range from Selection.
+      // Selection doesn't expose a to_range without Term, so we return None.
+      let _ = sel;
+      None
+    });
+
+    RenderableSnapshot {
+      cells,
+      mode: s.mode,
+      display_offset: offset,
+      cursor,
+      selection,
     }
+  }
 
-    fn selection_to_string(&self) -> Option<String> {
-        let s = self.state.lock();
-        let sel = s.selection.as_ref()?;
-        // Extract text between selection anchors.
-        // Selection exposes region start/end via the public API.
-        let _ = sel;
-        // For now, gather text by iterating the bounding box.
-        None
-    }
+  fn color_at(&self, index: usize) -> Option<Rgb> {
+    let s = self.state.lock();
+    if index < 256 { s.colors[index] } else { None }
+  }
 
-    fn bounds_to_string(&self, start: AlacPoint, end: AlacPoint) -> String {
-        let s = self.state.lock();
-        let mut result = String::new();
+  fn selection_to_string(&self) -> Option<String> {
+    let s = self.state.lock();
+    let sel = s.selection.as_ref()?;
+    // Extract text between selection anchors.
+    // Selection exposes region start/end via the public API.
+    let _ = sel;
+    // For now, gather text by iterating the bounding box.
+    None
+  }
 
-        let start_line = start.line.0;
-        let end_line = end.line.0;
+  fn bounds_to_string(&self, start: AlacPoint, end: AlacPoint) -> String {
+    let s = self.state.lock();
+    let mut result = String::new();
 
-        for line in start_line..=end_line {
-            let start_col = if line == start_line { start.column.0 } else { 0 };
-            let end_col = if line == end_line {
-                end.column.0
-            } else {
-                s.num_cols.saturating_sub(1)
-            };
+    let start_line = start.line.0;
+    let end_line = end.line.0;
 
-            for col in start_col..=end_col {
-                let cell = if line < 0 {
-                    let sb_idx = s.scrollback.len() as i32 + line;
-                    if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-                        s.scrollback[sb_idx as usize]
-                            .get(col)
-                            .cloned()
-                            .unwrap_or_default()
-                    } else {
-                        Cell::default()
-                    }
-                } else {
-                    let row_idx = line as usize;
-                    if row_idx < s.num_lines && col < s.num_cols {
-                        s.rows[row_idx][col].clone()
-                    } else {
-                        Cell::default()
-                    }
-                };
+    for line in start_line..=end_line {
+      let start_col = if line == start_line {
+        start.column.0
+      } else {
+        0
+      };
+      let end_col = if line == end_line {
+        end.column.0
+      } else {
+        s.num_cols.saturating_sub(1)
+      };
 
-                if !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-                    result.push(cell.c);
-                }
-            }
-
-            // Trim trailing spaces and add newline between lines.
-            if line != end_line {
-                let trimmed = result.trim_end_matches(' ');
-                let trimmed_len = trimmed.len();
-                result.truncate(trimmed_len);
-                result.push('\n');
-            }
-        }
-
-        result
-    }
-
-    fn get_selection(&self) -> Option<Selection> {
-        self.state.lock().selection.clone()
-    }
-
-    fn set_selection(&self, sel: Option<Selection>) {
-        self.state.lock().selection = sel;
-    }
-
-    fn take_selection(&self) -> Option<Selection> {
-        self.state.lock().selection.take()
-    }
-
-    fn update_selection(&self, f: &mut dyn FnMut(&mut Option<Selection>)) {
-        let mut s = self.state.lock();
-        f(&mut s.selection);
-    }
-
-    fn resize(&self, lines: usize, cols: usize) {
-        self.state.lock().do_resize(lines, cols);
-    }
-
-    fn scroll_display(&self, scroll: Scroll) {
-        let mut s = self.state.lock();
-        let max = s.scrollback.len();
-        match scroll {
-            Scroll::Delta(delta) => {
-                let new_offset = s.display_offset as i32 + delta;
-                s.display_offset = (new_offset.max(0) as usize).min(max);
-            }
-            Scroll::PageUp => {
-                let page = s.num_lines;
-                s.display_offset = (s.display_offset + page).min(max);
-            }
-            Scroll::PageDown => {
-                let page = s.num_lines;
-                s.display_offset = s.display_offset.saturating_sub(page);
-            }
-            Scroll::Top => {
-                s.display_offset = max;
-            }
-            Scroll::Bottom => {
-                s.display_offset = 0;
-            }
-        }
-    }
-
-    fn scroll_to_point(&self, point: AlacPoint) {
-        let mut s = self.state.lock();
-        let line = point.line.0;
-        if line < 0 {
-            let target_offset = (-line) as usize;
-            s.display_offset = target_offset.min(s.scrollback.len());
+      for col in start_col..=end_col {
+        let cell = if line < 0 {
+          let sb_idx = s.scrollback.len() as i32 + line;
+          if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+            s.scrollback[sb_idx as usize]
+              .get(col)
+              .cloned()
+              .unwrap_or_default()
+          } else {
+            Cell::default()
+          }
         } else {
-            s.display_offset = 0;
-        }
-    }
-
-    fn point_add(&self, point: AlacPoint, boundary: Boundary, n: usize) -> AlacPoint {
-        let s = self.state.lock();
-        let num_cols = s.num_cols;
-        let num_lines = s.num_lines;
-        let history = s.scrollback.len();
-
-        let (min_line, max_line) = match boundary {
-            Boundary::Cursor => (0i32, num_lines as i32 - 1),
-            Boundary::Grid => (-(history as i32), num_lines as i32 - 1),
-            Boundary::None => (i32::MIN, i32::MAX),
+          let row_idx = line as usize;
+          if row_idx < s.num_lines && col < s.num_cols {
+            s.rows[row_idx][col].clone()
+          } else {
+            Cell::default()
+          }
         };
 
-        let mut line = point.line.0;
-        let mut col = point.column.0;
-        let mut remaining = n;
-
-        while remaining > 0 {
-            let cols_left = num_cols.saturating_sub(1) - col;
-            if remaining <= cols_left {
-                col += remaining;
-                remaining = 0;
-            } else {
-                remaining -= cols_left + 1;
-                col = 0;
-                line += 1;
-                if line > max_line {
-                    line = max_line;
-                    col = num_cols.saturating_sub(1);
-                    break;
-                }
-            }
+        if !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+          result.push(cell.c);
         }
+      }
 
-        line = line.max(min_line).min(max_line);
-        col = col.min(num_cols.saturating_sub(1));
-        AlacPoint::new(Line(line), Column(col))
+      // Trim trailing spaces and add newline between lines.
+      if line != end_line {
+        let trimmed = result.trim_end_matches(' ');
+        let trimmed_len = trimmed.len();
+        result.truncate(trimmed_len);
+        result.push('\n');
+      }
     }
 
-    fn point_sub(&self, point: AlacPoint, boundary: Boundary, n: usize) -> AlacPoint {
-        let s = self.state.lock();
-        let num_cols = s.num_cols;
-        let num_lines = s.num_lines;
-        let history = s.scrollback.len();
+    result
+  }
 
-        let (min_line, _max_line) = match boundary {
-            Boundary::Cursor => (0i32, num_lines as i32 - 1),
-            Boundary::Grid => (-(history as i32), num_lines as i32 - 1),
-            Boundary::None => (i32::MIN, i32::MAX),
-        };
+  fn get_selection(&self) -> Option<Selection> {
+    self.state.lock().selection.clone()
+  }
 
-        let mut line = point.line.0;
-        let mut col = point.column.0;
-        let mut remaining = n;
+  fn set_selection(&self, sel: Option<Selection>) {
+    self.state.lock().selection = sel;
+  }
 
-        while remaining > 0 {
-            if remaining <= col {
-                col -= remaining;
-                remaining = 0;
-            } else {
-                remaining -= col + 1;
-                col = num_cols.saturating_sub(1);
-                line -= 1;
-                if line < min_line {
-                    line = min_line;
-                    col = 0;
-                    break;
-                }
-            }
+  fn take_selection(&self) -> Option<Selection> {
+    self.state.lock().selection.take()
+  }
+
+  fn update_selection(&self, f: &mut dyn FnMut(&mut Option<Selection>)) {
+    let mut s = self.state.lock();
+    f(&mut s.selection);
+  }
+
+  fn resize(&self, lines: usize, cols: usize) {
+    self.state.lock().do_resize(lines, cols);
+  }
+
+  fn scroll_display(&self, scroll: Scroll) {
+    let mut s = self.state.lock();
+    let max = s.scrollback.len();
+    match scroll {
+      Scroll::Delta(delta) => {
+        let new_offset = s.display_offset as i32 + delta;
+        s.display_offset = (new_offset.max(0) as usize).min(max);
+      }
+      Scroll::PageUp => {
+        let page = s.num_lines;
+        s.display_offset = (s.display_offset + page).min(max);
+      }
+      Scroll::PageDown => {
+        let page = s.num_lines;
+        s.display_offset = s.display_offset.saturating_sub(page);
+      }
+      Scroll::Top => {
+        s.display_offset = max;
+      }
+      Scroll::Bottom => {
+        s.display_offset = 0;
+      }
+    }
+  }
+
+  fn scroll_to_point(&self, point: AlacPoint) {
+    let mut s = self.state.lock();
+    let line = point.line.0;
+    if line < 0 {
+      let target_offset = (-line) as usize;
+      s.display_offset = target_offset.min(s.scrollback.len());
+    } else {
+      s.display_offset = 0;
+    }
+  }
+
+  fn point_add(&self, point: AlacPoint, boundary: Boundary, n: usize) -> AlacPoint {
+    let s = self.state.lock();
+    let num_cols = s.num_cols;
+    let num_lines = s.num_lines;
+    let history = s.scrollback.len();
+
+    let (min_line, max_line) = match boundary {
+      Boundary::Cursor => (0i32, num_lines as i32 - 1),
+      Boundary::Grid => (-(history as i32), num_lines as i32 - 1),
+      Boundary::None => (i32::MIN, i32::MAX),
+    };
+
+    let mut line = point.line.0;
+    let mut col = point.column.0;
+    let mut remaining = n;
+
+    while remaining > 0 {
+      let cols_left = num_cols.saturating_sub(1) - col;
+      if remaining <= cols_left {
+        col += remaining;
+        remaining = 0;
+      } else {
+        remaining -= cols_left + 1;
+        col = 0;
+        line += 1;
+        if line > max_line {
+          line = max_line;
+          col = num_cols.saturating_sub(1);
+          break;
         }
-
-        col = col.min(num_cols.saturating_sub(1));
-        AlacPoint::new(Line(line), Column(col))
+      }
     }
 
-    fn grid_clamp(&self, point: AlacPoint, boundary: Boundary) -> AlacPoint {
-        let s = self.state.lock();
-        let num_cols = s.num_cols;
-        let num_lines = s.num_lines;
-        let history = s.scrollback.len();
+    line = line.max(min_line).min(max_line);
+    col = col.min(num_cols.saturating_sub(1));
+    AlacPoint::new(Line(line), Column(col))
+  }
 
-        let (min_line, max_line) = match boundary {
-            Boundary::Cursor => (0i32, num_lines as i32 - 1),
-            Boundary::Grid => (-(history as i32), num_lines as i32 - 1),
-            Boundary::None => return point,
-        };
+  fn point_sub(&self, point: AlacPoint, boundary: Boundary, n: usize) -> AlacPoint {
+    let s = self.state.lock();
+    let num_cols = s.num_cols;
+    let num_lines = s.num_lines;
+    let history = s.scrollback.len();
 
-        let line = point.line.0.max(min_line).min(max_line);
-        let col = point.column.0.min(num_cols.saturating_sub(1));
-        AlacPoint::new(Line(line), Column(col))
-    }
+    let (min_line, _max_line) = match boundary {
+      Boundary::Cursor => (0i32, num_lines as i32 - 1),
+      Boundary::Grid => (-(history as i32), num_lines as i32 - 1),
+      Boundary::None => (i32::MIN, i32::MAX),
+    };
 
-    fn expand_wide(&self, point: AlacPoint, _direction: Direction) -> AlacPoint {
-        // Wide character support is not handled in this minimal VTE backend.
-        point
-    }
+    let mut line = point.line.0;
+    let mut col = point.column.0;
+    let mut remaining = n;
 
-    fn iter_from(&self, start: AlacPoint, f: &mut dyn FnMut(AlacPoint, &Cell) -> bool) {
-        let s = self.state.lock();
-        let num_cols = s.num_cols;
-        let num_lines = s.num_lines;
-
-        let mut line = start.line.0;
-        let mut col = start.column.0;
-
-        loop {
-            let cell = if line < 0 {
-                let sb_idx = s.scrollback.len() as i32 + line;
-                if sb_idx < 0 || sb_idx as usize >= s.scrollback.len() {
-                    break;
-                }
-                s.scrollback[sb_idx as usize]
-                    .get(col)
-                    .cloned()
-                    .unwrap_or_default()
-            } else {
-                let row_idx = line as usize;
-                if row_idx >= num_lines {
-                    break;
-                }
-                if col >= num_cols {
-                    break;
-                }
-                s.rows[row_idx][col].clone()
-            };
-
-            let point = AlacPoint::new(Line(line), Column(col));
-            if !f(point, &cell) {
-                break;
-            }
-
-            col += 1;
-            if col >= num_cols {
-                col = 0;
-                line += 1;
-            }
+    while remaining > 0 {
+      if remaining <= col {
+        col -= remaining;
+        remaining = 0;
+      } else {
+        remaining -= col + 1;
+        col = num_cols.saturating_sub(1);
+        line -= 1;
+        if line < min_line {
+          line = min_line;
+          col = 0;
+          break;
         }
+      }
     }
 
-    fn line_search_left(&self, point: AlacPoint) -> AlacPoint {
-        let s = self.state.lock();
-        let line = point.line.0;
+    col = col.min(num_cols.saturating_sub(1));
+    AlacPoint::new(Line(line), Column(col))
+  }
 
-        // Walk left through wrapped lines.
-        let mut target_line = line;
-        loop {
-            let prev = target_line - 1;
-            let is_wrapped = if prev < 0 {
-                let sb_idx = s.scrollback.len() as i32 + prev;
-                if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-                    let row = &s.scrollback[sb_idx as usize];
-                    row.last().is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-                } else {
-                    false
-                }
-            } else {
-                let ri = prev as usize;
-                if ri < s.num_lines {
-                    s.rows[ri]
-                        .last()
-                        .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-                } else {
-                    false
-                }
-            };
+  fn grid_clamp(&self, point: AlacPoint, boundary: Boundary) -> AlacPoint {
+    let s = self.state.lock();
+    let num_cols = s.num_cols;
+    let num_lines = s.num_lines;
+    let history = s.scrollback.len();
 
-            if is_wrapped {
-                target_line = prev;
-            } else {
-                break;
-            }
+    let (min_line, max_line) = match boundary {
+      Boundary::Cursor => (0i32, num_lines as i32 - 1),
+      Boundary::Grid => (-(history as i32), num_lines as i32 - 1),
+      Boundary::None => return point,
+    };
+
+    let line = point.line.0.max(min_line).min(max_line);
+    let col = point.column.0.min(num_cols.saturating_sub(1));
+    AlacPoint::new(Line(line), Column(col))
+  }
+
+  fn expand_wide(&self, point: AlacPoint, _direction: Direction) -> AlacPoint {
+    // Wide character support is not handled in this minimal VTE backend.
+    point
+  }
+
+  fn iter_from(&self, start: AlacPoint, f: &mut dyn FnMut(AlacPoint, &Cell) -> bool) {
+    let s = self.state.lock();
+    let num_cols = s.num_cols;
+    let num_lines = s.num_lines;
+
+    let mut line = start.line.0;
+    let mut col = start.column.0;
+
+    loop {
+      let cell = if line < 0 {
+        let sb_idx = s.scrollback.len() as i32 + line;
+        if sb_idx < 0 || sb_idx as usize >= s.scrollback.len() {
+          break;
         }
-
-        AlacPoint::new(Line(target_line), Column(0))
-    }
-
-    fn line_search_right(&self, point: AlacPoint) -> AlacPoint {
-        let s = self.state.lock();
-        let line = point.line.0;
-
-        let mut target_line = line;
-        loop {
-            let is_wrapped = if target_line < 0 {
-                let sb_idx = s.scrollback.len() as i32 + target_line;
-                if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-                    let row = &s.scrollback[sb_idx as usize];
-                    row.last().is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-                } else {
-                    false
-                }
-            } else {
-                let ri = target_line as usize;
-                if ri < s.num_lines {
-                    s.rows[ri]
-                        .last()
-                        .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-                } else {
-                    false
-                }
-            };
-
-            if is_wrapped {
-                target_line += 1;
-            } else {
-                break;
-            }
+        s.scrollback[sb_idx as usize]
+          .get(col)
+          .cloned()
+          .unwrap_or_default()
+      } else {
+        let row_idx = line as usize;
+        if row_idx >= num_lines {
+          break;
         }
+        if col >= num_cols {
+          break;
+        }
+        s.rows[row_idx][col].clone()
+      };
 
-        AlacPoint::new(
-            Line(target_line),
-            Column(s.num_cols.saturating_sub(1)),
-        )
+      let point = AlacPoint::new(Line(line), Column(col));
+      if !f(point, &cell) {
+        break;
+      }
+
+      col += 1;
+      if col >= num_cols {
+        col = 0;
+        line += 1;
+      }
+    }
+  }
+
+  fn line_search_left(&self, point: AlacPoint) -> AlacPoint {
+    let s = self.state.lock();
+    let line = point.line.0;
+
+    // Walk left through wrapped lines.
+    let mut target_line = line;
+    loop {
+      let prev = target_line - 1;
+      let is_wrapped = if prev < 0 {
+        let sb_idx = s.scrollback.len() as i32 + prev;
+        if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+          let row = &s.scrollback[sb_idx as usize];
+          row
+            .last()
+            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+        } else {
+          false
+        }
+      } else {
+        let ri = prev as usize;
+        if ri < s.num_lines {
+          s.rows[ri]
+            .last()
+            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+        } else {
+          false
+        }
+      };
+
+      if is_wrapped {
+        target_line = prev;
+      } else {
+        break;
+      }
     }
 
-    fn find_hyperlink_at(
-        &self,
-        _point: AlacPoint,
-        _url_regex_pattern: &str,
-    ) -> Option<(String, bool, std::ops::RangeInclusive<AlacPoint>)> {
-        // Regex-based URL detection not yet implemented for the VTE backend.
-        None
+    AlacPoint::new(Line(target_line), Column(0))
+  }
+
+  fn line_search_right(&self, point: AlacPoint) -> AlacPoint {
+    let s = self.state.lock();
+    let line = point.line.0;
+
+    let mut target_line = line;
+    loop {
+      let is_wrapped = if target_line < 0 {
+        let sb_idx = s.scrollback.len() as i32 + target_line;
+        if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+          let row = &s.scrollback[sb_idx as usize];
+          row
+            .last()
+            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+        } else {
+          false
+        }
+      } else {
+        let ri = target_line as usize;
+        if ri < s.num_lines {
+          s.rows[ri]
+            .last()
+            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+        } else {
+          false
+        }
+      };
+
+      if is_wrapped {
+        target_line += 1;
+      } else {
+        break;
+      }
     }
+
+    AlacPoint::new(Line(target_line), Column(s.num_cols.saturating_sub(1)))
+  }
+
+  fn find_hyperlink_at(
+    &self,
+    _point: AlacPoint,
+    _url_regex_pattern: &str,
+  ) -> Option<(String, bool, std::ops::RangeInclusive<AlacPoint>)> {
+    // Regex-based URL detection not yet implemented for the VTE backend.
+    None
+  }
 }
