@@ -92,9 +92,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path $packDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $packDir
-          $ghosttyLibs = Get-ChildItem ./target/release-fast/libghostty-vt.so* -File
+          $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter 'libghostty-vt.so*' -File -ErrorAction SilentlyContinue | Sort-Object FullName)
           if ($ghosttyLibs.Count -eq 0) {
-            throw "Missing libghostty-vt Linux runtime in target/release-fast"
+            $ghosttyLibs = @(
+              Get-ChildItem ./target/release-fast/build -Recurse -Filter 'libghostty-vt.so*' -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -like '*ghostty-install*' } |
+                Sort-Object FullName
+            )
+          }
+          if ($ghosttyLibs.Count -eq 0) {
+            throw "Missing libghostty-vt Linux runtime in target/release-fast or target/release-fast/build/**/ghostty-install/lib"
           }
           Copy-Item $ghosttyLibs.FullName $packDir
           tar --zstd -cf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.zstd -C $packDir .
@@ -116,9 +123,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path $binPackDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $binPackDir
-          $ghosttyLibs = Get-ChildItem ./target/release-fast/libghostty-vt*.dylib* -File
+          $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter 'libghostty-vt*.dylib*' -File -ErrorAction SilentlyContinue | Sort-Object FullName)
           if ($ghosttyLibs.Count -eq 0) {
-            throw "Missing libghostty-vt macOS runtime in target/release-fast"
+            $ghosttyLibs = @(
+              Get-ChildItem ./target/release-fast/build -Recurse -Filter 'libghostty-vt*.dylib*' -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -like '*ghostty-install*' } |
+                Sort-Object FullName
+            )
+          }
+          if ($ghosttyLibs.Count -eq 0) {
+            throw "Missing libghostty-vt macOS runtime in target/release-fast or target/release-fast/build/**/ghostty-install/lib"
           }
           Copy-Item $ghosttyLibs.FullName $binPackDir
           $frameworksDir = Join-Path (Resolve-Path ./target/release-fast/bundle/osx/Kazeterm.app).Path "Contents/Frameworks"
