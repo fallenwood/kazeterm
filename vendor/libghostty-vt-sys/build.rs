@@ -63,25 +63,19 @@ fn main() {
 
     let lib_dir = install_prefix.join("lib");
     let include_dir = install_prefix.join("include");
+    let search_dirs = library_search_dirs(&target, &install_prefix);
+    let candidates = library_artifact_candidates(&target);
 
-    let lib_name = if target.contains("darwin") {
-        "libghostty-vt.0.1.0.dylib"
-    } else {
-        "libghostty-vt.so.0.1.0"
-    };
-
-    assert!(
-        lib_dir.join(lib_name).exists(),
-        "expected shared library at {}",
-        lib_dir.join(lib_name).display()
-    );
     assert!(
         include_dir.join("ghostty").join("vt.h").exists(),
         "expected header at {}",
         include_dir.join("ghostty").join("vt.h").display()
     );
 
-    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    for dir in &search_dirs {
+      println!("cargo:rustc-link-search=native={}", dir.display());
+    }
+
     println!("cargo:rustc-link-lib=dylib=ghostty-vt");
     println!("cargo:include={}", include_dir.display());
 }
@@ -142,6 +136,31 @@ fn zig_optimize_mode() -> &'static str {
         _ => "Debug",
     }
 }
+/// Returns directories to search for the built library artifact.
+/// On Windows, Zig may place the DLL in `bin/` and the import lib in `lib/`,
+/// so both are included.
+fn library_search_dirs(target: &str, install_prefix: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![install_prefix.join("lib")];
+    if target.contains("windows") {
+        dirs.push(install_prefix.join("bin"));
+    }
+    dirs
+}
+
+/// Returns candidate filenames for the shared library artifact, ordered by
+/// preference.  The build assertion succeeds if any one of these exists in
+/// any of the search directories.
+fn library_artifact_candidates(target: &str) -> &'static [&'static str] {
+    if target.contains("darwin") {
+        &["libghostty-vt.0.1.0.dylib", "libghostty-vt.dylib"]
+    } else if target.contains("windows-gnu") {
+        &["libghostty-vt.dll.a", "ghostty-vt.dll", "ghostty-vt.lib"]
+    } else if target.contains("windows-msvc") {
+        &["ghostty-vt.lib", "ghostty-vt.dll", "libghostty-vt.dll.lib"]
+    } else {
+        &["libghostty-vt.so.0.1.0", "libghostty-vt.so"]
+    }
+}
 
 fn zig_target(target: &str) -> String {
     let value = match target {
@@ -151,6 +170,10 @@ fn zig_target(target: &str) -> String {
         "aarch64-unknown-linux-musl" => "aarch64-linux-musl",
         "aarch64-apple-darwin" => "aarch64-macos-none",
         "x86_64-apple-darwin" => "x86_64-macos-none",
+        "x86_64-pc-windows-gnu" => "x86_64-windows-gnu",
+        "aarch64-pc-windows-gnullvm" => "aarch64-windows-gnu",
+        "x86_64-pc-windows-msvc" => "x86_64-windows-msvc",
+        "aarch64-pc-windows-msvc" => "aarch64-windows-msvc",
         other => panic!("unsupported Rust target for vendored build: {other}"),
     };
     value.to_owned()

@@ -313,7 +313,7 @@ impl TerminalKernel {
   pub fn is_supported_on_current_platform(self) -> bool {
     match self {
       Self::Alacritty => true,
-      Self::Ghostty => cfg!(any(target_os = "linux", target_os = "macos")),
+      Self::Ghostty => true,
       Self::Vte => cfg!(target_os = "linux"),
     }
   }
@@ -331,7 +331,7 @@ impl TerminalKernel {
 
     #[cfg(target_os = "windows")]
     {
-      &["alacritty"]
+      &["alacritty", "ghostty"]
     }
   }
 
