@@ -32,7 +32,7 @@ fn create_terminal_session(
     #[allow(unreachable_patterns)]
     other => Err(format!(
       "Terminal kernel '{other}' is not available on this platform. Supported kernels are: \
-       alacritty (Windows/Linux/macOS), vte (Linux), ghostty (Linux/macOS)."
+       alacritty (Windows/Linux/macOS), vte (Linux), ghostty (Windows/Linux/macOS)."
     )),
   }
 }

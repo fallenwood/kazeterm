@@ -38,6 +38,10 @@ fn main() {
         Err(_) => fetch_ghostty(&out_dir),
     };
 
+    if target.contains("windows") {
+        patch_ghostty_windows_vt_write(&ghostty_dir);
+    }
+
     // Build libghostty-vt via zig.
     let install_prefix = out_dir.join("ghostty-install");
 
@@ -98,8 +102,8 @@ fn build_ghostty_from_uucode_cache(
     let ghostty_build_file = ghostty_dir.join("build.zig");
     let local_cache_dir = ghostty_dir.join(".zig-cache");
     let global_cache_dir = zig_global_cache_dir();
-    let isDebug = std::env::var("DEBUG").map_or(false, |v| v == "true");
-    let optimize = if isDebug { "Debug" } else { "ReleaseFast" };
+    let is_debug = std::env::var("DEBUG").map_or(false, |v| v == "true");
+    let optimize = if is_debug { "Debug" } else { "ReleaseFast" };
 
     let mut fetch = Command::new("zig");
     fetch
@@ -250,6 +254,29 @@ fn read_zig_dependency_hash(ghostty_dir: &Path, dependency_name: &str) -> String
     });
 
     hash_value[..hash_end].to_owned()
+}
+
+fn patch_ghostty_windows_vt_write(ghostty_dir: &Path) {
+    let terminal_c = ghostty_dir.join("src").join("terminal").join("c").join("terminal.zig");
+    let original = "    wrapper.stream.nextSlice(ptr[0..len]);";
+    let patched = "    for (ptr[0..len]) |c| wrapper.stream.next(c);";
+
+    let contents = std::fs::read_to_string(&terminal_c)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", terminal_c.display()));
+
+    if contents.contains(patched) {
+        return;
+    }
+
+    let updated = contents.replacen(original, patched, 1);
+    assert!(
+        updated != contents,
+        "failed to apply Windows vt_write patch to {}",
+        terminal_c.display()
+    );
+
+    std::fs::write(&terminal_c, updated)
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", terminal_c.display()));
 }
 
 /// Returns directories to search for the built library artifact.

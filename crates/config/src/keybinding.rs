@@ -747,9 +747,12 @@ mod tests {
     // Non-specified fields use defaults
     assert_eq!(config.paste, expected_default_paste_binding());
     if cfg!(target_os = "macos") {
-        assert_eq!(config.next_tab, KeybindingList::from_vec(vec!["ctrl-tab".into(), "cmd-shift-]".into()]));
+      assert_eq!(
+        config.next_tab,
+        KeybindingList::from_vec(vec!["ctrl-tab".into(), "cmd-shift-]".into()])
+      );
     } else {
-        assert_eq!(config.next_tab, "ctrl-tab");
+      assert_eq!(config.next_tab, "ctrl-tab");
     }
   }
 
