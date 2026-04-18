@@ -6,6 +6,13 @@ fn main() {
     "cargo:rustc-env=TARGET={}",
     std::env::var("TARGET").unwrap()
   );
+
+  #[cfg(target_os = "linux")]
+  println!("cargo:rustc-link-arg-bin=kazeterm=-Wl,-rpath,$ORIGIN");
+
+  #[cfg(target_os = "macos")]
+  println!("cargo:rustc-link-arg-bin=kazeterm=-Wl,-rpath,@executable_path");
+
   if let Ok(output) = Command::new("git").args(["rev-parse", "HEAD"]).output()
     && output.status.success()
   {
