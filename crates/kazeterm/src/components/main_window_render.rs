@@ -741,7 +741,7 @@ impl Render for MainWindow {
         ];
         let tab_switcher_popup = cx.global::<config::Config>().tab.switcher_popup;
 
-        if keybindings
+        let matched = if keybindings
           .next_tab
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
@@ -752,6 +752,7 @@ impl Render for MainWindow {
             let next_ix = (current_ix + 1) % this.items.len();
             this.set_active_tab(next_ix, window, cx);
           }
+          true
         } else if keybindings
           .previous_tab
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
@@ -767,97 +768,121 @@ impl Render for MainWindow {
             };
             this.set_active_tab(prev_ix, window, cx);
           }
+          true
         } else if keybindings
           .toggle_search
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
           || (e.keystroke.key == "Escape" && this.search_visible)
         {
           this.toggle_search(window, cx);
+          true
         } else if keybindings
           .split_horizontal
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.split_pane_horizontal(window, cx);
+          true
         } else if keybindings
           .split_vertical
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.split_pane_vertical(window, cx);
+          true
         } else if keybindings
           .close_pane
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.close_active_pane(window, cx);
+          true
         } else if keybindings
           .focus_next_pane
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.focus_next_pane(window, cx);
+          true
         } else if keybindings
           .focus_previous_pane
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.focus_prev_pane(window, cx);
+          true
         } else if keybindings
           .focus_pane_up
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.focus_pane_up(window, cx);
+          true
         } else if keybindings
           .focus_pane_down
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.focus_pane_down(window, cx);
+          true
         } else if keybindings
           .focus_pane_left
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.focus_pane_left(window, cx);
+          true
         } else if keybindings
           .focus_pane_right
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.focus_pane_right(window, cx);
+          true
         } else if keybindings
           .swap_split_panes
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.swap_split_panes(window, cx);
+          true
         } else if keybindings
           .toggle_fullscreen
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           window.toggle_fullscreen();
+          true
         } else if keybindings
           .toggle_tab_bar
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.toggle_tab_bar(cx);
+          true
         } else if keybindings
           .new_tab
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.insert_new_tab(window, cx);
+          true
         } else if let Some((i, _)) = kb_select_tabs.iter().enumerate().find(|(_, kb_select_tab)| {
           kb_select_tab.matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         }) {
           this.select_tab_by_shortcut(i + 1, window, cx);
+          true
         } else if keybindings
           .quit
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
           this.show_close_confirm_dialog(window, cx);
+          true
         } else {
           // Check profile-specific new tab shortcuts.
           let profiles = cx.global::<config::Config>().get_local_profile_names();
+          let mut found = false;
           for (i, kb_profile) in kb_new_tab_profiles.iter().enumerate() {
             if kb_profile.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
               if let Some(profile_name) = profiles.get(i) {
                 this.insert_new_tab_with_profile(Some(profile_name), None, window, cx);
               }
+              found = true;
               break;
             }
           }
+          found
+        };
+
+        if matched {
+          cx.stop_propagation();
         }
       }))
       .on_key_up(cx.listener(move |this, e: &KeyUpEvent, _window, cx| {
