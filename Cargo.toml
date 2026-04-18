@@ -114,3 +114,6 @@ ignored = [
   "documented",
   "workspace-hack",
 ]
+
+[patch."https://github.com/Uzaaft/libghostty-rs.git"]
+libghostty-vt-sys = { path = "vendor/libghostty-vt-sys" }

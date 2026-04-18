@@ -3379,7 +3379,6 @@ dependencies = [
 [[package]]
 name = "libghostty-vt-sys"
 version = "0.1.1"
-source = "git+https://github.com/Uzaaft/libghostty-rs.git?rev=f27655#f27655ad18a6ef04d7d9cec2779e57dab11b3405"
 
 [[package]]
 name = "libloading"

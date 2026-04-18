@@ -92,10 +92,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path $packDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $packDir
-          $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter 'libghostty-vt.so*' -File -ErrorAction SilentlyContinue | Sort-Object FullName)
+          $ghosttyLibName = 'libghostty-vt.so.0.1.0'
+          $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue | Sort-Object FullName)
           if ($ghosttyLibs.Count -eq 0) {
             $ghosttyLibs = @(
-              Get-ChildItem ./target/release-fast/build -Recurse -Filter 'libghostty-vt.so*' -File -ErrorAction SilentlyContinue |
+              Get-ChildItem ./target/release-fast/build -Recurse -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue |
                 Where-Object { $_.FullName -like '*ghostty-install*' } |
                 Sort-Object FullName
             )
@@ -123,10 +124,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path $binPackDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $binPackDir
-          $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter 'libghostty-vt*.dylib*' -File -ErrorAction SilentlyContinue | Sort-Object FullName)
+          $ghosttyLibName = 'libghostty-vt.0.1.0.dylib'
+          $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue | Sort-Object FullName)
           if ($ghosttyLibs.Count -eq 0) {
             $ghosttyLibs = @(
-              Get-ChildItem ./target/release-fast/build -Recurse -Filter 'libghostty-vt*.dylib*' -File -ErrorAction SilentlyContinue |
+              Get-ChildItem ./target/release-fast/build -Recurse -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue |
                 Where-Object { $_.FullName -like '*ghostty-install*' } |
                 Sort-Object FullName
             )
