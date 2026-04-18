@@ -33,9 +33,6 @@ tracing-subscriber.workspace = true
 notify.workspace = true
 notify-debouncer-mini.workspace = true
 
-[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
-terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty" }
-
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
 raw-window-handle = "0.6"

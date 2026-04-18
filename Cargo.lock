@@ -3239,7 +3239,6 @@ dependencies = [
  "terminal",
  "terminal-kernel",
  "terminal-kernel-alacritty",
- "terminal-kernel-ghostty",
  "terminal-kernel-vte",
  "themeing",
  "toml 1.1.2+spec-1.1.0",
@@ -6224,7 +6223,6 @@ dependencies = [
 name = "terminal-kernel-unix-bundle"
 version = "0.1.0"
 dependencies = [
- "terminal-kernel-ghostty",
  "terminal-kernel-vte",
 ]
 
