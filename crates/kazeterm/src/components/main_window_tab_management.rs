@@ -309,6 +309,7 @@ impl MainWindow {
         let config = cx.global::<::config::Config>();
         if config.tab.close_on_last {
           window.remove_window();
+          cx.quit();
         } else {
           self.insert_new_tab(window, cx);
         }

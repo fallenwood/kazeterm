@@ -89,16 +89,18 @@ impl MainWindow {
         // Save workspace state before closing
         let state = self.capture_workspace_state(cx);
         state.save();
-        // User confirmed, close the window
+        // User confirmed, close the window and quit the app
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
         window.remove_window();
+        cx.quit();
       }
       CloseConfirmEvent::Close => {
         // Close without saving workspace state
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
         window.remove_window();
+        cx.quit();
       }
       CloseConfirmEvent::Cancel => {
         // User cancelled, just close the dialog

@@ -189,8 +189,8 @@ impl Default for KeybindingConfig {
         zoom_in: KeybindingList::new("cmd-="),
         zoom_out: KeybindingList::new("cmd--"),
         zoom_reset: KeybindingList::new("cmd-0"),
-        next_tab: KeybindingList::new("ctrl-tab"),
-        previous_tab: KeybindingList::new("ctrl-shift-tab"),
+        next_tab: KeybindingList::from_vec(vec!["ctrl-tab".into(), "cmd-shift-]".into()]),
+        previous_tab: KeybindingList::from_vec(vec!["ctrl-shift-tab".into(), "cmd-shift-[".into()]),
         select_tab_1: KeybindingList::new("cmd-1"),
         select_tab_2: KeybindingList::new("cmd-2"),
         select_tab_3: KeybindingList::new("cmd-3"),
@@ -200,18 +200,18 @@ impl Default for KeybindingConfig {
         select_tab_7: KeybindingList::new("cmd-7"),
         select_tab_8: KeybindingList::new("cmd-8"),
         select_tab_9: KeybindingList::new("cmd-9"),
-        toggle_search: KeybindingList::new("ctrl-shift-f"),
-        split_horizontal: KeybindingList::new("ctrl-shift-d"),
-        split_vertical: KeybindingList::new("ctrl-shift-e"),
-        close_pane: KeybindingList::new("ctrl-shift-w"),
-        focus_next_pane: KeybindingList::new("ctrl-shift-]"),
-        focus_previous_pane: KeybindingList::new("ctrl-shift-["),
-        focus_pane_up: KeybindingList::new("cmd-alt-up"),
-        focus_pane_down: KeybindingList::new("cmd-alt-down"),
-        focus_pane_left: KeybindingList::new("cmd-alt-left"),
-        focus_pane_right: KeybindingList::new("cmd-alt-right"),
+        toggle_search: KeybindingList::new("cmd-f"),
+        split_horizontal: KeybindingList::new("alt-shift-minus"),
+        split_vertical: KeybindingList::new("alt-shift-equal"),
+        close_pane: KeybindingList::new("cmd-w"),
+        focus_next_pane: KeybindingList::new("cmd-]"),
+        focus_previous_pane: KeybindingList::new("cmd-["),
+        focus_pane_up: KeybindingList::new("alt-up"),
+        focus_pane_down: KeybindingList::new("alt-down"),
+        focus_pane_left: KeybindingList::new("alt-left"),
+        focus_pane_right: KeybindingList::new("alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
-        toggle_fullscreen: KeybindingList::new("f12"),
+        toggle_fullscreen: KeybindingList::new("cmd-ctr-f"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
         new_tab: KeybindingList::new("cmd-t"),
         new_tab_profile_1: KeybindingList::new("ctrl-shift-1"),
@@ -245,15 +245,15 @@ impl Default for KeybindingConfig {
         select_tab_8: KeybindingList::new("ctrl-alt-8"),
         select_tab_9: KeybindingList::new("ctrl-alt-9"),
         toggle_search: KeybindingList::new("ctrl-shift-f"),
-        split_horizontal: KeybindingList::new("ctrl-shift-d"),
-        split_vertical: KeybindingList::new("ctrl-shift-e"),
+        split_horizontal: KeybindingList::new("alt-shift-minus"),
+        split_vertical: KeybindingList::new("alt-shift-equal"),
         close_pane: KeybindingList::new("ctrl-shift-w"),
         focus_next_pane: KeybindingList::new("ctrl-shift-]"),
         focus_previous_pane: KeybindingList::new("ctrl-shift-["),
-        focus_pane_up: KeybindingList::new("ctrl-alt-up"),
-        focus_pane_down: KeybindingList::new("ctrl-alt-down"),
-        focus_pane_left: KeybindingList::new("ctrl-alt-left"),
-        focus_pane_right: KeybindingList::new("ctrl-alt-right"),
+        focus_pane_up: KeybindingList::new("alt-up"),
+        focus_pane_down: KeybindingList::new("alt-down"),
+        focus_pane_left: KeybindingList::new("alt-left"),
+        focus_pane_right: KeybindingList::new("alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
         toggle_fullscreen: KeybindingList::new("f11"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
@@ -502,11 +502,7 @@ mod tests {
   }
 
   fn expected_default_directional_pane_binding(direction: &str) -> String {
-    if cfg!(target_os = "macos") {
-      format!("cmd-alt-{}", direction)
-    } else {
-      format!("ctrl-alt-{}", direction)
-    }
+    format!("alt-{}", direction)
   }
 
   fn expected_platform_modifier_label() -> &'static str {
@@ -705,18 +701,10 @@ mod tests {
     }
 
     let focus_pane_up = ParsedKeybinding::parse(config.focus_pane_up.first().unwrap());
-    if cfg!(target_os = "macos") {
-      assert!(focus_pane_up.matches(false, false, true, true, "up"));
-    } else {
-      assert!(focus_pane_up.matches(true, false, true, false, "up"));
-    }
+    assert!(focus_pane_up.matches(false, false, true, false, "up"));
 
     let focus_pane_right = ParsedKeybinding::parse(config.focus_pane_right.first().unwrap());
-    if cfg!(target_os = "macos") {
-      assert!(focus_pane_right.matches(false, false, true, true, "right"));
-    } else {
-      assert!(focus_pane_right.matches(true, false, true, false, "right"));
-    }
+    assert!(focus_pane_right.matches(false, false, true, false, "right"));
   }
 
   #[test]
@@ -758,7 +746,11 @@ mod tests {
     assert_eq!(config.copy, "ctrl-c");
     // Non-specified fields use defaults
     assert_eq!(config.paste, expected_default_paste_binding());
-    assert_eq!(config.next_tab, "ctrl-tab");
+    if cfg!(target_os = "macos") {
+        assert_eq!(config.next_tab, KeybindingList::from_vec(vec!["ctrl-tab".into(), "cmd-shift-]".into()]));
+    } else {
+        assert_eq!(config.next_tab, "ctrl-tab");
+    }
   }
 
   #[test]
