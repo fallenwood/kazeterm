@@ -105,7 +105,7 @@ impl Terminal {
     let selection = Selection::new(SelectionType::Semantic, point, side);
     self
       .events
-      .push_back(InternalEvent::SetSelection(Some((selection, point))));
+      .push_back(InternalEvent::SetSelection(Some((selection, point, side))));
   }
 
   pub fn mouse_down(&mut self, e: &gpui::MouseDownEvent, _cx: &mut Context<Self>) {
@@ -157,7 +157,7 @@ impl Terminal {
           if let Some(sel) = selection {
             self
               .events
-              .push_back(InternalEvent::SetSelection(Some((sel, point))));
+              .push_back(InternalEvent::SetSelection(Some((sel, point, side))));
           }
         }
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]

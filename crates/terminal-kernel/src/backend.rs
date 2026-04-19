@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::event::EventListener;
 use crate::grid::Dimensions;
-use crate::index::{Boundary, Column, Direction, Line, Point as AlacPoint};
-use crate::selection::{Selection, SelectionRange};
+use crate::index::{Boundary, Column, Direction, Line, Point as AlacPoint, Side};
+use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::sync::FairMutex;
 use crate::term::cell::Cell;
 use crate::term::{RenderableCursor, TermMode};
@@ -19,6 +19,15 @@ pub struct RenderableSnapshot {
   pub display_offset: usize,
   pub cursor: RenderableCursor,
   pub selection: Option<SelectionRange>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SelectionDisplay {
+  pub ty: SelectionType,
+  pub start: AlacPoint,
+  pub start_side: Side,
+  pub end: AlacPoint,
+  pub end_side: Side,
 }
 
 /// Trait abstracting the terminal emulator backend.
@@ -72,6 +81,7 @@ pub trait TerminalBackend: Send + Sync {
   fn take_selection(&self) -> Option<Selection>;
   /// Atomic read-modify-write on the selection.
   fn update_selection(&self, f: &mut dyn FnMut(&mut Option<Selection>));
+  fn sync_selection_display(&self, _selection: Option<SelectionDisplay>) {}
 
   // --- Mutations (lock internally) ---
 

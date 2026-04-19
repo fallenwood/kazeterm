@@ -33,6 +33,9 @@ impl Terminal {
       cx.write_to_clipboard(gpui::ClipboardItem::new_string(txt));
     }
     self.term.set_selection(None);
+    self.term.sync_selection_display(None);
+    self.selection_display = None;
+    self.selection_head = None;
     self.last_content.selection = None;
     self.last_content.selection_text = None;
     cx.emit(Event::SelectionsChanged);

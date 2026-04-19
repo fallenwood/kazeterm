@@ -14,10 +14,10 @@ use crate::{
 };
 use gpui::{Context, EventEmitter, Pixels, Window, px};
 use terminal_kernel::{
-  TerminalBackend,
+  SelectionDisplay, TerminalBackend,
   event::Event as AlacTermEvent,
   grid::{Dimensions as _, Scroll},
-  index::{Column as AlacColumn, Direction, Line as AlacLine, Point as AlacPoint},
+  index::{Column as AlacColumn, Direction, Line as AlacLine, Point as AlacPoint, Side},
   selection::Selection,
 };
 use themeing::ActiveTheme;
@@ -39,7 +39,7 @@ pub enum InternalEvent {
   Clear,
   Scroll(Scroll),
   ScrollToAlacPoint(AlacPoint),
-  SetSelection(Option<(Selection, AlacPoint)>),
+  SetSelection(Option<(Selection, AlacPoint, Side)>),
   UpdateSelection(gpui::Point<Pixels>),
   FindHyperlink(gpui::Point<Pixels>, bool),
   ProcessHyperlink((String, bool, std::ops::RangeInclusive<AlacPoint>), bool),
@@ -78,6 +78,7 @@ pub struct Terminal {
   pub term: Box<dyn TerminalBackend>,
   pub last_content: TerminalContent,
   pub selection_head: Option<AlacPoint>,
+  pub selection_display: Option<SelectionDisplay>,
   pub pty_info: PtyProcessInfo,
   pub selection_phase: SelectionPhase,
   pub last_mouse: Option<(AlacPoint, Direction)>,
@@ -142,6 +143,7 @@ impl Terminal {
       last_content: Default::default(),
       pty_info,
       selection_head: None,
+      selection_display: None,
       selection_phase: SelectionPhase::Ended,
       last_mouse: None,
       last_mouse_move_time: std::time::Instant::now(),
@@ -681,31 +683,49 @@ impl Terminal {
       InternalEvent::SetSelection(selection) => {
         self
           .term
-          .set_selection(selection.as_ref().map(|(sel, _)| sel.clone()));
+          .set_selection(selection.as_ref().map(|(sel, _, _)| sel.clone()));
+
+        self.selection_display = selection
+          .as_ref()
+          .map(|(sel, point, side)| SelectionDisplay {
+            ty: sel.ty,
+            start: *point,
+            start_side: *side,
+            end: *point,
+            end_side: *side,
+          });
+        self.term.sync_selection_display(self.selection_display);
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         if let Some(selection_text) = self.term.selection_to_string() {
           cx.write_to_primary(gpui::ClipboardItem::new_string(selection_text));
         }
 
-        if let Some((_, head)) = selection {
+        if let Some((_, head, _)) = selection {
           self.selection_head = Some(*head);
+        } else {
+          self.selection_head = None;
         }
         cx.emit(Event::SelectionsChanged)
       }
       InternalEvent::UpdateSelection(position) => {
+        let (point, side) = grid_point_and_side(
+          *position,
+          self.last_content.terminal_bounds,
+          self.last_content.display_offset,
+        );
         self.term.update_selection(&mut |sel| {
           if let Some(mut selection) = sel.take() {
-            let (point, side) = grid_point_and_side(
-              *position,
-              self.last_content.terminal_bounds,
-              self.last_content.display_offset,
-            );
-
             selection.update(point, side);
             *sel = Some(selection);
           }
         });
+
+        if let Some(selection_display) = self.selection_display.as_mut() {
+          selection_display.end = point;
+          selection_display.end_side = side;
+          self.term.sync_selection_display(Some(*selection_display));
+        }
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         if let Some(selection_text) = self.term.selection_to_string() {
