@@ -46,6 +46,7 @@ jobs:
             zstd
 
       - name: Cleanup libghostty
+        shell: pwsh
         run: |
           Remove-Item -Path "./target/release-fast/build/libghostty-vt-sys-*" -Recurse -Force -ErrorAction SilentlyContinue
 
