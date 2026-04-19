@@ -13,6 +13,9 @@ fn main() {
   #[cfg(target_os = "macos")]
   println!("cargo:rustc-link-arg-bin=kazeterm=-Wl,-rpath,@executable_path");
 
+  #[cfg(target_os = "macos")]
+  println!("cargo:rustc-link-arg-bin=kazeterm=-Wl,-rpath,@executable_path/../Frameworks");
+
   if let Ok(output) = Command::new("git").args(["rev-parse", "HEAD"]).output()
     && output.status.success()
   {
