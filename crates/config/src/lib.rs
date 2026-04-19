@@ -790,6 +790,23 @@ impl Config {
             continue;
           }
 
+          if key == "keybindings" {
+            match target_table.get_mut(&key) {
+              Some(toml::Value::Table(target_keybindings))
+                if matches!(overlay_value, toml::Value::Table(_)) =>
+              {
+                let toml::Value::Table(overlay_keybindings) = overlay_value else {
+                  unreachable!("match arm guarantees keybindings overlay is a table")
+                };
+                Self::merge_keybindings_table(target_keybindings, overlay_keybindings);
+              }
+              _ => {
+                target_table.insert(key, overlay_value);
+              }
+            }
+            continue;
+          }
+
           match target_table.get_mut(&key) {
             Some(target_value)
               if matches!(target_value, toml::Value::Table(_))
@@ -806,6 +823,35 @@ impl Config {
       (target_value, overlay_value) => {
         *target_value = overlay_value;
       }
+    }
+  }
+
+  fn merge_keybindings_table(
+    target: &mut toml::map::Map<String, toml::Value>,
+    overlay: toml::map::Map<String, toml::Value>,
+  ) {
+    let overridden_actions = overlay
+      .iter()
+      .filter_map(|(key, value)| keybinding::keybinding_action_for_entry(key, value))
+      .collect::<HashSet<_>>();
+
+    if !overridden_actions.is_empty() {
+      let keys_to_remove = target
+        .iter()
+        .filter_map(|(key, value)| {
+          keybinding::keybinding_action_for_entry(key, value)
+            .filter(|action| overridden_actions.contains(action))
+            .map(|_| key.clone())
+        })
+        .collect::<Vec<_>>();
+
+      for key in keys_to_remove {
+        target.remove(&key);
+      }
+    }
+
+    for (key, value) in overlay {
+      target.insert(key, value);
     }
   }
 
@@ -955,34 +1001,35 @@ mod tests {
     std::fs::write(
       &base_path,
       format!(
-        r#"version = "{}"
+        r##"version = "{}"
 imports = ["./kazeterm.windows.toml"]
 
 [appearance]
 background_opacity = 1.0
 
 [keybindings]
-copy = "ctrl-shift-c"
+"ctrl-shift-c" = "copy"
+"ctrl-shift-v" = "paste"
 
 [terminal.env]
 BASE = "from-base"
-"#,
+"##,
         CURRENT_CONFIG_VERSION,
       ),
     )
     .unwrap();
     std::fs::write(
       &overlay_path,
-      r#"[appearance]
+      r##"[appearance]
 background_opacity = 0.4
 
 [keybindings]
-paste = "ctrl-alt-v"
+"ctrl-alt-v" = "paste"
 
 [terminal.env]
 BASE = "from-overlay"
 EXTRA = "present"
-"#,
+"##,
     )
     .unwrap();
 
@@ -993,6 +1040,42 @@ EXTRA = "present"
     assert_eq!(config.keybindings.paste, "ctrl-alt-v");
     assert_eq!(config.terminal.env.get("BASE").unwrap(), "from-overlay");
     assert_eq!(config.terminal.env.get("EXTRA").unwrap(), "present");
+
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn load_from_path_merges_legacy_keybinding_imports_with_higher_priority() {
+    let dir = test_dir("imports-legacy-keybindings");
+    let base_path = dir.join("kazeterm.toml");
+    let overlay_path = dir.join("kazeterm.windows.toml");
+
+    std::fs::write(
+      &base_path,
+      format!(
+        r##"version = "{}"
+imports = ["./kazeterm.windows.toml"]
+
+[keybindings]
+"ctrl-shift-c" = "copy"
+"ctrl-shift-v" = "paste"
+"##,
+        CURRENT_CONFIG_VERSION,
+      ),
+    )
+    .unwrap();
+    std::fs::write(
+      &overlay_path,
+      r#"[keybindings]
+paste = "ctrl-alt-v"
+"#,
+    )
+    .unwrap();
+
+    let config = Config::load_from_path(&base_path).unwrap();
+
+    assert_eq!(config.keybindings.copy, "ctrl-shift-c");
+    assert_eq!(config.keybindings.paste, "ctrl-alt-v");
 
     std::fs::remove_dir_all(dir).unwrap();
   }
