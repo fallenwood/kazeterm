@@ -29,6 +29,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+            !target/release-fast/build/libghostty-vt-sys-*
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Setup
