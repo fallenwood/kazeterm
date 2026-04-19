@@ -47,7 +47,7 @@ pub type SessionEvents = UnboundedReceiver<event::Event>;
 // ---------------------------------------------------------------------------
 
 mod backend;
-pub use backend::{AlacrittyBackend, RenderableSnapshot, TerminalBackend};
+pub use backend::{AlacrittyBackend, RenderableSnapshot, SelectionDisplay, TerminalBackend};
 
 // ---------------------------------------------------------------------------
 // Color conversion helpers

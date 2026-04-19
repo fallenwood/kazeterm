@@ -113,7 +113,7 @@ impl Terminal {
     let selection = Selection::new(SelectionType::Simple, point, side);
     self
       .events
-      .push_back(InternalEvent::SetSelection(Some((selection, point))));
+      .push_back(InternalEvent::SetSelection(Some((selection, point, side))));
     self.touch_state = Some(TouchState::Selecting);
   }
 
