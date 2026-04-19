@@ -105,7 +105,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $packDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $packDir
-          $ghosttyLibName = 'libghostty-vt.so.0.1.0'
+          $ghosttyLibName = 'libghostty-vt.so.0'
           $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue | Sort-Object FullName)
           if ($ghosttyLibs.Count -eq 0) {
             $ghosttyLibs = @(
@@ -137,7 +137,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $binPackDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $binPackDir
-          $ghosttyLibName = 'libghostty-vt.0.1.0.dylib'
+          $ghosttyLibName = 'libghostty-vt.dylib'
           $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue | Sort-Object FullName)
           if ($ghosttyLibs.Count -eq 0) {
             $ghosttyLibs = @(
