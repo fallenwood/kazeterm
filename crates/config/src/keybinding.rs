@@ -442,6 +442,67 @@ pub struct KeybindingConfig {
 }
 
 impl KeybindingConfig {
+  const MAIN_WINDOW_SHORTCUTS: [KeybindingAction; 19] = [
+    KeybindingAction::NextTab,
+    KeybindingAction::PreviousTab,
+    KeybindingAction::SelectTab1,
+    KeybindingAction::SelectTab2,
+    KeybindingAction::SelectTab3,
+    KeybindingAction::SelectTab4,
+    KeybindingAction::SelectTab5,
+    KeybindingAction::SelectTab6,
+    KeybindingAction::SelectTab7,
+    KeybindingAction::SelectTab8,
+    KeybindingAction::SelectTab9,
+    KeybindingAction::ToggleSearch,
+    KeybindingAction::SplitHorizontal,
+    KeybindingAction::SplitVertical,
+    KeybindingAction::ClosePane,
+    KeybindingAction::FocusNextPane,
+    KeybindingAction::FocusPreviousPane,
+    KeybindingAction::FocusPaneUp,
+    KeybindingAction::FocusPaneDown,
+  ];
+
+  const MAIN_WINDOW_SHORTCUTS_CONTINUED: [KeybindingAction; 7] = [
+    KeybindingAction::FocusPaneLeft,
+    KeybindingAction::FocusPaneRight,
+    KeybindingAction::SwapSplitPanes,
+    KeybindingAction::ToggleFullscreen,
+    KeybindingAction::ToggleTabBar,
+    KeybindingAction::NewTab,
+    KeybindingAction::Quit,
+  ];
+
+  pub fn matches_main_window_shortcut(
+    &self,
+    control: bool,
+    shift: bool,
+    alt: bool,
+    platform: bool,
+    key: &str,
+  ) -> bool {
+    Self::MAIN_WINDOW_SHORTCUTS
+      .into_iter()
+      .chain(Self::MAIN_WINDOW_SHORTCUTS_CONTINUED)
+      .chain([
+        KeybindingAction::NewTabProfile1,
+        KeybindingAction::NewTabProfile2,
+        KeybindingAction::NewTabProfile3,
+        KeybindingAction::NewTabProfile4,
+        KeybindingAction::NewTabProfile5,
+        KeybindingAction::NewTabProfile6,
+        KeybindingAction::NewTabProfile7,
+        KeybindingAction::NewTabProfile8,
+        KeybindingAction::NewTabProfile9,
+      ])
+      .any(|action| {
+        self
+          .binding(action)
+          .matches(control, shift, alt, platform, key)
+      })
+  }
+
   fn binding(&self, action: KeybindingAction) -> &KeybindingList {
     match action {
       KeybindingAction::Copy => &self.copy,
@@ -1260,6 +1321,28 @@ mod tests {
     );
     assert!(config.copy.matches(true, true, false, false, "c"));
     assert!(config.copy.matches(true, false, false, false, "insert"));
+  }
+
+  #[test]
+  fn keybinding_config_matches_main_window_shortcut_for_manual_window_actions() {
+    let config = KeybindingConfig::default();
+
+    if cfg!(target_os = "macos") {
+      assert!(config.matches_main_window_shortcut(false, false, false, true, "t"));
+    } else {
+      assert!(config.matches_main_window_shortcut(true, true, false, false, "t"));
+    }
+  }
+
+  #[test]
+  fn keybinding_config_does_not_treat_terminal_actions_as_main_window_shortcuts() {
+    let config = KeybindingConfig::default();
+
+    if cfg!(target_os = "macos") {
+      assert!(!config.matches_main_window_shortcut(false, false, false, true, "c"));
+    } else {
+      assert!(!config.matches_main_window_shortcut(true, true, false, false, "c"));
+    }
   }
 
   #[test]

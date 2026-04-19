@@ -60,15 +60,24 @@ impl AlacModifiers {
   }
 }
 
+fn normalized_key_name(key: &str) -> Cow<'_, str> {
+  if key.len() > 1 {
+    Cow::Owned(key.to_ascii_lowercase())
+  } else {
+    Cow::Borrowed(key)
+  }
+}
+
 pub fn to_esc_str(
   keystroke: &Keystroke,
   mode: &TermMode,
   alt_is_meta: bool,
 ) -> Option<Cow<'static, str>> {
   let modifiers = AlacModifiers::new(keystroke);
+  let key = normalized_key_name(&keystroke.key);
 
   // Manual Bindings including modifiers
-  let manual_esc_str: Option<&'static str> = match (keystroke.key.as_ref(), &modifiers) {
+  let manual_esc_str: Option<&'static str> = match (key.as_ref(), &modifiers) {
     //Basic special keys
     ("tab", AlacModifiers::None) => Some("\x09"),
     ("escape", AlacModifiers::None) => Some("\x1b"),
@@ -79,6 +88,7 @@ pub fn to_esc_str(
     //Interesting escape codes
     ("tab", AlacModifiers::Shift) => Some("\x1b[Z"),
     ("backspace", AlacModifiers::Ctrl) => Some("\x08"),
+    ("backspace", AlacModifiers::CtrlShift) => Some("\x1b[127;6u"),
     ("backspace", AlacModifiers::Alt) => Some("\x1b\x7f"),
     ("backspace", AlacModifiers::Shift) => Some("\x7f"),
     ("space", AlacModifiers::Ctrl) => Some("\x00"),
@@ -220,7 +230,7 @@ pub fn to_esc_str(
   // Automated bindings applying modifiers
   if modifiers.any() {
     let modifier_code = modifier_code(keystroke);
-    let modified_esc_str = match keystroke.key.as_ref() {
+    let modified_esc_str = match key.as_ref() {
       "up" => Some(format!("\x1b[1;{}A", modifier_code)),
       "down" => Some(format!("\x1b[1;{}B", modifier_code)),
       "right" => Some(format!("\x1b[1;{}C", modifier_code)),
@@ -229,7 +239,7 @@ pub fn to_esc_str(
       "f2" => Some(format!("\x1b[1;{}Q", modifier_code)),
       "f3" => Some(format!("\x1b[1;{}R", modifier_code)),
       "f4" => Some(format!("\x1b[1;{}S", modifier_code)),
-      "F5" => Some(format!("\x1b[15;{}~", modifier_code)),
+      "f5" => Some(format!("\x1b[15;{}~", modifier_code)),
       "f6" => Some(format!("\x1b[17;{}~", modifier_code)),
       "f7" => Some(format!("\x1b[18;{}~", modifier_code)),
       "f8" => Some(format!("\x1b[19;{}~", modifier_code)),
@@ -275,6 +285,29 @@ pub fn to_esc_str(
   None
 }
 
+pub fn to_input_bytes(
+  keystroke: &Keystroke,
+  mode: &TermMode,
+  alt_is_meta: bool,
+) -> Option<Cow<'static, [u8]>> {
+  if let Some(escape) = to_esc_str(keystroke, mode, alt_is_meta) {
+    return Some(match escape {
+      Cow::Borrowed(escape) => Cow::Borrowed(escape.as_bytes()),
+      Cow::Owned(escape) => Cow::Owned(escape.into_bytes()),
+    });
+  }
+
+  if !keystroke.modifiers.control
+    && !keystroke.modifiers.alt
+    && !keystroke.modifiers.platform
+    && let Some(key_char) = &keystroke.key_char
+  {
+    return Some(Cow::Owned(key_char.as_bytes().to_vec()));
+  }
+
+  None
+}
+
 ///   Code     Modifiers
 /// ---------+---------------------------
 ///    2     | Shift
@@ -298,4 +331,90 @@ fn modifier_code(keystroke: &Keystroke) -> u32 {
     modifier_code |= 1 << 2;
   }
   modifier_code + 1
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{to_esc_str, to_input_bytes};
+  use gpui::{Keystroke, Modifiers};
+  use terminal_kernel::term::TermMode;
+
+  fn keystroke(key: &str, modifiers: Modifiers) -> Keystroke {
+    Keystroke {
+      modifiers,
+      key: key.to_string(),
+      key_char: None,
+    }
+  }
+
+  #[test]
+  fn ctrl_shift_backspace_uses_modified_backspace_sequence() {
+    let escape = to_esc_str(
+      &keystroke(
+        "backspace",
+        Modifiers {
+          control: true,
+          shift: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
+  }
+
+  #[test]
+  fn capitalized_backspace_name_is_normalized() {
+    let escape = to_esc_str(
+      &keystroke(
+        "Backspace",
+        Modifiers {
+          control: true,
+          shift: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
+  }
+
+  #[test]
+  fn plain_character_falls_back_to_key_char_input() {
+    let input = to_input_bytes(
+      &Keystroke {
+        key: "a".to_string(),
+        key_char: Some("a".to_string()),
+        modifiers: Modifiers::default(),
+      },
+      &TermMode::empty(),
+      true,
+    )
+    .unwrap();
+
+    assert_eq!(input.as_ref(), b"a");
+  }
+
+  #[test]
+  fn shifted_character_falls_back_to_key_char_input() {
+    let input = to_input_bytes(
+      &Keystroke {
+        key: "A".to_string(),
+        key_char: Some("A".to_string()),
+        modifiers: Modifiers {
+          shift: true,
+          ..Modifiers::default()
+        },
+      },
+      &TermMode::empty(),
+      true,
+    )
+    .unwrap();
+
+    assert_eq!(input.as_ref(), b"A");
+  }
 }
