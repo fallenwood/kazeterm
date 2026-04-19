@@ -40,6 +40,7 @@ fn main() {
 
     if target.contains("windows") {
         patch_ghostty_windows_vt_write(&ghostty_dir);
+        patch_ghostty_windows_ubsan(&ghostty_dir);
     }
 
     // Build libghostty-vt via zig.
@@ -165,11 +166,20 @@ fn configure_ghostty_build(
 }
 
 fn maybe_add_target_arg(build: &mut Command, target: &str, host: &str) {
-    // Only pass -Dtarget when cross-compiling. For native builds, let zig
-    // auto-detect the host (matches how ghostty's own CMakeLists.txt works).
-    if target != host {
+    // Zig's native Windows host detection prefers MSVC even when Cargo is
+    // running under the GNU toolchain, so native Windows GNU builds must force
+    // the Ghostty target explicitly.
+    if should_specify_zig_target(target, host) {
         build.arg(format!("-Dtarget={}", zig_target(target)));
     }
+}
+
+fn should_specify_zig_target(target: &str, host: &str) -> bool {
+    target != host || is_windows_gnu_target(target)
+}
+
+fn is_windows_gnu_target(target: &str) -> bool {
+    target.contains("windows-gnu") || target.contains("windows-gnullvm")
 }
 
 /// Clone ghostty at the pinned commit into OUT_DIR/ghostty-src.
@@ -260,9 +270,39 @@ fn patch_ghostty_windows_vt_write(ghostty_dir: &Path) {
     let terminal_c = ghostty_dir.join("src").join("terminal").join("c").join("terminal.zig");
     let original = "    wrapper.stream.nextSlice(ptr[0..len]);";
     let patched = "    for (ptr[0..len]) |c| wrapper.stream.next(c);";
+    patch_file_once(
+        &terminal_c,
+        original,
+        patched,
+        "Windows vt_write",
+    );
+}
 
-    let contents = std::fs::read_to_string(&terminal_c)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", terminal_c.display()));
+fn patch_ghostty_windows_ubsan(ghostty_dir: &Path) {
+    let shared_deps = ghostty_dir.join("src").join("build").join("SharedDeps.zig");
+    let original = r#"        // Disable ubsan for MSVC to avoid undefined references to
+        // __ubsan_handle_* symbols that require a runtime we don't link
+        // and bundle. Hopefully we can fix this one day since ubsan is nice!
+        if (target.result.abi == .msvc) try flags.appendSlice(b.allocator, &.{"#;
+    let patched = r#"        // Disable ubsan for Windows to avoid undefined references to
+        // __ubsan_handle_* symbols when the Ghostty build does not bundle a
+        // runtime on that target.
+        if (target.result.os.tag == .windows) try flags.appendSlice(b.allocator, &.{"#;
+    patch_file_once(
+        &shared_deps,
+        original,
+        patched,
+        "Windows UBSan",
+    );
+}
+
+fn patch_file_once(path: &Path, original: &str, patched: &str, description: &str) {
+    let contents = std::fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read {} for {description}: {error}",
+            path.display()
+        )
+    });
 
     if contents.contains(patched) {
         return;
@@ -271,12 +311,16 @@ fn patch_ghostty_windows_vt_write(ghostty_dir: &Path) {
     let updated = contents.replacen(original, patched, 1);
     assert!(
         updated != contents,
-        "failed to apply Windows vt_write patch to {}",
-        terminal_c.display()
+        "failed to apply {description} patch to {}",
+        path.display()
     );
 
-    std::fs::write(&terminal_c, updated)
-        .unwrap_or_else(|error| panic!("failed to write {}: {error}", terminal_c.display()));
+    std::fs::write(path, updated).unwrap_or_else(|error| {
+        panic!(
+            "failed to write {} for {description}: {error}",
+            path.display()
+        )
+    });
 }
 
 /// Returns directories to search for the built library artifact.
