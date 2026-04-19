@@ -81,12 +81,14 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+rpath = true
 
 [profile.release-fast]
 inherits = "release"
 debug = false
 lto = false
 codegen-units = 16
+rpath = true
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow" }

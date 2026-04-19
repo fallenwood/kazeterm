@@ -67,3 +67,6 @@ category = "public.app-category.developer-tools"
 short_description = "A terminal emulator"
 copyright = "Copyright (c) fallenwood"
 osx_minimum_system_version = "10.15"
+resources = [
+    "target/**/libghostty-vt.0.1.0.dylib"
+]
