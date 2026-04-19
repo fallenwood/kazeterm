@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use terminal_kernel::grid::Scroll;
-use terminal_kernel::index::{Boundary, Column, Direction, Line, Point as AlacPoint};
-use terminal_kernel::selection::Selection;
+use terminal_kernel::index::{Boundary, Column, Direction, Line, Point as AlacPoint, Side};
+use terminal_kernel::selection::{Selection, SelectionRange, SelectionType};
 use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
 use terminal_kernel::term::{RenderableCursor, TermMode};
 use terminal_kernel::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor, Rgb};
-use terminal_kernel::{RenderableSnapshot, TerminalBackend};
+use terminal_kernel::{RenderableSnapshot, SelectionDisplay, TerminalBackend};
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -19,6 +19,12 @@ use terminal_kernel::{RenderableSnapshot, TerminalBackend};
 struct CursorState {
   point: AlacPoint,
   style: CursorStyle,
+}
+
+#[derive(Clone, Copy)]
+struct SelectionAnchor {
+  point: AlacPoint,
+  side: Side,
 }
 
 struct SavedCursor {
@@ -44,6 +50,7 @@ pub struct VteTermInner {
   mode: TermMode,
   display_offset: usize,
   selection: Option<Selection>,
+  selection_display: Option<SelectionDisplay>,
 
   // Scroll region (0-indexed, inclusive).
   scroll_top: usize,
@@ -108,6 +115,7 @@ impl VteTermInner {
       mode: TermMode::SHOW_CURSOR | TermMode::LINE_WRAP,
       display_offset: 0,
       selection: None,
+      selection_display: None,
       scroll_top: 0,
       scroll_bottom: lines.saturating_sub(1),
       template_cell: Cell::default(),
@@ -247,6 +255,242 @@ impl VteTermInner {
     std::mem::swap(&mut self.rows, &mut self.alt_rows);
     self.mode.remove(TermMode::ALT_SCREEN);
   }
+}
+
+fn cell_at_state(s: &VteTermInner, point: AlacPoint) -> Cell {
+  let line = point.line.0;
+  let col = point.column.0;
+
+  if line < 0 {
+    let sb_idx = s.scrollback.len() as i32 + line;
+    if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+      return s.scrollback[sb_idx as usize]
+        .get(col)
+        .cloned()
+        .unwrap_or_default();
+    }
+  } else {
+    let row_idx = line as usize;
+    if row_idx < s.num_lines && col < s.num_cols {
+      return s.rows[row_idx][col].clone();
+    }
+  }
+
+  Cell::default()
+}
+
+fn clamp_point_to_grid(s: &VteTermInner, point: AlacPoint) -> AlacPoint {
+  let min_line = -(s.scrollback.len() as i32);
+  let max_line = s.num_lines as i32 - 1;
+  let line = point.line.0.clamp(min_line, max_line);
+  let col = point.column.0.min(s.num_cols.saturating_sub(1));
+  AlacPoint::new(Line(line), Column(col))
+}
+
+fn line_search_left_state(s: &VteTermInner, point: AlacPoint) -> AlacPoint {
+  let mut target_line = point.line.0;
+  loop {
+    let prev = target_line - 1;
+    let is_wrapped = if prev < 0 {
+      let sb_idx = s.scrollback.len() as i32 + prev;
+      if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+        let row = &s.scrollback[sb_idx as usize];
+        row
+          .last()
+          .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+      } else {
+        false
+      }
+    } else {
+      let ri = prev as usize;
+      if ri < s.num_lines {
+        s.rows[ri]
+          .last()
+          .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+      } else {
+        false
+      }
+    };
+
+    if is_wrapped {
+      target_line = prev;
+    } else {
+      break;
+    }
+  }
+
+  AlacPoint::new(Line(target_line), Column(0))
+}
+
+fn line_search_right_state(s: &VteTermInner, point: AlacPoint) -> AlacPoint {
+  let mut target_line = point.line.0;
+  loop {
+    let is_wrapped = if target_line < 0 {
+      let sb_idx = s.scrollback.len() as i32 + target_line;
+      if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
+        let row = &s.scrollback[sb_idx as usize];
+        row
+          .last()
+          .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+      } else {
+        false
+      }
+    } else {
+      let ri = target_line as usize;
+      if ri < s.num_lines {
+        s.rows[ri]
+          .last()
+          .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
+      } else {
+        false
+      }
+    };
+
+    if is_wrapped {
+      target_line += 1;
+    } else {
+      break;
+    }
+  }
+
+  AlacPoint::new(Line(target_line), Column(s.num_cols.saturating_sub(1)))
+}
+
+fn selection_is_empty(ty: SelectionType, start: SelectionAnchor, end: SelectionAnchor) -> bool {
+  match ty {
+    SelectionType::Simple => {
+      (start.point == end.point && start.side == end.side)
+        || (start.side == Side::Right
+          && end.side == Side::Left
+          && start.point.line == end.point.line
+          && start.point.column + 1 == end.point.column)
+    }
+    SelectionType::Block => {
+      (start.point.column == end.point.column && start.side == end.side)
+        || (start.point.column + 1 == end.point.column
+          && start.side == Side::Right
+          && end.side == Side::Left)
+        || (end.point.column + 1 == start.point.column
+          && start.side == Side::Left
+          && end.side == Side::Right)
+    }
+    SelectionType::Semantic | SelectionType::Lines => false,
+  }
+}
+
+fn selection_range(s: &VteTermInner, selection: SelectionDisplay) -> Option<SelectionRange> {
+  let mut start = SelectionAnchor {
+    point: selection.start,
+    side: selection.start_side,
+  };
+  let mut end = SelectionAnchor {
+    point: selection.end,
+    side: selection.end_side,
+  };
+
+  if start.point > end.point {
+    std::mem::swap(&mut start, &mut end);
+  }
+
+  if end.point.line < Line(-(s.scrollback.len() as i32)) {
+    return None;
+  }
+
+  start.point = clamp_point_to_grid(s, start.point);
+  end.point = clamp_point_to_grid(s, end.point);
+
+  match selection.ty {
+    SelectionType::Simple | SelectionType::Semantic => {
+      if selection_is_empty(SelectionType::Simple, start, end) {
+        return None;
+      }
+
+      if end.side == Side::Left && start.point != end.point {
+        if end.point.column == Column(0) {
+          end.point.column = Column(s.num_cols.saturating_sub(1));
+          end.point.line -= 1;
+        } else {
+          end.point.column -= 1;
+        }
+      }
+
+      if start.side == Side::Right && start.point != end.point {
+        start.point.column += 1;
+        if start.point.column.0 == s.num_cols {
+          start.point.column = Column(0);
+          start.point.line += 1;
+        }
+      }
+
+      (start.point <= end.point).then_some(SelectionRange {
+        start: start.point,
+        end: end.point,
+        is_block: false,
+      })
+    }
+    SelectionType::Block => {
+      if selection_is_empty(SelectionType::Block, start, end) {
+        return None;
+      }
+
+      if start.point.column > end.point.column {
+        std::mem::swap(&mut start.side, &mut end.side);
+        std::mem::swap(&mut start.point.column, &mut end.point.column);
+      }
+
+      if end.side == Side::Left && start.point != end.point && end.point.column.0 > 0 {
+        end.point.column -= 1;
+      }
+
+      if start.side == Side::Right && start.point != end.point {
+        start.point.column += 1;
+      }
+
+      Some(SelectionRange {
+        start: start.point,
+        end: end.point,
+        is_block: true,
+      })
+    }
+    SelectionType::Lines => Some(SelectionRange {
+      start: line_search_left_state(s, start.point),
+      end: line_search_right_state(s, end.point),
+      is_block: false,
+    }),
+  }
+}
+
+fn bounds_to_string_state(s: &VteTermInner, start: AlacPoint, end: AlacPoint) -> String {
+  let mut result = String::new();
+
+  for line in start.line.0..=end.line.0 {
+    let start_col = if line == start.line.0 {
+      start.column.0
+    } else {
+      0
+    };
+    let end_col = if line == end.line.0 {
+      end.column.0
+    } else {
+      s.num_cols.saturating_sub(1)
+    };
+
+    for col in start_col..=end_col {
+      let cell = cell_at_state(s, AlacPoint::new(Line(line), Column(col)));
+      if !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        result.push(cell.c);
+      }
+    }
+
+    if line != end.line.0 {
+      let trimmed = result.trim_end_matches(' ');
+      let trimmed_len = trimmed.len();
+      result.truncate(trimmed_len);
+      result.push('\n');
+    }
+  }
+
+  result
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,25 +1282,7 @@ impl TerminalBackend for VteBackend {
 
   fn cell_at(&self, point: AlacPoint) -> Cell {
     let s = self.state.lock();
-    let line = point.line.0;
-    let col = point.column.0;
-
-    if line < 0 {
-      // Scrollback region.
-      let sb_idx = s.scrollback.len() as i32 + line;
-      if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-        let row = &s.scrollback[sb_idx as usize];
-        if col < row.len() {
-          return row[col].clone();
-        }
-      }
-    } else {
-      let row_idx = line as usize;
-      if row_idx < s.num_lines && col < s.num_cols {
-        return s.rows[row_idx][col].clone();
-      }
-    }
-    Cell::default()
+    cell_at_state(&s, point)
   }
 
   fn display_offset(&self) -> usize {
@@ -1109,12 +1335,9 @@ impl TerminalBackend for VteBackend {
       point: s.cursor.point,
     };
 
-    let selection = s.selection.as_ref().and_then(|sel| {
-      // Approximate selection range from Selection.
-      // Selection doesn't expose a to_range without Term, so we return None.
-      let _ = sel;
-      None
-    });
+    let selection = s
+      .selection_display
+      .and_then(|selection| selection_range(&s, selection));
 
     RenderableSnapshot {
       cells,
@@ -1132,68 +1355,40 @@ impl TerminalBackend for VteBackend {
 
   fn selection_to_string(&self) -> Option<String> {
     let s = self.state.lock();
-    let sel = s.selection.as_ref()?;
-    // Extract text between selection anchors.
-    // Selection exposes region start/end via the public API.
-    let _ = sel;
-    // For now, gather text by iterating the bounding box.
-    None
+    let selection = s.selection_display?;
+    let SelectionRange { start, end, .. } = selection_range(&s, selection)?;
+
+    match selection.ty {
+      SelectionType::Block => {
+        let mut result = String::new();
+        for line in start.line.0..end.line.0 {
+          result.push_str(
+            bounds_to_string_state(
+              &s,
+              AlacPoint::new(Line(line), start.column),
+              AlacPoint::new(Line(line), end.column),
+            )
+            .trim_end(),
+          );
+          result.push('\n');
+        }
+
+        result.push_str(
+          bounds_to_string_state(&s, AlacPoint::new(end.line, start.column), end).trim_end(),
+        );
+
+        Some(result)
+      }
+      SelectionType::Lines => Some(format!("{}\n", bounds_to_string_state(&s, start, end))),
+      SelectionType::Simple | SelectionType::Semantic => {
+        Some(bounds_to_string_state(&s, start, end))
+      }
+    }
   }
 
   fn bounds_to_string(&self, start: AlacPoint, end: AlacPoint) -> String {
     let s = self.state.lock();
-    let mut result = String::new();
-
-    let start_line = start.line.0;
-    let end_line = end.line.0;
-
-    for line in start_line..=end_line {
-      let start_col = if line == start_line {
-        start.column.0
-      } else {
-        0
-      };
-      let end_col = if line == end_line {
-        end.column.0
-      } else {
-        s.num_cols.saturating_sub(1)
-      };
-
-      for col in start_col..=end_col {
-        let cell = if line < 0 {
-          let sb_idx = s.scrollback.len() as i32 + line;
-          if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-            s.scrollback[sb_idx as usize]
-              .get(col)
-              .cloned()
-              .unwrap_or_default()
-          } else {
-            Cell::default()
-          }
-        } else {
-          let row_idx = line as usize;
-          if row_idx < s.num_lines && col < s.num_cols {
-            s.rows[row_idx][col].clone()
-          } else {
-            Cell::default()
-          }
-        };
-
-        if !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-          result.push(cell.c);
-        }
-      }
-
-      // Trim trailing spaces and add newline between lines.
-      if line != end_line {
-        let trimmed = result.trim_end_matches(' ');
-        let trimmed_len = trimmed.len();
-        result.truncate(trimmed_len);
-        result.push('\n');
-      }
-    }
-
-    result
+    bounds_to_string_state(&s, start, end)
   }
 
   fn get_selection(&self) -> Option<Selection> {
@@ -1211,6 +1406,10 @@ impl TerminalBackend for VteBackend {
   fn update_selection(&self, f: &mut dyn FnMut(&mut Option<Selection>)) {
     let mut s = self.state.lock();
     f(&mut s.selection);
+  }
+
+  fn sync_selection_display(&self, selection: Option<SelectionDisplay>) {
+    self.state.lock().selection_display = selection;
   }
 
   fn resize(&self, lines: usize, cols: usize) {
@@ -1393,78 +1592,12 @@ impl TerminalBackend for VteBackend {
 
   fn line_search_left(&self, point: AlacPoint) -> AlacPoint {
     let s = self.state.lock();
-    let line = point.line.0;
-
-    // Walk left through wrapped lines.
-    let mut target_line = line;
-    loop {
-      let prev = target_line - 1;
-      let is_wrapped = if prev < 0 {
-        let sb_idx = s.scrollback.len() as i32 + prev;
-        if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-          let row = &s.scrollback[sb_idx as usize];
-          row
-            .last()
-            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-        } else {
-          false
-        }
-      } else {
-        let ri = prev as usize;
-        if ri < s.num_lines {
-          s.rows[ri]
-            .last()
-            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-        } else {
-          false
-        }
-      };
-
-      if is_wrapped {
-        target_line = prev;
-      } else {
-        break;
-      }
-    }
-
-    AlacPoint::new(Line(target_line), Column(0))
+    line_search_left_state(&s, point)
   }
 
   fn line_search_right(&self, point: AlacPoint) -> AlacPoint {
     let s = self.state.lock();
-    let line = point.line.0;
-
-    let mut target_line = line;
-    loop {
-      let is_wrapped = if target_line < 0 {
-        let sb_idx = s.scrollback.len() as i32 + target_line;
-        if sb_idx >= 0 && (sb_idx as usize) < s.scrollback.len() {
-          let row = &s.scrollback[sb_idx as usize];
-          row
-            .last()
-            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-        } else {
-          false
-        }
-      } else {
-        let ri = target_line as usize;
-        if ri < s.num_lines {
-          s.rows[ri]
-            .last()
-            .is_some_and(|c| c.flags.contains(CellFlags::WRAPLINE))
-        } else {
-          false
-        }
-      };
-
-      if is_wrapped {
-        target_line += 1;
-      } else {
-        break;
-      }
-    }
-
-    AlacPoint::new(Line(target_line), Column(s.num_cols.saturating_sub(1)))
+    line_search_right_state(&s, point)
   }
 
   fn find_hyperlink_at(
@@ -1474,5 +1607,64 @@ impl TerminalBackend for VteBackend {
   ) -> Option<(String, bool, std::ops::RangeInclusive<AlacPoint>)> {
     // Regex-based URL detection not yet implemented for the VTE backend.
     None
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn populate_row(text: &str, width: usize) -> Vec<Cell> {
+    let mut row = vec![Cell::default(); width];
+    for (index, ch) in text.chars().enumerate() {
+      row[index].c = ch;
+    }
+    row
+  }
+
+  #[test]
+  fn renderable_snapshot_exposes_simple_selection() {
+    let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
+    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None)));
+
+    {
+      let mut inner = state.lock();
+      inner.rows[0] = populate_row("hello", 5);
+      inner.selection_display = Some(SelectionDisplay {
+        ty: SelectionType::Simple,
+        start: AlacPoint::new(Line(0), Column(1)),
+        start_side: Side::Left,
+        end: AlacPoint::new(Line(0), Column(4)),
+        end_side: Side::Left,
+      });
+    }
+
+    let backend = VteBackend::new(state);
+    let selection = backend.renderable_snapshot().selection.unwrap();
+
+    assert_eq!(selection.start, AlacPoint::new(Line(0), Column(1)));
+    assert_eq!(selection.end, AlacPoint::new(Line(0), Column(3)));
+  }
+
+  #[test]
+  fn selection_to_string_uses_visible_range() {
+    let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
+    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None)));
+
+    {
+      let mut inner = state.lock();
+      inner.rows[0] = populate_row("hello", 5);
+      inner.selection_display = Some(SelectionDisplay {
+        ty: SelectionType::Simple,
+        start: AlacPoint::new(Line(0), Column(1)),
+        start_side: Side::Left,
+        end: AlacPoint::new(Line(0), Column(4)),
+        end_side: Side::Left,
+      });
+    }
+
+    let backend = VteBackend::new(state);
+
+    assert_eq!(backend.selection_to_string().as_deref(), Some("ell"));
   }
 }
