@@ -94,7 +94,7 @@ jobs:
           }
           Copy-Item $ghosttyLibs[0].FullName $packDir
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
-          7z a ./dists/kazeterm-$variant-${{ github.ref_name }}.7z ./kazeterm.exe
+          7z a ./dists/kazeterm-$variant-${{ github.ref_name }}.7z ./kazeterm.exe $ghosttyLibs[0].FullName
 
       - name: Pack
         if: runner.os == 'Linux'
