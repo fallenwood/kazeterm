@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KeybindingList(HashSet<String>);
+pub struct KeybindingList(Vec<String>);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -17,11 +17,11 @@ impl KeybindingList {
   }
 
   pub fn from_vec(bindings: Vec<String>) -> Self {
-    let mut deduped = HashSet::with_capacity(bindings.len());
+    let mut deduped = Vec::with_capacity(bindings.len());
     for binding in bindings {
       let binding = binding.trim();
-      if !binding.is_empty() {
-        deduped.insert(binding.to_string());
+      if !binding.is_empty() && !deduped.iter().any(|existing| existing == binding) {
+        deduped.push(binding.to_string());
       }
     }
     Self(deduped)
@@ -32,9 +32,7 @@ impl KeybindingList {
   }
 
   pub fn iter(&self) -> impl Iterator<Item = &str> + '_ {
-    let mut bindings = self.0.iter().map(String::as_str).collect::<Vec<_>>();
-    bindings.sort_unstable();
-    bindings.into_iter()
+    self.0.iter().map(String::as_str)
   }
 
   pub fn clear(&mut self) {
@@ -44,8 +42,8 @@ impl KeybindingList {
   pub fn insert(&mut self, binding: impl Into<String>) {
     let binding = binding.into();
     let binding = binding.trim();
-    if !binding.is_empty() {
-      self.0.insert(binding.to_string());
+    if !binding.is_empty() && !self.0.iter().any(|existing| existing == binding) {
+      self.0.push(binding.to_string());
     }
   }
 
@@ -66,7 +64,7 @@ impl KeybindingList {
     }
   }
 
-  fn to_sorted_bindings(&self) -> Vec<&str> {
+  fn bindings(&self) -> Vec<&str> {
     self.iter().collect()
   }
 
@@ -87,7 +85,7 @@ impl KeybindingList {
 
 impl Default for KeybindingList {
   fn default() -> Self {
-    Self(HashSet::new())
+    Self(Vec::new())
   }
 }
 
@@ -96,7 +94,7 @@ impl Serialize for KeybindingList {
   where
     S: Serializer,
   {
-    let bindings = self.to_sorted_bindings();
+    let bindings = self.bindings();
     match bindings.as_slice() {
       [binding] => serializer.serialize_str(binding),
       bindings => bindings.serialize(serializer),
@@ -119,7 +117,7 @@ impl<'de> Deserialize<'de> for KeybindingList {
 
 impl PartialEq<&str> for KeybindingList {
   fn eq(&self, other: &&str) -> bool {
-    self.0.len() == 1 && self.0.contains(*other)
+    self.0.len() == 1 && self.0.iter().any(|binding| binding == other)
   }
 }
 
@@ -1317,7 +1315,7 @@ mod tests {
 
     assert_eq!(
       config.copy.iter().collect::<Vec<_>>(),
-      vec!["ctrl-insert", "ctrl-shift-c"]
+      vec!["ctrl-shift-c", "ctrl-insert"]
     );
     assert!(config.copy.matches(true, true, false, false, "c"));
     assert!(config.copy.matches(true, false, false, false, "insert"));
