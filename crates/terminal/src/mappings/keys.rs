@@ -68,13 +68,41 @@ fn normalized_key_name(key: &str) -> Cow<'_, str> {
   }
 }
 
+fn kitty_c0_key_code(key: &str) -> Option<u32> {
+  match key {
+    "escape" => Some(27),
+    "enter" => Some(13),
+    "tab" => Some(9),
+    "backspace" | "back" => Some(127),
+    _ => None,
+  }
+}
+
+fn to_kitty_c0_escape(key: &str, keystroke: &Keystroke) -> Option<Cow<'static, str>> {
+  let code = kitty_c0_key_code(key)?;
+  let modifier_code = modifier_code(keystroke);
+
+  Some(Cow::Owned(if modifier_code == 1 {
+    format!("\x1b[{code}u")
+  } else {
+    format!("\x1b[{code};{modifier_code}u")
+  }))
+}
+
 pub fn to_esc_str(
   keystroke: &Keystroke,
   mode: &TermMode,
   alt_is_meta: bool,
+  report_all_keys_as_escape_codes: bool,
 ) -> Option<Cow<'static, str>> {
   let modifiers = AlacModifiers::new(keystroke);
   let key = normalized_key_name(&keystroke.key);
+
+  if report_all_keys_as_escape_codes
+    && let Some(escape) = to_kitty_c0_escape(key.as_ref(), keystroke)
+  {
+    return Some(escape);
+  }
 
   // Manual Bindings including modifiers
   let manual_esc_str: Option<&'static str> = match (key.as_ref(), &modifiers) {
@@ -289,8 +317,14 @@ pub fn to_input_bytes(
   keystroke: &Keystroke,
   mode: &TermMode,
   alt_is_meta: bool,
+  report_all_keys_as_escape_codes: bool,
 ) -> Option<Cow<'static, [u8]>> {
-  if let Some(escape) = to_esc_str(keystroke, mode, alt_is_meta) {
+  if let Some(escape) = to_esc_str(
+    keystroke,
+    mode,
+    alt_is_meta,
+    report_all_keys_as_escape_codes,
+  ) {
     return Some(match escape {
       Cow::Borrowed(escape) => Cow::Borrowed(escape.as_bytes()),
       Cow::Owned(escape) => Cow::Owned(escape.into_bytes()),
@@ -360,6 +394,7 @@ mod tests {
       ),
       &TermMode::empty(),
       true,
+      false,
     );
 
     assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
@@ -378,9 +413,47 @@ mod tests {
       ),
       &TermMode::empty(),
       true,
+      false,
     );
 
     assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
+  }
+
+  #[test]
+  fn ctrl_shift_backspace_uses_kitty_sequence_when_all_keys_are_escaped() {
+    let escape = to_esc_str(
+      &keystroke(
+        "backspace",
+        Modifiers {
+          control: true,
+          shift: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+      true,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
+  }
+
+  #[test]
+  fn ctrl_backspace_remains_legacy_backspace() {
+    let escape = to_esc_str(
+      &keystroke(
+        "backspace",
+        Modifiers {
+          control: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+      false,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x08"));
   }
 
   #[test]
@@ -393,6 +466,7 @@ mod tests {
       },
       &TermMode::empty(),
       true,
+      false,
     )
     .unwrap();
 
@@ -412,6 +486,7 @@ mod tests {
       },
       &TermMode::empty(),
       true,
+      false,
     )
     .unwrap();
 
