@@ -522,22 +522,22 @@ copy = "ctrl-shift-c"
 
   let migrated = apply_migrations(&mut config);
   assert!(migrated);
+  let default_keybindings = crate::KeybindingConfig::default();
+  let expected_new_tab = default_keybindings.new_tab.first().unwrap();
+  let expected_new_tab_profile_1 = default_keybindings.new_tab_profile_1.first().unwrap();
   assert_eq!(
-    get_nested(&config, "keybindings", "new_tab")
+    get_nested(&config, "keybindings", expected_new_tab)
       .unwrap()
       .as_str()
       .unwrap(),
-    crate::KeybindingConfig::default().new_tab.first().unwrap()
+    "new_tab"
   );
   assert_eq!(
-    get_nested(&config, "keybindings", "new_tab_profile_1")
+    get_nested(&config, "keybindings", expected_new_tab_profile_1)
       .unwrap()
       .as_str()
       .unwrap(),
-    crate::KeybindingConfig::default()
-      .new_tab_profile_1
-      .first()
-      .unwrap()
+    "new_tab_profile_1"
   );
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),
@@ -580,25 +580,25 @@ new_tab_profile_9 = "ctrl-shift-9"
   };
 
   assert_eq!(
-    get_nested(&config, "keybindings", "new_tab")
+    get_nested(&config, "keybindings", expected_new_tab)
       .unwrap()
       .as_str()
       .unwrap(),
-    expected_new_tab
+    "new_tab"
   );
   assert_eq!(
-    get_nested(&config, "keybindings", "new_tab_profile_1")
+    get_nested(&config, "keybindings", expected_profile_1)
       .unwrap()
       .as_str()
       .unwrap(),
-    expected_profile_1
+    "new_tab_profile_1"
   );
   assert_eq!(
-    get_nested(&config, "keybindings", "new_tab_profile_9")
+    get_nested(&config, "keybindings", expected_profile_9)
       .unwrap()
       .as_str()
       .unwrap(),
-    expected_profile_9
+    "new_tab_profile_9"
   );
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),
@@ -623,18 +623,26 @@ copy = "ctrl-shift-c"
 
   let default_keybindings = crate::KeybindingConfig::default();
   assert_eq!(
-    get_nested(&config, "keybindings", "select_tab_1")
+    get_nested(
+      &config,
+      "keybindings",
+      default_keybindings.select_tab_1.first().unwrap()
+    )
       .unwrap()
       .as_str()
       .unwrap(),
-    default_keybindings.select_tab_1.first().unwrap()
+    "select_tab_1"
   );
   assert_eq!(
-    get_nested(&config, "keybindings", "select_tab_9")
+    get_nested(
+      &config,
+      "keybindings",
+      default_keybindings.select_tab_9.first().unwrap()
+    )
       .unwrap()
       .as_str()
       .unwrap(),
-    default_keybindings.select_tab_9.first().unwrap()
+    "select_tab_9"
   );
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),
@@ -659,18 +667,26 @@ copy = "ctrl-shift-c"
 
   let default_keybindings = crate::KeybindingConfig::default();
   assert_eq!(
-    get_nested(&config, "keybindings", "focus_pane_up")
+    get_nested(
+      &config,
+      "keybindings",
+      default_keybindings.focus_pane_up.first().unwrap()
+    )
       .unwrap()
       .as_str()
       .unwrap(),
-    default_keybindings.focus_pane_up.first().unwrap()
+    "focus_pane_up"
   );
   assert_eq!(
-    get_nested(&config, "keybindings", "focus_pane_right")
+    get_nested(
+      &config,
+      "keybindings",
+      default_keybindings.focus_pane_right.first().unwrap()
+    )
       .unwrap()
       .as_str()
       .unwrap(),
-    default_keybindings.focus_pane_right.first().unwrap()
+    "focus_pane_right"
   );
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),
@@ -726,6 +742,43 @@ focus_terminal_on_hover = true
       .as_str()
       .unwrap(),
     "alacritty"
+  );
+  assert_eq!(
+    config.get("version").unwrap().as_str().unwrap(),
+    CURRENT_CONFIG_VERSION
+  );
+}
+
+#[test]
+fn migrate_20260417_3_rewrites_keybindings_to_key_first_format() {
+  let mut config: Value = toml::from_str(
+    r##"
+version = "20260417.3"
+
+[keybindings]
+copy = ["ctrl-shift-c", "ctrl-insert"]
+paste = "ctrl-shift-v"
+"##,
+  )
+  .unwrap();
+
+  let migrated = apply_migrations(&mut config);
+  assert!(migrated);
+
+  let keybindings = config.get("keybindings").unwrap();
+  assert!(keybindings.get("copy").is_none());
+  assert!(keybindings.get("paste").is_none());
+  assert_eq!(
+    keybindings.get("ctrl-shift-c").unwrap().as_str().unwrap(),
+    "copy"
+  );
+  assert_eq!(
+    keybindings.get("ctrl-insert").unwrap().as_str().unwrap(),
+    "copy"
+  );
+  assert_eq!(
+    keybindings.get("ctrl-shift-v").unwrap().as_str().unwrap(),
+    "paste"
   );
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),

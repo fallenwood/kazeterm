@@ -1,4 +1,5 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeybindingList(Vec<String>);
@@ -16,21 +17,55 @@ impl KeybindingList {
   }
 
   pub fn from_vec(bindings: Vec<String>) -> Self {
-    Self(
-      bindings
-        .into_iter()
-        .map(|binding| binding.trim().to_string())
-        .filter(|binding| !binding.is_empty())
-        .collect(),
-    )
+    let mut deduped = Vec::with_capacity(bindings.len());
+    for binding in bindings {
+      let binding = binding.trim();
+      if !binding.is_empty() && !deduped.iter().any(|existing| existing == binding) {
+        deduped.push(binding.to_string());
+      }
+    }
+    Self(deduped)
   }
 
   pub fn first(&self) -> Option<&str> {
-    self.0.first().map(String::as_str)
+    self.iter().next()
   }
 
-  pub fn iter(&self) -> impl Iterator<Item = &str> {
+  pub fn iter(&self) -> impl Iterator<Item = &str> + '_ {
     self.0.iter().map(String::as_str)
+  }
+
+  pub fn clear(&mut self) {
+    self.0.clear();
+  }
+
+  pub fn insert(&mut self, binding: impl Into<String>) {
+    let binding = binding.into();
+    let binding = binding.trim();
+    if !binding.is_empty() && !self.0.iter().any(|existing| existing == binding) {
+      self.0.push(binding.to_string());
+    }
+  }
+
+  fn from_value(value: toml::Value) -> Result<Self, String> {
+    match value {
+      toml::Value::String(binding) => Ok(Self::from_vec(vec![binding])),
+      toml::Value::Array(bindings) => {
+        let mut parsed = Vec::with_capacity(bindings.len());
+        for binding in bindings {
+          match binding {
+            toml::Value::String(binding) => parsed.push(binding),
+            _ => return Err("keybinding arrays must contain only strings".to_string()),
+          }
+        }
+        Ok(Self::from_vec(parsed))
+      }
+      _ => Err("keybinding values must be strings or arrays of strings".to_string()),
+    }
+  }
+
+  fn bindings(&self) -> Vec<&str> {
+    self.iter().collect()
   }
 
   pub fn matches(&self, control: bool, shift: bool, alt: bool, platform: bool, key: &str) -> bool {
@@ -59,7 +94,8 @@ impl Serialize for KeybindingList {
   where
     S: Serializer,
   {
-    match self.0.as_slice() {
+    let bindings = self.bindings();
+    match bindings.as_slice() {
       [binding] => serializer.serialize_str(binding),
       bindings => bindings.serialize(serializer),
     }
@@ -81,20 +117,243 @@ impl<'de> Deserialize<'de> for KeybindingList {
 
 impl PartialEq<&str> for KeybindingList {
   fn eq(&self, other: &&str) -> bool {
-    matches!(self.0.as_slice(), [binding] if binding == *other)
+    self.0.len() == 1 && self.0.iter().any(|binding| binding == other)
   }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum KeybindingAction {
+  Copy,
+  Paste,
+  ZoomIn,
+  ZoomOut,
+  ZoomReset,
+  NextTab,
+  PreviousTab,
+  SelectTab1,
+  SelectTab2,
+  SelectTab3,
+  SelectTab4,
+  SelectTab5,
+  SelectTab6,
+  SelectTab7,
+  SelectTab8,
+  SelectTab9,
+  ToggleSearch,
+  SplitHorizontal,
+  SplitVertical,
+  ClosePane,
+  FocusNextPane,
+  FocusPreviousPane,
+  FocusPaneUp,
+  FocusPaneDown,
+  FocusPaneLeft,
+  FocusPaneRight,
+  SwapSplitPanes,
+  ToggleFullscreen,
+  ToggleTabBar,
+  NewTab,
+  NewTabProfile1,
+  NewTabProfile2,
+  NewTabProfile3,
+  NewTabProfile4,
+  NewTabProfile5,
+  NewTabProfile6,
+  NewTabProfile7,
+  NewTabProfile8,
+  NewTabProfile9,
+  NewWindow,
+  Quit,
+}
+
+impl KeybindingAction {
+  const ALL: [Self; 41] = [
+    Self::Copy,
+    Self::Paste,
+    Self::ZoomIn,
+    Self::ZoomOut,
+    Self::ZoomReset,
+    Self::NextTab,
+    Self::PreviousTab,
+    Self::SelectTab1,
+    Self::SelectTab2,
+    Self::SelectTab3,
+    Self::SelectTab4,
+    Self::SelectTab5,
+    Self::SelectTab6,
+    Self::SelectTab7,
+    Self::SelectTab8,
+    Self::SelectTab9,
+    Self::ToggleSearch,
+    Self::SplitHorizontal,
+    Self::SplitVertical,
+    Self::ClosePane,
+    Self::FocusNextPane,
+    Self::FocusPreviousPane,
+    Self::FocusPaneUp,
+    Self::FocusPaneDown,
+    Self::FocusPaneLeft,
+    Self::FocusPaneRight,
+    Self::SwapSplitPanes,
+    Self::ToggleFullscreen,
+    Self::ToggleTabBar,
+    Self::NewTab,
+    Self::NewTabProfile1,
+    Self::NewTabProfile2,
+    Self::NewTabProfile3,
+    Self::NewTabProfile4,
+    Self::NewTabProfile5,
+    Self::NewTabProfile6,
+    Self::NewTabProfile7,
+    Self::NewTabProfile8,
+    Self::NewTabProfile9,
+    Self::NewWindow,
+    Self::Quit,
+  ];
+
+  pub(crate) fn from_str(value: &str) -> Option<Self> {
+    match value {
+      "copy" => Some(Self::Copy),
+      "paste" => Some(Self::Paste),
+      "zoom_in" => Some(Self::ZoomIn),
+      "zoom_out" => Some(Self::ZoomOut),
+      "zoom_reset" => Some(Self::ZoomReset),
+      "next_tab" => Some(Self::NextTab),
+      "previous_tab" => Some(Self::PreviousTab),
+      "select_tab_1" => Some(Self::SelectTab1),
+      "select_tab_2" => Some(Self::SelectTab2),
+      "select_tab_3" => Some(Self::SelectTab3),
+      "select_tab_4" => Some(Self::SelectTab4),
+      "select_tab_5" => Some(Self::SelectTab5),
+      "select_tab_6" => Some(Self::SelectTab6),
+      "select_tab_7" => Some(Self::SelectTab7),
+      "select_tab_8" => Some(Self::SelectTab8),
+      "select_tab_9" => Some(Self::SelectTab9),
+      "toggle_search" => Some(Self::ToggleSearch),
+      "split_horizontal" => Some(Self::SplitHorizontal),
+      "split_vertical" => Some(Self::SplitVertical),
+      "close_pane" => Some(Self::ClosePane),
+      "focus_next_pane" => Some(Self::FocusNextPane),
+      "focus_previous_pane" => Some(Self::FocusPreviousPane),
+      "focus_pane_up" => Some(Self::FocusPaneUp),
+      "focus_pane_down" => Some(Self::FocusPaneDown),
+      "focus_pane_left" => Some(Self::FocusPaneLeft),
+      "focus_pane_right" => Some(Self::FocusPaneRight),
+      "swap_split_panes" => Some(Self::SwapSplitPanes),
+      "toggle_fullscreen" => Some(Self::ToggleFullscreen),
+      "toggle_tab_bar" => Some(Self::ToggleTabBar),
+      "new_tab" => Some(Self::NewTab),
+      "new_tab_profile_1" => Some(Self::NewTabProfile1),
+      "new_tab_profile_2" => Some(Self::NewTabProfile2),
+      "new_tab_profile_3" => Some(Self::NewTabProfile3),
+      "new_tab_profile_4" => Some(Self::NewTabProfile4),
+      "new_tab_profile_5" => Some(Self::NewTabProfile5),
+      "new_tab_profile_6" => Some(Self::NewTabProfile6),
+      "new_tab_profile_7" => Some(Self::NewTabProfile7),
+      "new_tab_profile_8" => Some(Self::NewTabProfile8),
+      "new_tab_profile_9" => Some(Self::NewTabProfile9),
+      "new_window" => Some(Self::NewWindow),
+      "quit" => Some(Self::Quit),
+      _ => None,
+    }
+  }
+
+  pub(crate) fn as_str(self) -> &'static str {
+    match self {
+      Self::Copy => "copy",
+      Self::Paste => "paste",
+      Self::ZoomIn => "zoom_in",
+      Self::ZoomOut => "zoom_out",
+      Self::ZoomReset => "zoom_reset",
+      Self::NextTab => "next_tab",
+      Self::PreviousTab => "previous_tab",
+      Self::SelectTab1 => "select_tab_1",
+      Self::SelectTab2 => "select_tab_2",
+      Self::SelectTab3 => "select_tab_3",
+      Self::SelectTab4 => "select_tab_4",
+      Self::SelectTab5 => "select_tab_5",
+      Self::SelectTab6 => "select_tab_6",
+      Self::SelectTab7 => "select_tab_7",
+      Self::SelectTab8 => "select_tab_8",
+      Self::SelectTab9 => "select_tab_9",
+      Self::ToggleSearch => "toggle_search",
+      Self::SplitHorizontal => "split_horizontal",
+      Self::SplitVertical => "split_vertical",
+      Self::ClosePane => "close_pane",
+      Self::FocusNextPane => "focus_next_pane",
+      Self::FocusPreviousPane => "focus_previous_pane",
+      Self::FocusPaneUp => "focus_pane_up",
+      Self::FocusPaneDown => "focus_pane_down",
+      Self::FocusPaneLeft => "focus_pane_left",
+      Self::FocusPaneRight => "focus_pane_right",
+      Self::SwapSplitPanes => "swap_split_panes",
+      Self::ToggleFullscreen => "toggle_fullscreen",
+      Self::ToggleTabBar => "toggle_tab_bar",
+      Self::NewTab => "new_tab",
+      Self::NewTabProfile1 => "new_tab_profile_1",
+      Self::NewTabProfile2 => "new_tab_profile_2",
+      Self::NewTabProfile3 => "new_tab_profile_3",
+      Self::NewTabProfile4 => "new_tab_profile_4",
+      Self::NewTabProfile5 => "new_tab_profile_5",
+      Self::NewTabProfile6 => "new_tab_profile_6",
+      Self::NewTabProfile7 => "new_tab_profile_7",
+      Self::NewTabProfile8 => "new_tab_profile_8",
+      Self::NewTabProfile9 => "new_tab_profile_9",
+      Self::NewWindow => "new_window",
+      Self::Quit => "quit",
+    }
+  }
+}
+
+pub(crate) fn keybinding_action_for_entry(
+  key: &str,
+  value: &toml::Value,
+) -> Option<KeybindingAction> {
+  KeybindingAction::from_str(key).or_else(|| value.as_str().and_then(KeybindingAction::from_str))
+}
+
+pub(crate) fn rewrite_keybinding_table_to_key_first(
+  table: &mut toml::map::Map<String, toml::Value>,
+) {
+  let mut rewritten = toml::map::Map::new();
+
+  for (key, value) in std::mem::take(table) {
+    let Some(action) = KeybindingAction::from_str(&key) else {
+      rewritten.insert(key, value);
+      continue;
+    };
+
+    let Ok(bindings) = KeybindingList::from_value(value.clone()) else {
+      rewritten.insert(key, value);
+      continue;
+    };
+
+    for binding in bindings.iter() {
+      if let Some(previous) = rewritten.insert(
+        binding.to_string(),
+        toml::Value::String(action.as_str().to_string()),
+      ) {
+        tracing::warn!(
+          "Keybinding '{}' was already assigned in migrated config; overwriting previous value {:?}",
+          binding,
+          previous
+        );
+      }
+    }
+  }
+
+  *table = rewritten;
 }
 
 /// Configuration for custom keyboard shortcuts.
 ///
-/// Each field maps an action name to either one keystroke string or an array of
-/// keystroke strings using the format:
-/// `[modifier-]...[key]` where modifiers can be `ctrl`, `shift`, `alt`, or a
-/// platform modifier (`win`, `cmd`, `super`).
+/// TOML uses key-first entries such as `"ctrl-shift-c" = "copy"`.
+/// Multiple bindings for the same action are represented by repeating the action
+/// value under multiple keys, for example `"ctrl-shift-c" = "copy"` and
+/// `"ctrl-insert" = "copy"`.
 ///
-/// Examples: `"ctrl-shift-c"`, `["ctrl-shift-c", "ctrl-insert"]`, `"ctrl-tab"`
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(default)]
+/// Legacy action-first entries are still accepted when loading configs.
+#[derive(Debug, Clone)]
 pub struct KeybindingConfig {
   /// Copy selection to clipboard
   pub copy: KeybindingList,
@@ -178,6 +437,235 @@ pub struct KeybindingConfig {
   pub new_window: KeybindingList,
   /// Quit the application
   pub quit: KeybindingList,
+}
+
+impl KeybindingConfig {
+  const MAIN_WINDOW_SHORTCUTS: [KeybindingAction; 19] = [
+    KeybindingAction::NextTab,
+    KeybindingAction::PreviousTab,
+    KeybindingAction::SelectTab1,
+    KeybindingAction::SelectTab2,
+    KeybindingAction::SelectTab3,
+    KeybindingAction::SelectTab4,
+    KeybindingAction::SelectTab5,
+    KeybindingAction::SelectTab6,
+    KeybindingAction::SelectTab7,
+    KeybindingAction::SelectTab8,
+    KeybindingAction::SelectTab9,
+    KeybindingAction::ToggleSearch,
+    KeybindingAction::SplitHorizontal,
+    KeybindingAction::SplitVertical,
+    KeybindingAction::ClosePane,
+    KeybindingAction::FocusNextPane,
+    KeybindingAction::FocusPreviousPane,
+    KeybindingAction::FocusPaneUp,
+    KeybindingAction::FocusPaneDown,
+  ];
+
+  const MAIN_WINDOW_SHORTCUTS_CONTINUED: [KeybindingAction; 7] = [
+    KeybindingAction::FocusPaneLeft,
+    KeybindingAction::FocusPaneRight,
+    KeybindingAction::SwapSplitPanes,
+    KeybindingAction::ToggleFullscreen,
+    KeybindingAction::ToggleTabBar,
+    KeybindingAction::NewTab,
+    KeybindingAction::Quit,
+  ];
+
+  pub fn matches_main_window_shortcut(
+    &self,
+    control: bool,
+    shift: bool,
+    alt: bool,
+    platform: bool,
+    key: &str,
+  ) -> bool {
+    Self::MAIN_WINDOW_SHORTCUTS
+      .into_iter()
+      .chain(Self::MAIN_WINDOW_SHORTCUTS_CONTINUED)
+      .chain([
+        KeybindingAction::NewTabProfile1,
+        KeybindingAction::NewTabProfile2,
+        KeybindingAction::NewTabProfile3,
+        KeybindingAction::NewTabProfile4,
+        KeybindingAction::NewTabProfile5,
+        KeybindingAction::NewTabProfile6,
+        KeybindingAction::NewTabProfile7,
+        KeybindingAction::NewTabProfile8,
+        KeybindingAction::NewTabProfile9,
+      ])
+      .any(|action| {
+        self
+          .binding(action)
+          .matches(control, shift, alt, platform, key)
+      })
+  }
+
+  fn binding(&self, action: KeybindingAction) -> &KeybindingList {
+    match action {
+      KeybindingAction::Copy => &self.copy,
+      KeybindingAction::Paste => &self.paste,
+      KeybindingAction::ZoomIn => &self.zoom_in,
+      KeybindingAction::ZoomOut => &self.zoom_out,
+      KeybindingAction::ZoomReset => &self.zoom_reset,
+      KeybindingAction::NextTab => &self.next_tab,
+      KeybindingAction::PreviousTab => &self.previous_tab,
+      KeybindingAction::SelectTab1 => &self.select_tab_1,
+      KeybindingAction::SelectTab2 => &self.select_tab_2,
+      KeybindingAction::SelectTab3 => &self.select_tab_3,
+      KeybindingAction::SelectTab4 => &self.select_tab_4,
+      KeybindingAction::SelectTab5 => &self.select_tab_5,
+      KeybindingAction::SelectTab6 => &self.select_tab_6,
+      KeybindingAction::SelectTab7 => &self.select_tab_7,
+      KeybindingAction::SelectTab8 => &self.select_tab_8,
+      KeybindingAction::SelectTab9 => &self.select_tab_9,
+      KeybindingAction::ToggleSearch => &self.toggle_search,
+      KeybindingAction::SplitHorizontal => &self.split_horizontal,
+      KeybindingAction::SplitVertical => &self.split_vertical,
+      KeybindingAction::ClosePane => &self.close_pane,
+      KeybindingAction::FocusNextPane => &self.focus_next_pane,
+      KeybindingAction::FocusPreviousPane => &self.focus_previous_pane,
+      KeybindingAction::FocusPaneUp => &self.focus_pane_up,
+      KeybindingAction::FocusPaneDown => &self.focus_pane_down,
+      KeybindingAction::FocusPaneLeft => &self.focus_pane_left,
+      KeybindingAction::FocusPaneRight => &self.focus_pane_right,
+      KeybindingAction::SwapSplitPanes => &self.swap_split_panes,
+      KeybindingAction::ToggleFullscreen => &self.toggle_fullscreen,
+      KeybindingAction::ToggleTabBar => &self.toggle_tab_bar,
+      KeybindingAction::NewTab => &self.new_tab,
+      KeybindingAction::NewTabProfile1 => &self.new_tab_profile_1,
+      KeybindingAction::NewTabProfile2 => &self.new_tab_profile_2,
+      KeybindingAction::NewTabProfile3 => &self.new_tab_profile_3,
+      KeybindingAction::NewTabProfile4 => &self.new_tab_profile_4,
+      KeybindingAction::NewTabProfile5 => &self.new_tab_profile_5,
+      KeybindingAction::NewTabProfile6 => &self.new_tab_profile_6,
+      KeybindingAction::NewTabProfile7 => &self.new_tab_profile_7,
+      KeybindingAction::NewTabProfile8 => &self.new_tab_profile_8,
+      KeybindingAction::NewTabProfile9 => &self.new_tab_profile_9,
+      KeybindingAction::NewWindow => &self.new_window,
+      KeybindingAction::Quit => &self.quit,
+    }
+  }
+
+  fn binding_mut(&mut self, action: KeybindingAction) -> &mut KeybindingList {
+    match action {
+      KeybindingAction::Copy => &mut self.copy,
+      KeybindingAction::Paste => &mut self.paste,
+      KeybindingAction::ZoomIn => &mut self.zoom_in,
+      KeybindingAction::ZoomOut => &mut self.zoom_out,
+      KeybindingAction::ZoomReset => &mut self.zoom_reset,
+      KeybindingAction::NextTab => &mut self.next_tab,
+      KeybindingAction::PreviousTab => &mut self.previous_tab,
+      KeybindingAction::SelectTab1 => &mut self.select_tab_1,
+      KeybindingAction::SelectTab2 => &mut self.select_tab_2,
+      KeybindingAction::SelectTab3 => &mut self.select_tab_3,
+      KeybindingAction::SelectTab4 => &mut self.select_tab_4,
+      KeybindingAction::SelectTab5 => &mut self.select_tab_5,
+      KeybindingAction::SelectTab6 => &mut self.select_tab_6,
+      KeybindingAction::SelectTab7 => &mut self.select_tab_7,
+      KeybindingAction::SelectTab8 => &mut self.select_tab_8,
+      KeybindingAction::SelectTab9 => &mut self.select_tab_9,
+      KeybindingAction::ToggleSearch => &mut self.toggle_search,
+      KeybindingAction::SplitHorizontal => &mut self.split_horizontal,
+      KeybindingAction::SplitVertical => &mut self.split_vertical,
+      KeybindingAction::ClosePane => &mut self.close_pane,
+      KeybindingAction::FocusNextPane => &mut self.focus_next_pane,
+      KeybindingAction::FocusPreviousPane => &mut self.focus_previous_pane,
+      KeybindingAction::FocusPaneUp => &mut self.focus_pane_up,
+      KeybindingAction::FocusPaneDown => &mut self.focus_pane_down,
+      KeybindingAction::FocusPaneLeft => &mut self.focus_pane_left,
+      KeybindingAction::FocusPaneRight => &mut self.focus_pane_right,
+      KeybindingAction::SwapSplitPanes => &mut self.swap_split_panes,
+      KeybindingAction::ToggleFullscreen => &mut self.toggle_fullscreen,
+      KeybindingAction::ToggleTabBar => &mut self.toggle_tab_bar,
+      KeybindingAction::NewTab => &mut self.new_tab,
+      KeybindingAction::NewTabProfile1 => &mut self.new_tab_profile_1,
+      KeybindingAction::NewTabProfile2 => &mut self.new_tab_profile_2,
+      KeybindingAction::NewTabProfile3 => &mut self.new_tab_profile_3,
+      KeybindingAction::NewTabProfile4 => &mut self.new_tab_profile_4,
+      KeybindingAction::NewTabProfile5 => &mut self.new_tab_profile_5,
+      KeybindingAction::NewTabProfile6 => &mut self.new_tab_profile_6,
+      KeybindingAction::NewTabProfile7 => &mut self.new_tab_profile_7,
+      KeybindingAction::NewTabProfile8 => &mut self.new_tab_profile_8,
+      KeybindingAction::NewTabProfile9 => &mut self.new_tab_profile_9,
+      KeybindingAction::NewWindow => &mut self.new_window,
+      KeybindingAction::Quit => &mut self.quit,
+    }
+  }
+
+  fn explicit_actions(table: &toml::map::Map<String, toml::Value>) -> HashSet<KeybindingAction> {
+    table
+      .iter()
+      .filter_map(|(key, value)| keybinding_action_for_entry(key, value))
+      .collect()
+  }
+
+  fn from_toml_value(value: toml::Value) -> Result<Self, String> {
+    let toml::Value::Table(table) = value else {
+      return Err("keybindings must be a table".to_string());
+    };
+
+    let mut config = Self::default();
+    for action in Self::explicit_actions(&table) {
+      config.binding_mut(action).clear();
+    }
+
+    for (key, value) in table {
+      if let Some(action) = KeybindingAction::from_str(&key) {
+        *config.binding_mut(action) = KeybindingList::from_value(value)
+          .map_err(|error| format!("keybindings.{key}: {error}"))?;
+        continue;
+      }
+
+      let action_name = value
+        .as_str()
+        .ok_or_else(|| format!("keybinding '{key}' must map to an action name string"))?;
+      let action = KeybindingAction::from_str(action_name)
+        .ok_or_else(|| format!("unknown keybinding action '{action_name}' for binding '{key}'"))?;
+      config.binding_mut(action).insert(key);
+    }
+
+    Ok(config)
+  }
+
+  fn to_key_first_map(&self) -> BTreeMap<String, String> {
+    let mut bindings = BTreeMap::new();
+
+    for action in KeybindingAction::ALL {
+      for binding in self.binding(action).iter() {
+        if let Some(previous) = bindings.insert(binding.to_string(), action.as_str().to_string())
+          && previous != action.as_str()
+        {
+          tracing::warn!(
+            "Keybinding '{}' is assigned to multiple actions; keeping '{}'",
+            binding,
+            action.as_str()
+          );
+        }
+      }
+    }
+
+    bindings
+  }
+}
+
+impl Serialize for KeybindingConfig {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: Serializer,
+  {
+    self.to_key_first_map().serialize(serializer)
+  }
+}
+
+impl<'de> Deserialize<'de> for KeybindingConfig {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    let value = toml::Value::deserialize(deserializer)?;
+    Self::from_toml_value(value).map_err(D::Error::custom)
+  }
 }
 
 impl Default for KeybindingConfig {
@@ -740,7 +1228,7 @@ mod tests {
   }
 
   #[test]
-  fn keybinding_config_deserialize_partial_override() {
+  fn keybinding_config_deserialize_legacy_partial_override() {
     let toml_str = r#"copy = "ctrl-c""#;
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(config.copy, "ctrl-c");
@@ -757,9 +1245,47 @@ mod tests {
   }
 
   #[test]
+  fn keybinding_config_deserialize_key_first_partial_override() {
+    let toml_str = r##"
+"ctrl-c" = "copy"
+"ctrl-alt-v" = "paste"
+"##;
+    let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
+
+    assert_eq!(config.copy, "ctrl-c");
+    assert_eq!(config.paste, "ctrl-alt-v");
+    assert_eq!(
+      config.new_tab.first().unwrap(),
+      expected_default_new_tab_binding()
+    );
+  }
+
+  #[test]
   fn keybinding_config_roundtrip() {
     let config = KeybindingConfig::default();
     let serialized = toml::to_string_pretty(&config).unwrap();
+    let raw: toml::Value = toml::from_str(&serialized).unwrap();
+    let table = raw.as_table().unwrap();
+
+    assert_eq!(
+      table
+        .get(expected_default_copy_binding())
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      "copy"
+    );
+    assert_eq!(
+      table
+        .get(expected_default_paste_binding())
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      "paste"
+    );
+    assert!(!table.contains_key("copy"));
+    assert!(!table.contains_key("paste"));
+
     let deserialized: KeybindingConfig = toml::from_str(&serialized).unwrap();
     assert_eq!(config.copy, deserialized.copy);
     assert_eq!(config.paste, deserialized.paste);
@@ -767,7 +1293,23 @@ mod tests {
   }
 
   #[test]
-  fn keybinding_config_deserialize_multiple_bindings() {
+  fn keybinding_config_deserialize_key_first_multiple_bindings() {
+    let toml_str = r##"
+"ctrl-shift-c" = "copy"
+"ctrl-insert" = "copy"
+"##;
+    let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
+
+    assert_eq!(
+      config.copy.iter().collect::<Vec<_>>(),
+      vec!["ctrl-insert", "ctrl-shift-c"]
+    );
+    assert!(config.copy.matches(true, true, false, false, "c"));
+    assert!(config.copy.matches(true, false, false, false, "insert"));
+  }
+
+  #[test]
+  fn keybinding_config_deserialize_legacy_multiple_bindings() {
     let toml_str = r#"copy = ["ctrl-shift-c", "ctrl-insert"]"#;
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
 
@@ -777,6 +1319,28 @@ mod tests {
     );
     assert!(config.copy.matches(true, true, false, false, "c"));
     assert!(config.copy.matches(true, false, false, false, "insert"));
+  }
+
+  #[test]
+  fn keybinding_config_matches_main_window_shortcut_for_manual_window_actions() {
+    let config = KeybindingConfig::default();
+
+    if cfg!(target_os = "macos") {
+      assert!(config.matches_main_window_shortcut(false, false, false, true, "t"));
+    } else {
+      assert!(config.matches_main_window_shortcut(true, true, false, false, "t"));
+    }
+  }
+
+  #[test]
+  fn keybinding_config_does_not_treat_terminal_actions_as_main_window_shortcuts() {
+    let config = KeybindingConfig::default();
+
+    if cfg!(target_os = "macos") {
+      assert!(!config.matches_main_window_shortcut(false, false, false, true, "c"));
+    } else {
+      assert!(!config.matches_main_window_shortcut(true, true, false, false, "c"));
+    }
   }
 
   #[test]

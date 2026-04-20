@@ -4,7 +4,7 @@ mod steps;
 use steps::*;
 
 /// Current config version in YYYYMMDD.Rev format.
-pub const CURRENT_CONFIG_VERSION: &str = "20260417.3";
+pub const CURRENT_CONFIG_VERSION: &str = "20260419.1";
 
 /// A migration that transforms raw TOML config from one version to the next.
 struct Migration {
@@ -152,6 +152,11 @@ fn migrations() -> &'static [Migration] {
       from_version: "20260417.2",
       to_version: "20260417.3",
       migrate: migrate_v20260417_2_to_20260417_3,
+    },
+    Migration {
+      from_version: "20260417.3",
+      to_version: "20260419.1",
+      migrate: migrate_v20260417_3_to_20260419_1,
     },
   ]
 }

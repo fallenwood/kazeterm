@@ -1,7 +1,8 @@
 use gpui::{App, Bounds, Entity, InputHandler, Pixels, Point, UTF16Selection, Window};
-use terminal_kernel::term::TermMode;
 
-use crate::{Terminal, TerminalView};
+use crate::Terminal;
+use crate::TerminalView;
+use terminal_kernel::term::TermMode;
 
 pub struct TerminalInputHandler {
   pub terminal: Entity<Terminal>,
