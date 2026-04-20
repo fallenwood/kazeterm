@@ -1348,7 +1348,7 @@ mod tests {
   #[test]
   fn keybinding_list_displays_multiple_bindings() {
     let bindings = KeybindingList::from_vec(vec!["ctrl-shift-c".into(), "ctrl-insert".into()]);
-    assert_eq!(bindings.display_text(), "Ctrl+Shift+C / Ctrl+Insert");
+    assert_eq!(bindings.display_text(), "Ctrl+Insert / Ctrl+Shift+C");
   }
 
   #[test]

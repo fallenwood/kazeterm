@@ -88,7 +88,6 @@ fn to_kitty_c0_escape(key: &str, keystroke: &Keystroke) -> Option<Cow<'static, s
     format!("\x1b[{code};{modifier_code}u")
   }))
 }
-
 pub fn to_esc_str(
   keystroke: &Keystroke,
   mode: &TermMode,

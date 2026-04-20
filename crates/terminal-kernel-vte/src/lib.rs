@@ -170,17 +170,7 @@ pub fn create_terminal_session(
     let child_pid = pty.child().id();
     let pty_info = PtyProcessInfo::from_raw(raw_fd, child_pid);
 
-    // Clone the PTY file for read/write handles.
-    let reader = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty reader: {e}"))?;
-    let writer = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty writer: {e}"))?;
-
-    let event_loop = VteEventLoop::new(pty, reader, writer, state.clone(), raw_fd);
+    let event_loop = VteEventLoop::new(pty, state.clone(), raw_fd);
     let tx = event_loop.channel();
     let _handle = event_loop.spawn();
 
@@ -190,18 +180,8 @@ pub fn create_terminal_session(
   #[cfg(not(unix))]
   let (tx, pty_info) = {
     let pty_info = PtyProcessInfo::new(&pty);
-    // On Windows we don't have a raw fd; the event loop would need
-    // a Windows-specific reader path. For now, create a minimal shim.
-    let reader = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty reader: {e}"))?;
-    let writer = pty
-      .file()
-      .try_clone()
-      .map_err(|e| format!("clone pty writer: {e}"))?;
 
-    let event_loop = VteEventLoop::new(pty, reader, writer, state.clone());
+    let event_loop = VteEventLoop::new(pty, state.clone());
     let tx = event_loop.channel();
     let _handle = event_loop.spawn();
 
