@@ -43,12 +43,10 @@ impl Terminal {
   }
 
   pub fn try_keystroke(&mut self, keystroke: &Keystroke, alt_is_meta: bool) -> bool {
-    let esc = crate::mappings::keys::to_esc_str(keystroke, &self.last_content.mode, alt_is_meta);
-    if let Some(esc) = esc {
-      match esc {
-        Cow::Borrowed(string) => self.input(string.as_bytes()),
-        Cow::Owned(string) => self.input(string.into_bytes()),
-      };
+    let input =
+      crate::mappings::keys::to_input_bytes(keystroke, &self.last_content.mode, alt_is_meta);
+    if let Some(input) = input {
+      self.input(input);
       true
     } else {
       false

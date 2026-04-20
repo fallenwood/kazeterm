@@ -120,6 +120,7 @@ impl Render for TerminalView {
       .relative()
       .track_focus(&self.focus_handle)
       .key_context(self.dispatch_context(cx))
+      .on_key_down(cx.listener(Self::key_down))
       .on_action(cx.listener(Self::send_tab))
       .on_action(cx.listener(Self::send_tab_prev))
       .on_action(cx.listener(Self::copy))
@@ -131,7 +132,6 @@ impl Render for TerminalView {
       .on_action(cx.listener(Self::zoom_in))
       .on_action(cx.listener(Self::zoom_out))
       .on_action(cx.listener(Self::zoom_reset))
-      .on_key_down(cx.listener(Self::key_down))
       .child(
         div()
           .id("terminal-view-container")
@@ -256,6 +256,47 @@ impl TerminalView {
 
   pub fn clear_bell(&mut self, _cx: &mut Context<TerminalView>) {
     self.has_bell = false;
+  }
+
+  pub fn handle_unbound_keystroke(
+    &mut self,
+    keystroke: &gpui::Keystroke,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) -> bool {
+    let handled = self
+      .terminal
+      .update(cx, |term, _cx| term.try_keystroke(keystroke, true));
+
+    if handled {
+      self.clear_bell(cx);
+      self.pause_cursor_blinking(window, cx);
+    }
+
+    handled
+  }
+
+  fn key_down(&mut self, event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    let modifiers = event.keystroke.modifiers;
+    let key = &event.keystroke.key;
+    let main_window_shortcut = cx
+      .global::<config::Config>()
+      .keybindings
+      .matches_main_window_shortcut(
+        modifiers.control,
+        modifiers.shift,
+        modifiers.alt,
+        modifiers.platform,
+        key,
+      );
+
+    if main_window_shortcut {
+      return;
+    }
+
+    if self.handle_unbound_keystroke(&event.keystroke, window, cx) {
+      cx.stop_propagation();
+    }
   }
 
   fn focus_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -525,72 +566,6 @@ impl TerminalView {
     }
 
     dispatch_context
-  }
-
-  fn key_down(&mut self, event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-    self.clear_bell(cx);
-    self.pause_cursor_blinking(window, cx);
-
-    // Let MainWindow-level keybindings pass through without terminal consumption
-    let keybindings = &cx.global::<config::Config>().keybindings;
-    let mods = &event.keystroke.modifiers;
-    let key = &event.keystroke.key;
-
-    let passthrough_bindings = [
-      &keybindings.zoom_in,
-      &keybindings.zoom_out,
-      &keybindings.zoom_reset,
-      &keybindings.toggle_fullscreen,
-      &keybindings.toggle_tab_bar,
-      &keybindings.new_tab,
-      &keybindings.new_tab_profile_1,
-      &keybindings.new_tab_profile_2,
-      &keybindings.new_tab_profile_3,
-      &keybindings.new_tab_profile_4,
-      &keybindings.new_tab_profile_5,
-      &keybindings.new_tab_profile_6,
-      &keybindings.new_tab_profile_7,
-      &keybindings.new_tab_profile_8,
-      &keybindings.new_tab_profile_9,
-      &keybindings.next_tab,
-      &keybindings.previous_tab,
-      &keybindings.select_tab_1,
-      &keybindings.select_tab_2,
-      &keybindings.select_tab_3,
-      &keybindings.select_tab_4,
-      &keybindings.select_tab_5,
-      &keybindings.select_tab_6,
-      &keybindings.select_tab_7,
-      &keybindings.select_tab_8,
-      &keybindings.select_tab_9,
-      &keybindings.toggle_search,
-      &keybindings.split_horizontal,
-      &keybindings.split_vertical,
-      &keybindings.close_pane,
-      &keybindings.focus_next_pane,
-      &keybindings.focus_previous_pane,
-      &keybindings.focus_pane_up,
-      &keybindings.focus_pane_down,
-      &keybindings.focus_pane_left,
-      &keybindings.focus_pane_right,
-      &keybindings.swap_split_panes,
-      &keybindings.new_window,
-      &keybindings.quit,
-    ];
-
-    for binding in &passthrough_bindings {
-      if binding.matches(mods.control, mods.shift, mods.alt, mods.platform, key) {
-        return;
-      }
-    }
-
-    let handled = self
-      .terminal
-      .update(cx, |term, _cx| term.try_keystroke(&event.keystroke, true));
-
-    if handled {
-      cx.stop_propagation();
-    }
   }
 
   fn send_tab(&mut self, _: &SendTab, window: &mut Window, cx: &mut Context<Self>) {

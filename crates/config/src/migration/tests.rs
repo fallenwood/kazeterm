@@ -732,3 +732,40 @@ focus_terminal_on_hover = true
     CURRENT_CONFIG_VERSION
   );
 }
+
+#[test]
+fn migrate_20260417_3_rewrites_keybindings_to_key_first_format() {
+  let mut config: Value = toml::from_str(
+    r##"
+version = "20260417.3"
+
+[keybindings]
+copy = ["ctrl-shift-c", "ctrl-insert"]
+paste = "ctrl-shift-v"
+"##,
+  )
+  .unwrap();
+
+  let migrated = apply_migrations(&mut config);
+  assert!(migrated);
+
+  let keybindings = config.get("keybindings").unwrap();
+  assert!(keybindings.get("copy").is_none());
+  assert!(keybindings.get("paste").is_none());
+  assert_eq!(
+    keybindings.get("ctrl-shift-c").unwrap().as_str().unwrap(),
+    "copy"
+  );
+  assert_eq!(
+    keybindings.get("ctrl-insert").unwrap().as_str().unwrap(),
+    "copy"
+  );
+  assert_eq!(
+    keybindings.get("ctrl-shift-v").unwrap().as_str().unwrap(),
+    "paste"
+  );
+  assert_eq!(
+    config.get("version").unwrap().as_str().unwrap(),
+    CURRENT_CONFIG_VERSION
+  );
+}
