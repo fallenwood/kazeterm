@@ -24,14 +24,6 @@ impl AboutDialog {
     cx.emit(AboutDialogCloseEvent);
   }
 
-  fn get_commit_hash() -> &'static str {
-    option_env!("KAZETERM_COMMIT_SHA").unwrap_or("unknown")
-  }
-
-  fn get_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-  }
-
   fn get_license() -> &'static str {
     "GPL-3.0"
   }
@@ -57,13 +49,8 @@ impl Render for AboutDialog {
     let settings = cx.global::<SettingsStore>();
     let active_theme = settings.theme();
 
-    let commit_hash = Self::get_commit_hash();
-    let short_hash = if commit_hash.len() > 7 {
-      &commit_hash[..7]
-    } else {
-      commit_hash
-    };
-    let version = Self::get_version();
+    let short_hash = crate::build_info::short_commit_hash();
+    let version = crate::build_info::app_version();
     let license = Self::get_license();
     let author = Self::get_author();
     let repo = Self::get_repo();

@@ -50,6 +50,7 @@ pub struct GhosttyEventLoop {
   initial_rows: u16,
   max_scrollback: usize,
   initial_cursor_blink: bool,
+  xtversion_response: &'static str,
 }
 
 enum PtyReadStatus {
@@ -68,6 +69,7 @@ impl GhosttyEventLoop {
     initial_rows: u16,
     max_scrollback: usize,
     initial_cursor_blink: bool,
+    xtversion_response: &'static str,
   ) -> Self {
     let (tx, rx) = std::sync::mpsc::channel();
     Self {
@@ -82,6 +84,7 @@ impl GhosttyEventLoop {
       initial_rows,
       max_scrollback,
       initial_cursor_blink,
+      xtversion_response,
     }
   }
 
@@ -258,9 +261,8 @@ impl GhosttyEventLoop {
 
     // XTVERSION → respond with kazeterm identification.
     {
-      if let Err(error) =
-        terminal.on_xtversion(|_term| Some(concat!("kazeterm ", env!("CARGO_PKG_VERSION"))))
-      {
+      let xtversion_response = self.xtversion_response;
+      if let Err(error) = terminal.on_xtversion(move |_term| Some(xtversion_response)) {
         eprintln!("ghostty: failed to register xtversion callback: {error:?}");
       }
     }
@@ -658,7 +660,7 @@ mod tests {
       .expect("register on_pty_write");
     terminal.on_bell(|_| {}).expect("register on_bell");
     terminal
-      .on_xtversion(|_| Some(concat!("kazeterm ", env!("CARGO_PKG_VERSION"))))
+      .on_xtversion(|_| Some("kazeterm test"))
       .expect("register on_xtversion");
     terminal
       .on_enquiry(|_| Some(""))

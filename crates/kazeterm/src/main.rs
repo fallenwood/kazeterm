@@ -22,6 +22,7 @@ use ::config::Config;
 
 mod app_icon;
 mod assets;
+mod build_info;
 mod components;
 mod config;
 mod config_watcher;
