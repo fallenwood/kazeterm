@@ -701,7 +701,7 @@ impl Default for KeybindingConfig {
         focus_pane_left: KeybindingList::new("alt-left"),
         focus_pane_right: KeybindingList::new("alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
-        toggle_fullscreen: KeybindingList::new("cmd-ctr-f"),
+        toggle_fullscreen: KeybindingList::new("cmd-ctrl-f"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
         new_tab: KeybindingList::new("cmd-t"),
         new_tab_profile_1: KeybindingList::new("ctrl-shift-1"),
