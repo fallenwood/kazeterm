@@ -39,6 +39,7 @@ pub fn create_terminal_session(
   args: Vec<String>,
   working_directory: Option<PathBuf>,
   app_config: &config::Config,
+  term_program_version: &str,
 ) -> Result<(Terminal, SessionEvents), String> {
   let mut env = HashMap::new();
   if std::env::var("LANG").is_err() {
@@ -50,7 +51,7 @@ pub fn create_terminal_session(
   env.insert("TERM_PROGRAM".to_string(), "kazeterm".to_string());
   env.insert(
     "TERM_PROGRAM_VERSION".to_string(),
-    env!("CARGO_PKG_VERSION").to_string(),
+    term_program_version.to_string(),
   );
   env.insert("TERM".to_string(), "xterm-256color".to_string());
   env.insert("COLORTERM".to_string(), "truecolor".to_string());
