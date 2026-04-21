@@ -737,7 +737,7 @@ impl Render for MainWindow {
           &keybindings.select_tab_6,
           &keybindings.select_tab_7,
           &keybindings.select_tab_8,
-          &keybindings.select_tab_9,
+          &keybindings.select_last_tab,
         ];
         let tab_switcher_popup = cx.global::<config::Config>().tab.switcher_popup;
 

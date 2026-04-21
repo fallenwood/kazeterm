@@ -628,21 +628,21 @@ copy = "ctrl-shift-c"
       "keybindings",
       default_keybindings.select_tab_1.first().unwrap()
     )
-      .unwrap()
-      .as_str()
-      .unwrap(),
+    .unwrap()
+    .as_str()
+    .unwrap(),
     "select_tab_1"
   );
   assert_eq!(
     get_nested(
       &config,
       "keybindings",
-      default_keybindings.select_tab_9.first().unwrap()
+      default_keybindings.select_last_tab.first().unwrap()
     )
-      .unwrap()
-      .as_str()
-      .unwrap(),
-    "select_tab_9"
+    .unwrap()
+    .as_str()
+    .unwrap(),
+    "select_last_tab"
   );
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),
@@ -672,9 +672,9 @@ copy = "ctrl-shift-c"
       "keybindings",
       default_keybindings.focus_pane_up.first().unwrap()
     )
-      .unwrap()
-      .as_str()
-      .unwrap(),
+    .unwrap()
+    .as_str()
+    .unwrap(),
     "focus_pane_up"
   );
   assert_eq!(
@@ -683,9 +683,9 @@ copy = "ctrl-shift-c"
       "keybindings",
       default_keybindings.focus_pane_right.first().unwrap()
     )
-      .unwrap()
-      .as_str()
-      .unwrap(),
+    .unwrap()
+    .as_str()
+    .unwrap(),
     "focus_pane_right"
   );
   assert_eq!(
@@ -780,6 +780,42 @@ paste = "ctrl-shift-v"
     keybindings.get("ctrl-shift-v").unwrap().as_str().unwrap(),
     "paste"
   );
+  assert_eq!(
+    config.get("version").unwrap().as_str().unwrap(),
+    CURRENT_CONFIG_VERSION
+  );
+}
+
+#[test]
+fn migrate_20260419_1_renames_select_tab_9_to_select_last_tab() {
+  let mut config: Value = toml::from_str(
+    r##"
+version = "20260419.1"
+
+[keybindings]
+"ctrl-alt-9" = "select_tab_9"
+select_tab_9 = "ctrl-alt-9"
+"##,
+  )
+  .unwrap();
+
+  let migrated = apply_migrations(&mut config);
+  assert!(migrated);
+
+  let keybindings = config.get("keybindings").unwrap();
+  assert_eq!(
+    keybindings.get("ctrl-alt-9").unwrap().as_str().unwrap(),
+    "select_last_tab"
+  );
+  assert_eq!(
+    keybindings
+      .get("select_last_tab")
+      .unwrap()
+      .as_str()
+      .unwrap(),
+    "ctrl-alt-9"
+  );
+  assert!(keybindings.get("select_tab_9").is_none());
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),
     CURRENT_CONFIG_VERSION
