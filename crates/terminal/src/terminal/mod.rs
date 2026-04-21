@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicU32;
 use std::{cmp, collections::VecDeque, process::ExitStatus, sync::Arc};
 
 use crate::{
@@ -109,6 +110,8 @@ pub struct Terminal {
   pub placement_manager: PlacementManager,
   /// Shared atomic for signaling cursor advancement to the PTY filter.
   pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
+  /// Shared atomic exposing active kitty keyboard protocol flags.
+  keyboard_protocol_flags: Arc<AtomicU32>,
   /// Receives CWD paths extracted from OSC 7 sequences in PTY output.
   osc7_rx: Option<std::sync::mpsc::Receiver<std::path::PathBuf>>,
   /// Last CWD reported via OSC 7 (takes priority over sysinfo).
@@ -133,6 +136,7 @@ impl Terminal {
     pty_info: PtyProcessInfo,
     graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
     pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
+    keyboard_protocol_flags: Arc<AtomicU32>,
     osc7_rx: Option<std::sync::mpsc::Receiver<std::path::PathBuf>>,
     cwd_file: Option<std::path::PathBuf>,
   ) -> Self {
@@ -165,6 +169,7 @@ impl Terminal {
       image_storage: KittyImageStorage::new(),
       placement_manager: PlacementManager::new(),
       pending_cnl,
+      keyboard_protocol_flags,
       osc7_rx,
       osc7_cwd: None,
       cwd_file,

@@ -33,6 +33,149 @@ fn da2_version_number() -> u32 {
   major * 10000 + minor * 100 + patch
 }
 
+pub const KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES: u32 = 0b1;
+pub const KITTY_KEYBOARD_REPORT_EVENT_TYPES: u32 = 0b10;
+pub const KITTY_KEYBOARD_REPORT_ALTERNATE_KEYS: u32 = 0b100;
+pub const KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES: u32 = 0b1000;
+pub const KITTY_KEYBOARD_REPORT_ASSOCIATED_TEXT: u32 = 0b10000;
+
+const MAX_KITTY_KEYBOARD_STACK_DEPTH: usize = 16;
+
+#[derive(Debug, Clone, Default)]
+struct KeyboardModeState {
+  flags: u32,
+  stack: Vec<u32>,
+}
+
+impl KeyboardModeState {
+  fn apply_flags(&mut self, flags: u32, mode: u32) {
+    match mode {
+      2 => self.flags |= flags,
+      3 => self.flags &= !flags,
+      _ => self.flags = flags,
+    }
+  }
+
+  fn push(&mut self, flags: u32) {
+    if self.stack.len() >= MAX_KITTY_KEYBOARD_STACK_DEPTH {
+      self.stack.remove(0);
+    }
+    self.stack.push(self.flags);
+    self.flags = flags;
+  }
+
+  fn pop(&mut self, count: u32) {
+    for _ in 0..count.max(1) {
+      if let Some(flags) = self.stack.pop() {
+        self.flags = flags;
+      } else {
+        self.flags = 0;
+        break;
+      }
+    }
+  }
+}
+
+#[derive(Debug, Clone, Default)]
+struct KeyboardModeTracker {
+  main: KeyboardModeState,
+  alternate: KeyboardModeState,
+  alternate_screen: bool,
+}
+
+impl KeyboardModeTracker {
+  fn current_flags(&self) -> u32 {
+    self.active_state().flags
+  }
+
+  fn active_state(&self) -> &KeyboardModeState {
+    if self.alternate_screen {
+      &self.alternate
+    } else {
+      &self.main
+    }
+  }
+
+  fn active_state_mut(&mut self) -> &mut KeyboardModeState {
+    if self.alternate_screen {
+      &mut self.alternate
+    } else {
+      &mut self.main
+    }
+  }
+
+  fn handle_csi_u(&mut self, csi_buf: &[u8]) -> KeyboardProtocolAction {
+    match csi_buf.first().copied() {
+      Some(b'?') if csi_buf.len() == 1 => {
+        KeyboardProtocolAction::Reply(format!("\x1b[?{}u", self.current_flags()))
+      }
+      Some(b'=') => {
+        let (flags, mode) = parse_flags_and_mode(&csi_buf[1..]).unwrap_or((0, 1));
+        self.active_state_mut().apply_flags(flags, mode);
+        KeyboardProtocolAction::Consumed
+      }
+      Some(b'>') => {
+        let flags = parse_optional_number(&csi_buf[1..], 0).unwrap_or(0);
+        self.active_state_mut().push(flags);
+        KeyboardProtocolAction::Consumed
+      }
+      Some(b'<') => {
+        let count = parse_optional_number(&csi_buf[1..], 1).unwrap_or(1);
+        self.active_state_mut().pop(count);
+        KeyboardProtocolAction::Consumed
+      }
+      _ => KeyboardProtocolAction::NotHandled,
+    }
+  }
+
+  fn observe_private_mode(&mut self, csi_buf: &[u8], enabled: bool) {
+    let Some(params) = csi_buf.strip_prefix(b"?") else {
+      return;
+    };
+
+    for param in params.split(|byte| *byte == b';') {
+      if param == b"47" || param == b"1047" || param == b"1049" {
+        self.alternate_screen = enabled;
+        break;
+      }
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyboardProtocolAction {
+  NotHandled,
+  Consumed,
+  Reply(String),
+}
+
+fn parse_optional_number(bytes: &[u8], default: u32) -> Option<u32> {
+  if bytes.is_empty() {
+    return Some(default);
+  }
+
+  std::str::from_utf8(bytes).ok()?.parse().ok()
+}
+
+fn parse_flags_and_mode(bytes: &[u8]) -> Option<(u32, u32)> {
+  let text = std::str::from_utf8(bytes).ok()?;
+  let mut parts = text.splitn(3, ';');
+  let flags = match parts.next() {
+    Some("") | None => 0,
+    Some(value) => value.parse().ok()?,
+  };
+  let mode = match parts.next() {
+    Some("") | None => 1,
+    Some(value) => value.parse().ok()?,
+  };
+
+  if parts.next().is_some() {
+    return None;
+  }
+
+  Some((flags, mode))
+}
+
 #[cfg(unix)]
 mod unix {
   use std::fs::File;
@@ -50,6 +193,7 @@ mod unix {
   use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
 
   use super::super::command::RawGraphicsCommand;
+  use super::KeyboardModeTracker;
   use crate::osc7;
 
   /// Callback that tries to get the cursor position from the terminal.
@@ -104,6 +248,8 @@ mod unix {
     dsr_cursor_fn: DsrCursorFn,
     /// Cached DSR cursor position from last successful try-lock.
     last_dsr_cursor: (i32, i32),
+    keyboard_mode: KeyboardModeTracker,
+    keyboard_flags: Arc<AtomicU32>,
   }
 
   /// Parsed APC parameters relevant to cursor advancement.
@@ -215,15 +361,47 @@ mod unix {
       self.last_dsr_cursor
     }
 
+    fn sync_keyboard_flags(&self) {
+      self
+        .keyboard_flags
+        .store(self.keyboard_mode.current_flags(), Ordering::Relaxed);
+    }
+
     /// Handle a completed CSI sequence. Intercepts Device Attributes (DA),
-    /// XTVERSION, and private DSR queries, writing responses directly to the
-    /// PTY. Returns true if the sequence was consumed.
+    /// XTVERSION, Kitty keyboard protocol negotiation, and private DSR
+    /// queries, writing responses directly to the PTY. Returns true if the
+    /// sequence was consumed.
     fn handle_csi_final(&mut self, final_byte: u8) -> bool {
+      if matches!(final_byte, b'h' | b'l') {
+        self
+          .keyboard_mode
+          .observe_private_mode(&self.csi_buf, final_byte == b'h');
+        self.sync_keyboard_flags();
+        return false;
+      }
+
       match final_byte {
         b'c' => self.handle_device_attributes(),
         b'q' => self.handle_xtversion(),
+        b'u' => self.handle_keyboard_protocol(),
         b'n' => self.handle_private_dsr(),
         _ => false,
+      }
+    }
+
+    fn handle_keyboard_protocol(&mut self) -> bool {
+      match self.keyboard_mode.handle_csi_u(&self.csi_buf) {
+        super::KeyboardProtocolAction::NotHandled => false,
+        super::KeyboardProtocolAction::Consumed => {
+          self.sync_keyboard_flags();
+          true
+        }
+        super::KeyboardProtocolAction::Reply(resp) => {
+          use std::io::Write;
+          self.sync_keyboard_flags();
+          let _ = self.inner.write(resp.as_bytes());
+          true
+        }
       }
     }
 
@@ -562,8 +740,9 @@ mod unix {
     /// `dsr_cursor_fn` is called to capture the screen-relative cursor position
     /// (1-based row, col) for DECXCPR responses.
     ///
-    /// Returns `(filter, pending_cnl, graphics_rx, osc7_rx)`:
+    /// Returns `(filter, pending_cnl, keyboard_flags, graphics_rx, osc7_rx)`:
     /// - `pending_cnl`: shared atomic for terminal to request cursor advancement
+    /// - `keyboard_flags`: shared atomic exposing active kitty keyboard flags
     /// - `graphics_rx`: receives Kitty graphics commands with cursor positions
     /// - `osc7_rx`: receives CWD paths extracted from OSC 7 sequences
     pub fn new(
@@ -572,6 +751,7 @@ mod unix {
       dsr_cursor_fn: DsrCursorFn,
     ) -> io::Result<(
       Self,
+      Arc<AtomicU32>,
       Arc<AtomicU32>,
       mpsc::Receiver<RawGraphicsCommand>,
       mpsc::Receiver<std::path::PathBuf>,
@@ -588,6 +768,7 @@ mod unix {
       let (graphics_tx, graphics_rx) = mpsc::channel();
       let (osc7_tx, osc7_rx) = mpsc::channel();
       let pending_cnl = Arc::new(AtomicU32::new(0));
+      let keyboard_flags = Arc::new(AtomicU32::new(0));
 
       let reader = FilteringReader {
         inner: read_file,
@@ -604,11 +785,14 @@ mod unix {
         csi_buf: Vec::with_capacity(64),
         dsr_cursor_fn,
         last_dsr_cursor: (1, 1),
+        keyboard_mode: KeyboardModeTracker::default(),
+        keyboard_flags: Arc::clone(&keyboard_flags),
       };
 
       Ok((
         GraphicsPtyFilter { reader, pty },
         pending_cnl,
+        keyboard_flags,
         graphics_rx,
         osc7_rx,
       ))
@@ -690,7 +874,9 @@ pub use unix::GraphicsPtyFilter;
 mod windows {
   use std::io::{self, Read, Write};
   use std::sync::Arc;
+  use std::sync::atomic::{AtomicU32, Ordering};
 
+  use super::KeyboardModeTracker;
   use polling::{Event, PollMode, Poller};
   use terminal_kernel::event::{OnResize, WindowSize};
   use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
@@ -707,7 +893,8 @@ mod windows {
     CsiCollect,
   }
 
-  /// PTY wrapper that intercepts private DSR queries on Windows.
+  /// PTY wrapper that intercepts private DSR queries and Kitty keyboard
+  /// protocol negotiation on Windows.
   ///
   /// ConPTY may pass through CSI sequences it doesn't handle. This wrapper
   /// scans the conout byte stream for `CSI ? N n` (private DSR) and writes
@@ -723,19 +910,28 @@ mod windows {
     pending_pos: usize,
     dsr_cursor_fn: DsrCursorFn,
     last_dsr_cursor: (i32, i32),
+    keyboard_mode: KeyboardModeTracker,
+    keyboard_flags: Arc<AtomicU32>,
   }
 
   impl WindowsDsrFilter {
-    pub fn new(pty: Pty, dsr_cursor_fn: DsrCursorFn) -> Self {
-      Self {
-        pty,
-        state: FilterState::Normal,
-        csi_buf: Vec::with_capacity(64),
-        pending: Vec::with_capacity(8192),
-        pending_pos: 0,
-        dsr_cursor_fn,
-        last_dsr_cursor: (1, 1),
-      }
+    pub fn new(pty: Pty, dsr_cursor_fn: DsrCursorFn) -> (Self, Arc<AtomicU32>) {
+      let keyboard_flags = Arc::new(AtomicU32::new(0));
+
+      (
+        Self {
+          pty,
+          state: FilterState::Normal,
+          csi_buf: Vec::with_capacity(64),
+          pending: Vec::with_capacity(8192),
+          pending_pos: 0,
+          dsr_cursor_fn,
+          last_dsr_cursor: (1, 1),
+          keyboard_mode: KeyboardModeTracker::default(),
+          keyboard_flags: Arc::clone(&keyboard_flags),
+        },
+        keyboard_flags,
+      )
     }
 
     /// Try to capture screen-relative cursor position for DSR.
@@ -746,15 +942,46 @@ mod windows {
       self.last_dsr_cursor
     }
 
+    fn sync_keyboard_flags(&self) {
+      self
+        .keyboard_flags
+        .store(self.keyboard_mode.current_flags(), Ordering::Relaxed);
+    }
+
     /// Handle a completed CSI sequence. Intercepts Device Attributes (DA),
-    /// XTVERSION, and private DSR queries, writing responses directly to the
-    /// PTY input. Returns true if the sequence was consumed.
+    /// XTVERSION, Kitty keyboard protocol negotiation, and private DSR
+    /// queries, writing responses directly to the PTY input. Returns true if
+    /// the sequence was consumed.
     fn handle_csi_final(&mut self, final_byte: u8) -> bool {
+      if matches!(final_byte, b'h' | b'l') {
+        self
+          .keyboard_mode
+          .observe_private_mode(&self.csi_buf, final_byte == b'h');
+        self.sync_keyboard_flags();
+        return false;
+      }
+
       match final_byte {
         b'c' => self.handle_device_attributes(),
         b'q' => self.handle_xtversion(),
+        b'u' => self.handle_keyboard_protocol(),
         b'n' => self.handle_private_dsr(),
         _ => false,
+      }
+    }
+
+    fn handle_keyboard_protocol(&mut self) -> bool {
+      match self.keyboard_mode.handle_csi_u(&self.csi_buf) {
+        super::KeyboardProtocolAction::NotHandled => false,
+        super::KeyboardProtocolAction::Consumed => {
+          self.sync_keyboard_flags();
+          true
+        }
+        super::KeyboardProtocolAction::Reply(resp) => {
+          self.sync_keyboard_flags();
+          let _ = self.pty.writer().write_all(resp.as_bytes());
+          true
+        }
       }
     }
 
@@ -1033,3 +1260,69 @@ mod windows {
 pub use windows::DsrCursorFn as WindowsDsrCursorFn;
 #[cfg(not(unix))]
 pub use windows::WindowsDsrFilter;
+
+#[cfg(test)]
+mod tests {
+  use super::{
+    KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES, KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+    KeyboardModeTracker, KeyboardProtocolAction,
+  };
+
+  #[test]
+  fn kitty_keyboard_push_query_and_pop_track_flags() {
+    let mut tracker = KeyboardModeTracker::default();
+
+    assert_eq!(
+      tracker.handle_csi_u(b"?"),
+      KeyboardProtocolAction::Reply("\x1b[?0u".to_string())
+    );
+
+    assert_eq!(
+      tracker.handle_csi_u(b">1"),
+      KeyboardProtocolAction::Consumed
+    );
+    assert_eq!(
+      tracker.current_flags(),
+      KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES
+    );
+
+    assert_eq!(
+      tracker.handle_csi_u(b"=8;2"),
+      KeyboardProtocolAction::Consumed
+    );
+    assert_eq!(
+      tracker.current_flags(),
+      KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES | KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES
+    );
+
+    assert_eq!(tracker.handle_csi_u(b"<"), KeyboardProtocolAction::Consumed);
+    assert_eq!(tracker.current_flags(), 0);
+  }
+
+  #[test]
+  fn kitty_keyboard_state_is_separate_per_screen() {
+    let mut tracker = KeyboardModeTracker::default();
+
+    assert_eq!(
+      tracker.handle_csi_u(b">1"),
+      KeyboardProtocolAction::Consumed
+    );
+    tracker.observe_private_mode(b"?1049", true);
+    assert_eq!(tracker.current_flags(), 0);
+
+    assert_eq!(
+      tracker.handle_csi_u(b">8"),
+      KeyboardProtocolAction::Consumed
+    );
+    assert_eq!(
+      tracker.current_flags(),
+      KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES
+    );
+
+    tracker.observe_private_mode(b"?1049", false);
+    assert_eq!(
+      tracker.current_flags(),
+      KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES
+    );
+  }
+}

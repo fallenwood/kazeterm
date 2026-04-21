@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::thread;
 
 use parking_lot::Mutex;
-use terminal_kernel::event::WindowSize;
+use terminal_kernel::{event::WindowSize, tty::EventedReadWrite};
 
 use crate::vte_term::VteTermInner;
 
@@ -31,24 +31,16 @@ pub type VteSender = std::sync::mpsc::Sender<VteMsg>;
 pub struct VteEventLoop {
   tx: VteSender,
   rx: std::sync::mpsc::Receiver<VteMsg>,
-  pty_reader: std::fs::File,
-  pty_writer: std::fs::File,
+  pty: terminal_kernel::tty::Pty,
   state: Arc<Mutex<VteTermInner>>,
   #[cfg(unix)]
   pty_raw_fd: i32,
-  /// Keeps the child process alive for the lifetime of the event loop.
-  _pty: terminal_kernel::tty::Pty,
 }
 
 impl VteEventLoop {
   /// Create a new event loop.
-  ///
-  /// `pty_reader` / `pty_writer` are cloned file handles to the PTY master.
-  /// On Unix they share the same underlying fd.
   pub fn new(
     pty: terminal_kernel::tty::Pty,
-    pty_reader: std::fs::File,
-    pty_writer: std::fs::File,
     state: Arc<Mutex<VteTermInner>>,
     #[cfg(unix)] pty_raw_fd: i32,
   ) -> Self {
@@ -56,12 +48,10 @@ impl VteEventLoop {
     Self {
       tx,
       rx,
-      pty_reader,
-      pty_writer,
+      pty,
       state,
       #[cfg(unix)]
       pty_raw_fd,
-      _pty: pty,
     }
   }
 
@@ -98,8 +88,8 @@ impl VteEventLoop {
       loop {
         match self.rx.try_recv() {
           Ok(VteMsg::Input(bytes)) => {
-            let _ = self.pty_writer.write_all(&bytes);
-            let _ = self.pty_writer.flush();
+            let _ = self.pty.writer().write_all(&bytes);
+            let _ = self.pty.writer().flush();
           }
           Ok(VteMsg::Resize(size)) => {
             // Resize the PTY via ioctl.
@@ -128,7 +118,7 @@ impl VteEventLoop {
       }
 
       // Read from PTY (non-blocking on Unix).
-      match self.pty_reader.read(&mut buf) {
+      match self.pty.reader().read(&mut buf) {
         Ok(0) => {
           // EOF — child process exited.
           self

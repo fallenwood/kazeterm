@@ -181,7 +181,7 @@ pub fn create_terminal_session(
     .map_err(|e| format!("Could not start shell '{}': {}", shell_program, e))?;
 
   #[cfg(unix)]
-  let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
+  let (pty_tx, pty_info, graphics_rx, pending_cnl, keyboard_flags, osc7_rx) = {
     let term_for_cursor = term.clone();
     let cursor_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync> = Box::new(move || {
       let t = term_for_cursor.try_lock_unfair()?;
@@ -197,7 +197,7 @@ pub fn create_terminal_session(
       Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
     });
 
-    let (filter, pending_cnl, graphics_rx, osc7_rx) =
+    let (filter, pending_cnl, keyboard_flags, graphics_rx, osc7_rx) =
       GraphicsPtyFilter::new(pty, cursor_fn, dsr_cursor_fn).unwrap();
     let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
@@ -218,12 +218,13 @@ pub fn create_terminal_session(
       pty_info,
       Some(graphics_rx),
       Some(pending_cnl),
+      keyboard_flags,
       Some(osc7_rx),
     )
   };
 
   #[cfg(not(unix))]
-  let (pty_tx, pty_info, graphics_rx, pending_cnl, osc7_rx) = {
+  let (pty_tx, pty_info, graphics_rx, pending_cnl, keyboard_flags, osc7_rx) = {
     let term_for_dsr = term.clone();
     let dsr_cursor_fn: WindowsDsrCursorFn = Box::new(move || {
       let t = term_for_dsr.try_lock_unfair()?;
@@ -232,7 +233,7 @@ pub fn create_terminal_session(
     });
 
     let pty_info = PtyProcessInfo::new(&pty);
-    let filter = WindowsDsrFilter::new(pty, dsr_cursor_fn);
+    let (filter, keyboard_flags) = WindowsDsrFilter::new(pty, dsr_cursor_fn);
 
     let event_loop = EventLoop::new(
       term.clone(),
@@ -246,7 +247,7 @@ pub fn create_terminal_session(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, None, None, None)
+    (pty_tx, pty_info, None, None, keyboard_flags, None)
   };
 
   let backend = AlacrittyBackend::new(term);
@@ -256,6 +257,7 @@ pub fn create_terminal_session(
     pty_info,
     graphics_rx,
     pending_cnl,
+    keyboard_flags,
     osc7_rx,
     Some(cwd_file),
   );

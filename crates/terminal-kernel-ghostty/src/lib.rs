@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use parking_lot::Mutex;
@@ -206,6 +207,7 @@ pub fn create_terminal_session(
     pty_info,
     None,
     None,
+    Arc::new(AtomicU32::new(0)),
     Some(osc7_rx),
     Some(cwd_file),
   );
