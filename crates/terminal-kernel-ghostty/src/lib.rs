@@ -142,6 +142,7 @@ pub fn create_terminal_session(
     num_cols,
     app_config.terminal.get_scrollback_lines(),
     events_tx.clone(),
+    app_config.cursor.blink,
   )));
 
   // Spawn the child shell.
@@ -177,6 +178,7 @@ pub fn create_terminal_session(
       num_cols as u16,
       num_lines as u16,
       app_config.terminal.get_scrollback_lines(),
+      app_config.cursor.blink,
       xtversion_response,
     );
     let tx = event_loop.channel();
@@ -196,6 +198,7 @@ pub fn create_terminal_session(
       num_cols as u16,
       num_lines as u16,
       app_config.terminal.get_scrollback_lines(),
+      app_config.cursor.blink,
       xtversion_response,
     );
     let tx = event_loop.channel();

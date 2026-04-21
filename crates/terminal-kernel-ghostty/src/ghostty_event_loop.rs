@@ -19,6 +19,7 @@ use terminal_kernel::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor, Rg
 use libghostty_vt::render::CursorVisualStyle;
 use libghostty_vt::screen::CellWide;
 use libghostty_vt::style::{StyleColor, Underline};
+use libghostty_vt::terminal::Mode as GhosttyMode;
 use libghostty_vt::{RenderState, Terminal, TerminalOptions};
 
 use crate::ghostty_term::GhosttyTermInner;
@@ -48,6 +49,7 @@ pub struct GhosttyEventLoop {
   initial_cols: u16,
   initial_rows: u16,
   max_scrollback: usize,
+  initial_cursor_blink: bool,
   xtversion_response: &'static str,
 }
 
@@ -66,6 +68,7 @@ impl GhosttyEventLoop {
     initial_cols: u16,
     initial_rows: u16,
     max_scrollback: usize,
+    initial_cursor_blink: bool,
     xtversion_response: &'static str,
   ) -> Self {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -80,6 +83,7 @@ impl GhosttyEventLoop {
       initial_cols,
       initial_rows,
       max_scrollback,
+      initial_cursor_blink,
       xtversion_response,
     }
   }
@@ -219,6 +223,10 @@ impl GhosttyEventLoop {
         return;
       }
     };
+
+    if let Err(e) = terminal.set_mode(GhosttyMode::CURSOR_BLINKING, self.initial_cursor_blink) {
+      eprintln!("ghostty: failed to set cursor blinking mode: {e:?}");
+    }
 
     let mut render_state = match RenderState::new() {
       Ok(rs) => rs,

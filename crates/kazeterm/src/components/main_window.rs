@@ -87,6 +87,7 @@ pub struct MainWindow {
 impl MainWindow {
   pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
     let entity = cx.new(|cx| Self::new(window, cx));
+    let window_handle = window.window_handle();
 
     // Register window close interception for Alt+F4 and system close button
     let main_window = entity.clone();
@@ -101,6 +102,15 @@ impl MainWindow {
           false // Prevent immediate close
         }
       })
+    });
+
+    let main_window = entity.clone();
+    cx.defer(move |cx| {
+      let _ = cx.update_window(window_handle, |_root, window, cx| {
+        main_window.update(cx, |this, cx| {
+          this.focus_active_terminal(window, cx);
+        });
+      });
     });
 
     entity

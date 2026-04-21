@@ -96,6 +96,7 @@ impl VteTermInner {
     max_scrollback: usize,
     event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
     osc7_tx: Option<std::sync::mpsc::Sender<std::path::PathBuf>>,
+    initial_cursor_blink: bool,
   ) -> Self {
     Self {
       rows: blank_grid(lines, cols),
@@ -108,7 +109,7 @@ impl VteTermInner {
         point: AlacPoint::new(Line(0), Column(0)),
         style: CursorStyle {
           shape: CursorShape::Block,
-          blinking: true,
+          blinking: initial_cursor_blink,
         },
       },
       saved_cursor: None,
@@ -1625,7 +1626,7 @@ mod tests {
   #[test]
   fn renderable_snapshot_exposes_simple_selection() {
     let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
-    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None)));
+    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None, true)));
 
     {
       let mut inner = state.lock();
@@ -1649,7 +1650,7 @@ mod tests {
   #[test]
   fn selection_to_string_uses_visible_range() {
     let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
-    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None)));
+    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None, true)));
 
     {
       let mut inner = state.lock();

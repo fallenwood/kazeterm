@@ -1,6 +1,5 @@
 use std::{borrow::Cow, collections::HashMap, path::PathBuf, sync::Arc};
 
-use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::Osc52;
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle};
 use futures::{channel::mpsc::UnboundedReceiver, channel::mpsc::unbounded};

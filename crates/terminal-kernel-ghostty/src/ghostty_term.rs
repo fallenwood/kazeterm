@@ -68,6 +68,7 @@ impl GhosttyTermInner {
     cols: usize,
     max_scrollback: usize,
     event_tx: futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
+    initial_cursor_blink: bool,
   ) -> Self {
     let _ = event_tx; // stored elsewhere; events sent via the event loop
     Self {
@@ -80,7 +81,7 @@ impl GhosttyTermInner {
         point: AlacPoint::new(Line(0), Column(0)),
         style: CursorStyle {
           shape: CursorShape::Block,
-          blinking: true,
+          blinking: initial_cursor_blink,
         },
       },
       mode: TermMode::SHOW_CURSOR | TermMode::LINE_WRAP,
@@ -779,7 +780,7 @@ mod tests {
   #[test]
   fn renderable_snapshot_exposes_simple_selection() {
     let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
-    let state = Arc::new(Mutex::new(GhosttyTermInner::new(2, 5, 100, event_tx)));
+    let state = Arc::new(Mutex::new(GhosttyTermInner::new(2, 5, 100, event_tx, true)));
 
     {
       let mut inner = state.lock();
@@ -803,7 +804,7 @@ mod tests {
   #[test]
   fn selection_to_string_uses_visible_range() {
     let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
-    let state = Arc::new(Mutex::new(GhosttyTermInner::new(2, 5, 100, event_tx)));
+    let state = Arc::new(Mutex::new(GhosttyTermInner::new(2, 5, 100, event_tx, true)));
 
     {
       let mut inner = state.lock();
