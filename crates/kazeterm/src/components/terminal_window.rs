@@ -15,20 +15,33 @@ fn create_terminal_session(
   working_directory: Option<PathBuf>,
   app_config: &config::Config,
 ) -> Result<(terminal::Terminal, terminal_kernel::SessionEvents), String> {
+  let kernel = app_config.terminal.kernel;
+  let term_program_version = crate::build_info::terminal_program_version(kernel);
+
   match app_config.terminal.kernel {
     TerminalKernel::Alacritty => terminal_kernel_alacritty::create_terminal_session(
       program,
       args,
       working_directory,
       app_config,
+      term_program_version,
     ),
     #[cfg(target_os = "linux")]
-    TerminalKernel::Vte => {
-      terminal_kernel_vte::create_terminal_session(program, args, working_directory, app_config)
-    }
-    TerminalKernel::Ghostty => {
-      terminal_kernel_ghostty::create_terminal_session(program, args, working_directory, app_config)
-    }
+    TerminalKernel::Vte => terminal_kernel_vte::create_terminal_session(
+      program,
+      args,
+      working_directory,
+      app_config,
+      term_program_version,
+    ),
+    TerminalKernel::Ghostty => terminal_kernel_ghostty::create_terminal_session(
+      program,
+      args,
+      working_directory,
+      app_config,
+      term_program_version,
+      crate::build_info::xtversion_response(kernel),
+    ),
     #[allow(unreachable_patterns)]
     other => Err(format!(
       "Terminal kernel '{other}' is not available on this platform. Supported kernels are: \
