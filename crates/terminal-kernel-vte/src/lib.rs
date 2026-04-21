@@ -18,8 +18,6 @@ use vte_term::{VteBackend, VteTermInner};
 /// PtySender wrapping the VTE event loop channel.
 struct VtePtySender(VteSender);
 
-pub const KERNEL_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 impl PtySender for VtePtySender {
   fn send_input(&self, bytes: Cow<'static, [u8]>) {
     if !bytes.is_empty() {

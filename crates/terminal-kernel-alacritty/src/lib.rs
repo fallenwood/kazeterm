@@ -24,8 +24,6 @@ use terminal_kernel::grid::Dimensions as _;
 /// PtySender implementation wrapping alacritty's EventLoopSender.
 pub struct AlacrittyPtySender(EventLoopSender);
 
-pub const KERNEL_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 impl PtySender for AlacrittyPtySender {
   fn send_input(&self, bytes: Cow<'static, [u8]>) {
     if !bytes.is_empty() {

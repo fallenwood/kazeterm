@@ -18,8 +18,6 @@ use ghostty_term::{GhosttyBackend, GhosttyTermInner};
 /// PtySender wrapping the ghostty event loop channel.
 struct GhosttyPtySender(GhosttyMsgSender);
 
-pub const KERNEL_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 impl PtySender for GhosttyPtySender {
   fn send_input(&self, bytes: Cow<'static, [u8]>) {
     if !bytes.is_empty() {
