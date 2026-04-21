@@ -46,7 +46,7 @@ fn tab_title_change_delay(cx: &gpui::App) -> Duration {
 }
 
 /// Returns whether cursor blinking is enabled from config.
-fn cursor_blink_enabled(cx: &gpui::App) -> bool {
+fn config_cursor_blink_enabled(cx: &gpui::App) -> bool {
   cx.try_global::<config::Config>()
     .map(|c| c.cursor.blink)
     .unwrap_or(true)
@@ -175,7 +175,7 @@ impl TerminalView {
       focus_handle,
       has_bell: false,
       blink_state: true,
-      blinking_paused: false,
+      blinking_paused: true,
       blink_epoch: 0,
       hover: None,
       hover_tooltip_update: Task::ready(()),
@@ -304,21 +304,16 @@ impl TerminalView {
       terminal.focus_in();
     });
 
-    self.blinking_paused = false;
-    self.blink_state = true;
-
+    self.activate_cursor_blinking(window, cx);
     window.invalidate_character_coordinates();
-    cx.notify();
   }
 
   fn focus_out(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-    self.blink_state = true;
-    self.blinking_paused = true;
-
     self.terminal.update(cx, |terminal, _| {
       terminal.focus_out();
     });
-    cx.notify();
+
+    self.deactivate_cursor_blinking(cx);
   }
 
   pub fn scroll_wheel(
@@ -408,14 +403,29 @@ impl TerminalView {
     });
   }
 
-  pub fn should_show_cursor(&self, focused: bool, cx: &mut Context<Self>) -> bool {
-    // If blinking is disabled in config, always show cursor
-    if !cursor_blink_enabled(cx) {
+  fn cursor_blink_enabled(&self, cx: &App) -> bool {
+    config_cursor_blink_enabled(cx) && self.terminal.read(cx).term.cursor_style().blinking
+  }
+
+  pub fn activate_cursor_blinking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.blinking_paused = false;
+    self.pause_cursor_blinking(window, cx);
+  }
+
+  fn deactivate_cursor_blinking(&mut self, cx: &mut Context<Self>) {
+    self.blink_state = true;
+    self.blinking_paused = true;
+    self.next_blink_epoch();
+    cx.notify();
+  }
+
+  pub fn should_show_cursor(&self, _focused: bool, cx: &mut Context<Self>) -> bool {
+    // If blinking is disabled by config or the terminal, always show the cursor.
+    if !self.cursor_blink_enabled(cx) {
       return true;
     }
 
-    if !focused
-      || self.blinking_paused
+    if self.blinking_paused
       || self
         .terminal
         .read(cx)
@@ -430,7 +440,7 @@ impl TerminalView {
   }
 
   fn blink_cursors(&mut self, epoch: usize, window: &mut Window, cx: &mut Context<Self>) {
-    if epoch == self.blink_epoch && !self.blinking_paused {
+    if epoch == self.blink_epoch && !self.blinking_paused && self.cursor_blink_enabled(cx) {
       self.blink_state = !self.blink_state;
       cx.notify();
 
@@ -451,6 +461,10 @@ impl TerminalView {
     cx.notify();
 
     let epoch = self.next_blink_epoch();
+    if !self.cursor_blink_enabled(cx) {
+      return;
+    }
+
     let interval = cursor_blink_interval(cx);
     cx.spawn_in(window, async move |this, cx| {
       Timer::after(interval).await;
@@ -482,7 +496,7 @@ impl TerminalView {
   }
 
   fn resume_cursor_blinking(&mut self, epoch: usize, window: &mut Window, cx: &mut Context<Self>) {
-    if epoch == self.blink_epoch {
+    if epoch == self.blink_epoch && self.cursor_blink_enabled(cx) {
       self.blinking_paused = false;
       self.blink_cursors(epoch, window, cx);
     }
@@ -671,9 +685,9 @@ fn subscribe_for_terminal_events(
   let terminal_events_subscription = cx.subscribe_in(
     terminal,
     window,
-    move |terminal_view, terminal, event, _window, cx| match event {
+    move |terminal_view, terminal, event, window, cx| match event {
       crate::terminal::Event::TitleChanged => {
-        terminal_view.schedule_tab_title_update(_window, cx);
+        terminal_view.schedule_tab_title_update(window, cx);
       }
       crate::terminal::Event::CloseTerminal => {
         cx.emit(TerminalEvent::CloseTerminal(terminal_view.index));
@@ -685,7 +699,18 @@ fn subscribe_for_terminal_events(
       crate::terminal::Event::Wakeup => {
         cx.notify();
       }
-      crate::terminal::Event::BlinkChanged(_) => {}
+      crate::terminal::Event::BlinkChanged(blinking) => {
+        if *blinking {
+          if !terminal_view.blinking_paused {
+            terminal_view.pause_cursor_blinking(window, cx);
+          } else {
+            terminal_view.blink_state = true;
+            cx.notify();
+          }
+        } else {
+          terminal_view.deactivate_cursor_blinking(cx);
+        }
+      }
       crate::terminal::Event::SelectionsChanged => {}
       crate::terminal::Event::PromptReturned => {
         cx.emit(TerminalEvent::CommandFinished);

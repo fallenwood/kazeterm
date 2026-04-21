@@ -188,6 +188,9 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     window.focus(&terminal.focus_handle(cx));
+    terminal.update(cx, |terminal_view, cx| {
+      terminal_view.activate_cursor_blinking(window, cx);
+    });
   }
 
   pub(crate) fn focus_active_terminal(&self, window: &mut Window, cx: &mut Context<Self>) {

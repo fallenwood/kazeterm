@@ -142,6 +142,7 @@ pub fn create_terminal_session(
     app_config.terminal.get_scrollback_lines(),
     events_tx,
     Some(osc7_tx),
+    app_config.cursor.blink,
   )));
 
   // Spawn the child shell.
