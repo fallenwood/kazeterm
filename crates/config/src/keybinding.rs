@@ -77,11 +77,17 @@ impl KeybindingList {
   }
 
   pub fn display_text(&self) -> String {
-    self
+    let display = self
       .iter()
       .map(|binding| ParsedKeybinding::parse(binding).display_text())
       .collect::<Vec<_>>()
-      .join(" / ")
+      .join(" / ");
+
+    if display.is_empty() {
+      "Unbound".to_string()
+    } else {
+      display
+    }
   }
 }
 
@@ -166,10 +172,11 @@ pub(crate) enum KeybindingAction {
   NewTabProfile9,
   NewWindow,
   Quit,
+  Noop,
 }
 
 impl KeybindingAction {
-  const ALL: [Self; 41] = [
+  const ALL: [Self; 42] = [
     Self::Copy,
     Self::Paste,
     Self::ZoomIn,
@@ -211,6 +218,7 @@ impl KeybindingAction {
     Self::NewTabProfile9,
     Self::NewWindow,
     Self::Quit,
+    Self::Noop,
   ];
 
   pub(crate) fn from_str(value: &str) -> Option<Self> {
@@ -256,6 +264,7 @@ impl KeybindingAction {
       "new_tab_profile_9" => Some(Self::NewTabProfile9),
       "new_window" => Some(Self::NewWindow),
       "quit" => Some(Self::Quit),
+      "noop" => Some(Self::Noop),
       _ => None,
     }
   }
@@ -303,48 +312,49 @@ impl KeybindingAction {
       Self::NewTabProfile9 => "new_tab_profile_9",
       Self::NewWindow => "new_window",
       Self::Quit => "quit",
+      Self::Noop => "noop",
     }
   }
-}
-
-pub(crate) fn keybinding_action_for_entry(
-  key: &str,
-  value: &toml::Value,
-) -> Option<KeybindingAction> {
-  KeybindingAction::from_str(key).or_else(|| value.as_str().and_then(KeybindingAction::from_str))
 }
 
 pub(crate) fn rewrite_keybinding_table_to_key_first(
   table: &mut toml::map::Map<String, toml::Value>,
 ) {
-  let mut rewritten = toml::map::Map::new();
+  let Ok(overrides) = KeybindingConfig::binding_overrides_from_table(table) else {
+    return;
+  };
 
-  for (key, value) in std::mem::take(table) {
-    let Some(action) = KeybindingAction::from_str(&key) else {
-      rewritten.insert(key, value);
-      continue;
-    };
+  *table = overrides
+    .into_iter()
+    .map(|(binding, action)| (binding, toml::Value::String(action.as_str().to_string())))
+    .collect();
+}
 
-    let Ok(bindings) = KeybindingList::from_value(value.clone()) else {
-      rewritten.insert(key, value);
-      continue;
-    };
-
-    for binding in bindings.iter() {
-      if let Some(previous) = rewritten.insert(
-        binding.to_string(),
-        toml::Value::String(action.as_str().to_string()),
-      ) {
-        tracing::warn!(
-          "Keybinding '{}' was already assigned in migrated config; overwriting previous value {:?}",
-          binding,
-          previous
-        );
-      }
+pub(crate) fn merge_keybinding_tables(
+  target: &mut toml::map::Map<String, toml::Value>,
+  overlay: toml::map::Map<String, toml::Value>,
+) {
+  let Ok(mut merged) = KeybindingConfig::binding_overrides_from_table(target) else {
+    for (key, value) in overlay {
+      target.insert(key, value);
     }
+    return;
+  };
+  let Ok(overlay_overrides) = KeybindingConfig::binding_overrides_from_table(&overlay) else {
+    for (key, value) in overlay {
+      target.insert(key, value);
+    }
+    return;
+  };
+
+  for (binding, action) in overlay_overrides {
+    merged.insert(binding, action);
   }
 
-  *table = rewritten;
+  *target = merged
+    .into_iter()
+    .map(|(binding, action)| (binding, toml::Value::String(action.as_str().to_string())))
+    .collect();
 }
 
 /// Configuration for custom keyboard shortcuts.
@@ -354,7 +364,10 @@ pub(crate) fn rewrite_keybinding_table_to_key_first(
 /// value under multiple keys, for example `"ctrl-shift-c" = "copy"` and
 /// `"ctrl-insert" = "copy"`.
 ///
-/// Legacy action-first entries are still accepted when loading configs.
+/// Custom bindings layer on top of the built-in defaults. Use `"some-key" = "noop"`
+/// (or `noop = "some-key"` in the legacy format) to disable a specific default key.
+/// Legacy action-first entries are still accepted when loading configs and add
+/// bindings instead of replacing defaults.
 #[derive(Debug, Clone)]
 pub struct KeybindingConfig {
   /// Copy selection to clipboard
@@ -439,6 +452,8 @@ pub struct KeybindingConfig {
   pub new_window: KeybindingList,
   /// Quit the application
   pub quit: KeybindingList,
+  /// Keys explicitly disabled by the user
+  pub noop: KeybindingList,
 }
 
 impl KeybindingConfig {
@@ -503,6 +518,56 @@ impl KeybindingConfig {
       })
   }
 
+  fn empty() -> Self {
+    let mut config = Self::default();
+    for action in KeybindingAction::ALL {
+      config.binding_mut(action).clear();
+    }
+    config
+  }
+
+  fn from_binding_map(bindings: BTreeMap<String, KeybindingAction>) -> Self {
+    let mut config = Self::empty();
+    for (binding, action) in bindings {
+      config.binding_mut(action).insert(binding);
+    }
+    config
+  }
+
+  fn default_binding_map() -> BTreeMap<String, KeybindingAction> {
+    Self::default().to_binding_map()
+  }
+
+  fn binding_overrides_from_table(
+    table: &toml::map::Map<String, toml::Value>,
+  ) -> Result<BTreeMap<String, KeybindingAction>, String> {
+    let mut bindings = BTreeMap::new();
+
+    for (key, value) in table {
+      if let Some(action) = KeybindingAction::from_str(key) {
+        let parsed = KeybindingList::from_value(value.clone())
+          .map_err(|error| format!("keybindings.{key}: {error}"))?;
+        for binding in parsed.iter() {
+          bindings.insert(binding.to_string(), action);
+        }
+        continue;
+      }
+
+      let action_name = value
+        .as_str()
+        .ok_or_else(|| format!("keybinding '{key}' must map to an action name string"))?;
+      let action = KeybindingAction::from_str(action_name)
+        .ok_or_else(|| format!("unknown keybinding action '{action_name}' for binding '{key}'"))?;
+      let binding = key.trim();
+      if binding.is_empty() {
+        return Err("keybinding names must not be empty".to_string());
+      }
+      bindings.insert(binding.to_string(), action);
+    }
+
+    Ok(bindings)
+  }
+
   fn binding(&self, action: KeybindingAction) -> &KeybindingList {
     match action {
       KeybindingAction::Copy => &self.copy,
@@ -546,6 +611,7 @@ impl KeybindingConfig {
       KeybindingAction::NewTabProfile9 => &self.new_tab_profile_9,
       KeybindingAction::NewWindow => &self.new_window,
       KeybindingAction::Quit => &self.quit,
+      KeybindingAction::Noop => &self.noop,
     }
   }
 
@@ -592,14 +658,8 @@ impl KeybindingConfig {
       KeybindingAction::NewTabProfile9 => &mut self.new_tab_profile_9,
       KeybindingAction::NewWindow => &mut self.new_window,
       KeybindingAction::Quit => &mut self.quit,
+      KeybindingAction::Noop => &mut self.noop,
     }
-  }
-
-  fn explicit_actions(table: &toml::map::Map<String, toml::Value>) -> HashSet<KeybindingAction> {
-    table
-      .iter()
-      .filter_map(|(key, value)| keybinding_action_for_entry(key, value))
-      .collect()
   }
 
   fn from_toml_value(value: toml::Value) -> Result<Self, String> {
@@ -607,36 +667,21 @@ impl KeybindingConfig {
       return Err("keybindings must be a table".to_string());
     };
 
-    let mut config = Self::default();
-    for action in Self::explicit_actions(&table) {
-      config.binding_mut(action).clear();
+    let mut bindings = Self::default_binding_map();
+    for (binding, action) in Self::binding_overrides_from_table(&table)? {
+      bindings.insert(binding, action);
     }
 
-    for (key, value) in table {
-      if let Some(action) = KeybindingAction::from_str(&key) {
-        *config.binding_mut(action) = KeybindingList::from_value(value)
-          .map_err(|error| format!("keybindings.{key}: {error}"))?;
-        continue;
-      }
-
-      let action_name = value
-        .as_str()
-        .ok_or_else(|| format!("keybinding '{key}' must map to an action name string"))?;
-      let action = KeybindingAction::from_str(action_name)
-        .ok_or_else(|| format!("unknown keybinding action '{action_name}' for binding '{key}'"))?;
-      config.binding_mut(action).insert(key);
-    }
-
-    Ok(config)
+    Ok(Self::from_binding_map(bindings))
   }
 
-  fn to_key_first_map(&self) -> BTreeMap<String, String> {
+  fn to_binding_map(&self) -> BTreeMap<String, KeybindingAction> {
     let mut bindings = BTreeMap::new();
 
     for action in KeybindingAction::ALL {
       for binding in self.binding(action).iter() {
-        if let Some(previous) = bindings.insert(binding.to_string(), action.as_str().to_string())
-          && previous != action.as_str()
+        if let Some(previous) = bindings.insert(binding.to_string(), action)
+          && previous != action
         {
           tracing::warn!(
             "Keybinding '{}' is assigned to multiple actions; keeping '{}'",
@@ -648,6 +693,14 @@ impl KeybindingConfig {
     }
 
     bindings
+  }
+
+  fn to_key_first_map(&self) -> BTreeMap<String, String> {
+    self
+      .to_binding_map()
+      .into_iter()
+      .map(|(binding, action)| (binding, action.as_str().to_string()))
+      .collect()
   }
 }
 
@@ -715,6 +768,7 @@ impl Default for KeybindingConfig {
         new_tab_profile_9: KeybindingList::new("ctrl-shift-9"),
         new_window: KeybindingList::new("cmd-n"),
         quit: KeybindingList::new("cmd-q"),
+        noop: KeybindingList::default(),
       }
     } else {
       Self {
@@ -759,6 +813,7 @@ impl Default for KeybindingConfig {
         new_tab_profile_9: KeybindingList::new("ctrl-shift-9"),
         new_window: KeybindingList::new("ctrl-shift-n"),
         quit: KeybindingList::new("alt-f4"),
+        noop: KeybindingList::default(),
       }
     }
   }
@@ -1005,6 +1060,15 @@ mod tests {
     }
   }
 
+  fn assert_binding_strings(bindings: &KeybindingList, mut expected: Vec<String>) {
+    expected.sort();
+    expected.dedup();
+    assert_eq!(
+      bindings.iter().map(ToOwned::to_owned).collect::<Vec<_>>(),
+      expected
+    );
+  }
+
   #[test]
   fn parse_simple_key() {
     let kb = ParsedKeybinding::parse("tab");
@@ -1227,13 +1291,20 @@ mod tests {
       config.focus_pane_right.first().unwrap(),
       expected_default_directional_pane_binding("right")
     );
+    assert_binding_strings(&config.noop, vec![]);
   }
 
   #[test]
   fn keybinding_config_deserialize_legacy_partial_override() {
     let toml_str = r#"copy = "ctrl-c""#;
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(config.copy, "ctrl-c");
+    assert_binding_strings(
+      &config.copy,
+      vec![
+        expected_default_copy_binding().to_string(),
+        "ctrl-c".to_string(),
+      ],
+    );
     // Non-specified fields use defaults
     assert_eq!(config.paste, expected_default_paste_binding());
     if cfg!(target_os = "macos") {
@@ -1254,8 +1325,20 @@ mod tests {
 "##;
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
 
-    assert_eq!(config.copy, "ctrl-c");
-    assert_eq!(config.paste, "ctrl-alt-v");
+    assert_binding_strings(
+      &config.copy,
+      vec![
+        expected_default_copy_binding().to_string(),
+        "ctrl-c".to_string(),
+      ],
+    );
+    assert_binding_strings(
+      &config.paste,
+      vec![
+        expected_default_paste_binding().to_string(),
+        "ctrl-alt-v".to_string(),
+      ],
+    );
     assert_eq!(
       config.new_tab.first().unwrap(),
       expected_default_new_tab_binding()
@@ -1265,12 +1348,24 @@ mod tests {
   #[test]
   fn keybinding_config_deserialize_select_tab_9_aliases() {
     let legacy_action_first: KeybindingConfig =
-      toml::from_str(r#"select_tab_9 = "ctrl-alt-9""#).unwrap();
-    assert_eq!(legacy_action_first.select_last_tab, "ctrl-alt-9");
+      toml::from_str(r#"select_tab_9 = "alt-shift-9""#).unwrap();
+    assert_binding_strings(
+      &legacy_action_first.select_last_tab,
+      vec![
+        expected_default_select_tab_binding(9),
+        "alt-shift-9".to_string(),
+      ],
+    );
 
     let key_first_alias: KeybindingConfig =
-      toml::from_str(r##""ctrl-alt-9" = "select_tab_9""##).unwrap();
-    assert_eq!(key_first_alias.select_last_tab, "ctrl-alt-9");
+      toml::from_str(r##""alt-shift-9" = "select_tab_9""##).unwrap();
+    assert_binding_strings(
+      &key_first_alias.select_last_tab,
+      vec![
+        expected_default_select_tab_binding(9),
+        "alt-shift-9".to_string(),
+      ],
+    );
   }
 
   #[test]
@@ -1311,6 +1406,7 @@ mod tests {
     assert_eq!(config.copy, deserialized.copy);
     assert_eq!(config.paste, deserialized.paste);
     assert_eq!(config.zoom_in, deserialized.zoom_in);
+    assert_eq!(config.noop, deserialized.noop);
   }
 
   #[test]
@@ -1321,9 +1417,13 @@ mod tests {
 "##;
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
 
-    assert_eq!(
-      config.copy.iter().collect::<Vec<_>>(),
-      vec!["ctrl-insert", "ctrl-shift-c"]
+    assert_binding_strings(
+      &config.copy,
+      vec![
+        expected_default_copy_binding().to_string(),
+        "ctrl-shift-c".to_string(),
+        "ctrl-insert".to_string(),
+      ],
     );
     assert!(config.copy.matches(true, true, false, false, "c"));
     assert!(config.copy.matches(true, false, false, false, "insert"));
@@ -1334,12 +1434,64 @@ mod tests {
     let toml_str = r#"copy = ["ctrl-shift-c", "ctrl-insert"]"#;
     let config: KeybindingConfig = toml::from_str(toml_str).unwrap();
 
-    assert_eq!(
-      config.copy.iter().collect::<Vec<_>>(),
-      vec!["ctrl-insert", "ctrl-shift-c"]
+    assert_binding_strings(
+      &config.copy,
+      vec![
+        expected_default_copy_binding().to_string(),
+        "ctrl-shift-c".to_string(),
+        "ctrl-insert".to_string(),
+      ],
     );
     assert!(config.copy.matches(true, true, false, false, "c"));
     assert!(config.copy.matches(true, false, false, false, "insert"));
+  }
+
+  #[test]
+  fn keybinding_config_noop_disables_default_binding() {
+    let default_copy = expected_default_copy_binding();
+    let toml_str = format!(
+      r##"
+"{}" = "noop"
+"ctrl-c" = "copy"
+"##,
+      default_copy,
+    );
+    let config: KeybindingConfig = toml::from_str(&toml_str).unwrap();
+
+    assert_binding_strings(&config.copy, vec!["ctrl-c".to_string()]);
+    assert_binding_strings(&config.noop, vec![default_copy.to_string()]);
+  }
+
+  #[test]
+  fn keybinding_config_legacy_noop_disables_default_binding() {
+    let default_copy = expected_default_copy_binding();
+    let toml_str = format!(
+      r#"
+copy = "ctrl-c"
+noop = "{}"
+"#,
+      default_copy,
+    );
+    let config: KeybindingConfig = toml::from_str(&toml_str).unwrap();
+
+    assert_binding_strings(&config.copy, vec!["ctrl-c".to_string()]);
+    assert_binding_strings(&config.noop, vec![default_copy.to_string()]);
+  }
+
+  #[test]
+  fn keybinding_config_reassigns_default_binding_by_key() {
+    let default_copy = expected_default_copy_binding();
+    let toml_str = format!(r##""{}" = "paste""##, default_copy);
+    let config: KeybindingConfig = toml::from_str(&toml_str).unwrap();
+
+    assert_binding_strings(&config.copy, vec![]);
+    assert_binding_strings(
+      &config.paste,
+      vec![
+        expected_default_paste_binding().to_string(),
+        default_copy.to_string(),
+      ],
+    );
   }
 
   #[test]
@@ -1368,6 +1520,11 @@ mod tests {
   fn keybinding_list_displays_multiple_bindings() {
     let bindings = KeybindingList::from_vec(vec!["ctrl-shift-c".into(), "ctrl-insert".into()]);
     assert_eq!(bindings.display_text(), "Ctrl+Insert / Ctrl+Shift+C");
+  }
+
+  #[test]
+  fn keybinding_list_displays_unbound_when_empty() {
+    assert_eq!(KeybindingList::default().display_text(), "Unbound");
   }
 
   #[test]

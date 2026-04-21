@@ -325,6 +325,7 @@ fn resolve_key_debug_action(
   let keybindings = &config.keybindings;
   let mut actions = Vec::new();
 
+  push_key_debug_action(&mut actions, "No-op", &keybindings.noop, modifiers, key);
   push_key_debug_action(&mut actions, "Copy", &keybindings.copy, modifiers, key);
   push_key_debug_action(&mut actions, "Paste", &keybindings.paste, modifiers, key);
   push_key_debug_action(

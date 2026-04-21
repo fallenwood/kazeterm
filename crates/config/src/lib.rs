@@ -830,29 +830,7 @@ impl Config {
     target: &mut toml::map::Map<String, toml::Value>,
     overlay: toml::map::Map<String, toml::Value>,
   ) {
-    let overridden_actions = overlay
-      .iter()
-      .filter_map(|(key, value)| keybinding::keybinding_action_for_entry(key, value))
-      .collect::<HashSet<_>>();
-
-    if !overridden_actions.is_empty() {
-      let keys_to_remove = target
-        .iter()
-        .filter_map(|(key, value)| {
-          keybinding::keybinding_action_for_entry(key, value)
-            .filter(|action| overridden_actions.contains(action))
-            .map(|_| key.clone())
-        })
-        .collect::<Vec<_>>();
-
-      for key in keys_to_remove {
-        target.remove(&key);
-      }
-    }
-
-    for (key, value) in overlay {
-      target.insert(key, value);
-    }
+    keybinding::merge_keybinding_tables(target, overlay);
   }
 
   fn resolve_import_path(current_path: &Path, import_path: &str) -> PathBuf {
@@ -992,6 +970,15 @@ mod tests {
     path
   }
 
+  fn assert_binding_strings(bindings: &crate::KeybindingList, mut expected: Vec<String>) {
+    expected.sort();
+    expected.dedup();
+    assert_eq!(
+      bindings.iter().map(ToOwned::to_owned).collect::<Vec<_>>(),
+      expected
+    );
+  }
+
   #[test]
   fn load_from_path_merges_imports_with_higher_priority() {
     let dir = test_dir("imports-override");
@@ -1008,8 +995,8 @@ imports = ["./kazeterm.windows.toml"]
 background_opacity = 1.0
 
 [keybindings]
-"ctrl-shift-c" = "copy"
-"ctrl-shift-v" = "paste"
+"ctrl-alt-c" = "copy"
+"alt-v" = "paste"
 
 [terminal.env]
 BASE = "from-base"
@@ -1034,10 +1021,24 @@ EXTRA = "present"
     .unwrap();
 
     let config = Config::load_from_path(&base_path).unwrap();
+    let defaults = crate::KeybindingConfig::default();
 
     assert_eq!(config.appearance.background_opacity, 0.4);
-    assert_eq!(config.keybindings.copy, "ctrl-shift-c");
-    assert_eq!(config.keybindings.paste, "ctrl-alt-v");
+    assert_binding_strings(
+      &config.keybindings.copy,
+      vec![
+        defaults.copy.first().unwrap().to_string(),
+        "ctrl-alt-c".to_string(),
+      ],
+    );
+    assert_binding_strings(
+      &config.keybindings.paste,
+      vec![
+        defaults.paste.first().unwrap().to_string(),
+        "alt-v".to_string(),
+        "ctrl-alt-v".to_string(),
+      ],
+    );
     assert_eq!(config.terminal.env.get("BASE").unwrap(), "from-overlay");
     assert_eq!(config.terminal.env.get("EXTRA").unwrap(), "present");
 
@@ -1057,8 +1058,8 @@ EXTRA = "present"
 imports = ["./kazeterm.windows.toml"]
 
 [keybindings]
-"ctrl-shift-c" = "copy"
-"ctrl-shift-v" = "paste"
+"ctrl-alt-c" = "copy"
+"alt-v" = "paste"
 "##,
         CURRENT_CONFIG_VERSION,
       ),
@@ -1073,9 +1074,66 @@ paste = "ctrl-alt-v"
     .unwrap();
 
     let config = Config::load_from_path(&base_path).unwrap();
+    let defaults = crate::KeybindingConfig::default();
 
-    assert_eq!(config.keybindings.copy, "ctrl-shift-c");
-    assert_eq!(config.keybindings.paste, "ctrl-alt-v");
+    assert_binding_strings(
+      &config.keybindings.copy,
+      vec![
+        defaults.copy.first().unwrap().to_string(),
+        "ctrl-alt-c".to_string(),
+      ],
+    );
+    assert_binding_strings(
+      &config.keybindings.paste,
+      vec![
+        defaults.paste.first().unwrap().to_string(),
+        "alt-v".to_string(),
+        "ctrl-alt-v".to_string(),
+      ],
+    );
+
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn load_from_path_merges_noop_imports_by_key() {
+    let dir = test_dir("imports-noop-keybindings");
+    let base_path = dir.join("kazeterm.toml");
+    let overlay_path = dir.join("kazeterm.windows.toml");
+    let default_copy = crate::KeybindingConfig::default()
+      .copy
+      .first()
+      .unwrap()
+      .to_string();
+
+    std::fs::write(
+      &base_path,
+      format!(
+        r##"version = "{}"
+imports = ["./kazeterm.windows.toml"]
+
+[keybindings]
+"ctrl-alt-c" = "copy"
+"##,
+        CURRENT_CONFIG_VERSION,
+      ),
+    )
+    .unwrap();
+    std::fs::write(
+      &overlay_path,
+      format!(
+        r##"[keybindings]
+"{}" = "noop"
+"##,
+        default_copy,
+      ),
+    )
+    .unwrap();
+
+    let config = Config::load_from_path(&base_path).unwrap();
+
+    assert_binding_strings(&config.keybindings.copy, vec!["ctrl-alt-c".to_string()]);
+    assert_binding_strings(&config.keybindings.noop, vec![default_copy]);
 
     std::fs::remove_dir_all(dir).unwrap();
   }
