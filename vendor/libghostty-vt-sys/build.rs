@@ -142,6 +142,7 @@ fn build_ghostty_from_uucode_cache(
         .arg("--global-cache-dir")
         .arg(&global_cache_dir)
         .arg("-Demit-lib-vt")
+        .arg(format!("-Doptimize={}", optimize))
         .arg("--prefix")
         .arg(install_prefix)
         .current_dir(&uucode_dir);
@@ -156,9 +157,13 @@ fn configure_ghostty_build(
     target: &str,
     host: &str,
 ) {
+    let is_debug = std::env::var("DEBUG").map_or(false, |v| v == "true");
+    let optimize = if is_debug { "Debug" } else { "ReleaseFast" };
+
     build
         .arg("build")
         .arg("-Demit-lib-vt")
+        .arg(format!("-Doptimize={}", optimize))
         .arg("--prefix")
         .arg(install_prefix)
         .current_dir(ghostty_dir);
