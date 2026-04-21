@@ -61,7 +61,8 @@ pub(crate) fn xtversion_response(kernel: TerminalKernel) -> &'static str {
   }
 }
 
-fn format_terminal_program_version(kernel: TerminalKernel) -> String {  format!(
+fn format_terminal_program_version(kernel: TerminalKernel) -> String {
+  format!(
     "{} ({}, commit {})",
     app_version(),
     kernel,
@@ -74,27 +75,33 @@ mod tests {
   use super::*;
 
   #[test]
-  fn terminal_program_version_only_includes_app_version_and_commit() {
+  fn terminal_program_version_includes_kernel_and_commit() {
     let version = terminal_program_version(TerminalKernel::Alacritty);
 
     assert_eq!(
       version,
-      format!("{} (commit {})", app_version(), short_commit_hash())
+      format!(
+        "{} ({}, commit {})",
+        app_version(),
+        TerminalKernel::Alacritty,
+        short_commit_hash()
+      )
     );
-    assert!(!version.contains("alacritty"));
+    assert!(version.contains("alacritty"));
     assert!(!version.contains("ghostty"));
     assert!(!version.contains("vte"));
   }
 
   #[test]
-  fn xtversion_response_keeps_commit_without_kernel_details() {
+  fn xtversion_response_prefixes_kazeterm_and_preserves_kernel_details() {
     let response = xtversion_response(TerminalKernel::Ghostty);
 
     assert_eq!(
       response,
       format!(
-        "kazeterm {} (commit {})",
+        "kazeterm {} ({}, commit {})",
         app_version(),
+        TerminalKernel::Ghostty,
         short_commit_hash()
       )
     );
