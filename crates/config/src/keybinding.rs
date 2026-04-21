@@ -140,7 +140,7 @@ pub(crate) enum KeybindingAction {
   SelectTab6,
   SelectTab7,
   SelectTab8,
-  SelectTab9,
+  SelectLastTab,
   ToggleSearch,
   SplitHorizontal,
   SplitVertical,
@@ -185,7 +185,7 @@ impl KeybindingAction {
     Self::SelectTab6,
     Self::SelectTab7,
     Self::SelectTab8,
-    Self::SelectTab9,
+    Self::SelectLastTab,
     Self::ToggleSearch,
     Self::SplitHorizontal,
     Self::SplitVertical,
@@ -230,7 +230,7 @@ impl KeybindingAction {
       "select_tab_6" => Some(Self::SelectTab6),
       "select_tab_7" => Some(Self::SelectTab7),
       "select_tab_8" => Some(Self::SelectTab8),
-      "select_tab_9" => Some(Self::SelectTab9),
+      "select_tab_9" | "select_last_tab" => Some(Self::SelectLastTab),
       "toggle_search" => Some(Self::ToggleSearch),
       "split_horizontal" => Some(Self::SplitHorizontal),
       "split_vertical" => Some(Self::SplitVertical),
@@ -277,7 +277,7 @@ impl KeybindingAction {
       Self::SelectTab6 => "select_tab_6",
       Self::SelectTab7 => "select_tab_7",
       Self::SelectTab8 => "select_tab_8",
-      Self::SelectTab9 => "select_tab_9",
+      Self::SelectLastTab => "select_last_tab",
       Self::ToggleSearch => "toggle_search",
       Self::SplitHorizontal => "split_horizontal",
       Self::SplitVertical => "split_vertical",
@@ -388,7 +388,7 @@ pub struct KeybindingConfig {
   /// Select tab 8
   pub select_tab_8: KeybindingList,
   /// Select the last tab
-  pub select_tab_9: KeybindingList,
+  pub select_last_tab: KeybindingList,
   /// Toggle search bar
   pub toggle_search: KeybindingList,
   /// Split pane horizontally
@@ -453,7 +453,7 @@ impl KeybindingConfig {
     KeybindingAction::SelectTab6,
     KeybindingAction::SelectTab7,
     KeybindingAction::SelectTab8,
-    KeybindingAction::SelectTab9,
+    KeybindingAction::SelectLastTab,
     KeybindingAction::ToggleSearch,
     KeybindingAction::SplitHorizontal,
     KeybindingAction::SplitVertical,
@@ -520,7 +520,7 @@ impl KeybindingConfig {
       KeybindingAction::SelectTab6 => &self.select_tab_6,
       KeybindingAction::SelectTab7 => &self.select_tab_7,
       KeybindingAction::SelectTab8 => &self.select_tab_8,
-      KeybindingAction::SelectTab9 => &self.select_tab_9,
+      KeybindingAction::SelectLastTab => &self.select_last_tab,
       KeybindingAction::ToggleSearch => &self.toggle_search,
       KeybindingAction::SplitHorizontal => &self.split_horizontal,
       KeybindingAction::SplitVertical => &self.split_vertical,
@@ -566,7 +566,7 @@ impl KeybindingConfig {
       KeybindingAction::SelectTab6 => &mut self.select_tab_6,
       KeybindingAction::SelectTab7 => &mut self.select_tab_7,
       KeybindingAction::SelectTab8 => &mut self.select_tab_8,
-      KeybindingAction::SelectTab9 => &mut self.select_tab_9,
+      KeybindingAction::SelectLastTab => &mut self.select_last_tab,
       KeybindingAction::ToggleSearch => &mut self.toggle_search,
       KeybindingAction::SplitHorizontal => &mut self.split_horizontal,
       KeybindingAction::SplitVertical => &mut self.split_vertical,
@@ -689,7 +689,7 @@ impl Default for KeybindingConfig {
         select_tab_6: KeybindingList::new("cmd-6"),
         select_tab_7: KeybindingList::new("cmd-7"),
         select_tab_8: KeybindingList::new("cmd-8"),
-        select_tab_9: KeybindingList::new("cmd-9"),
+        select_last_tab: KeybindingList::new("cmd-9"),
         toggle_search: KeybindingList::new("cmd-f"),
         split_horizontal: KeybindingList::new("alt-shift-minus"),
         split_vertical: KeybindingList::new("alt-shift-equal"),
@@ -701,7 +701,7 @@ impl Default for KeybindingConfig {
         focus_pane_left: KeybindingList::new("alt-left"),
         focus_pane_right: KeybindingList::new("alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
-        toggle_fullscreen: KeybindingList::new("cmd-ctr-f"),
+        toggle_fullscreen: KeybindingList::new("cmd-ctrl-f"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
         new_tab: KeybindingList::new("cmd-t"),
         new_tab_profile_1: KeybindingList::new("ctrl-shift-1"),
@@ -733,7 +733,7 @@ impl Default for KeybindingConfig {
         select_tab_6: KeybindingList::new("ctrl-alt-6"),
         select_tab_7: KeybindingList::new("ctrl-alt-7"),
         select_tab_8: KeybindingList::new("ctrl-alt-8"),
-        select_tab_9: KeybindingList::new("ctrl-alt-9"),
+        select_last_tab: KeybindingList::new("ctrl-alt-9"),
         toggle_search: KeybindingList::new("ctrl-shift-f"),
         split_horizontal: KeybindingList::new("alt-shift-minus"),
         split_vertical: KeybindingList::new("alt-shift-equal"),
@@ -1183,11 +1183,11 @@ mod tests {
       assert!(select_tab_1.matches(true, false, true, false, "1"));
     }
 
-    let select_tab_9 = ParsedKeybinding::parse(config.select_tab_9.first().unwrap());
+    let select_last_tab = ParsedKeybinding::parse(config.select_last_tab.first().unwrap());
     if cfg!(target_os = "macos") {
-      assert!(select_tab_9.matches(false, false, false, true, "9"));
+      assert!(select_last_tab.matches(false, false, false, true, "9"));
     } else {
-      assert!(select_tab_9.matches(true, false, true, false, "9"));
+      assert!(select_last_tab.matches(true, false, true, false, "9"));
     }
 
     let focus_pane_up = ParsedKeybinding::parse(config.focus_pane_up.first().unwrap());
@@ -1216,7 +1216,7 @@ mod tests {
       expected_default_select_tab_binding(1)
     );
     assert_eq!(
-      config.select_tab_9.first().unwrap(),
+      config.select_last_tab.first().unwrap(),
       expected_default_select_tab_binding(9)
     );
     assert_eq!(
@@ -1263,6 +1263,17 @@ mod tests {
   }
 
   #[test]
+  fn keybinding_config_deserialize_select_tab_9_aliases() {
+    let legacy_action_first: KeybindingConfig =
+      toml::from_str(r#"select_tab_9 = "ctrl-alt-9""#).unwrap();
+    assert_eq!(legacy_action_first.select_last_tab, "ctrl-alt-9");
+
+    let key_first_alias: KeybindingConfig =
+      toml::from_str(r##""ctrl-alt-9" = "select_tab_9""##).unwrap();
+    assert_eq!(key_first_alias.select_last_tab, "ctrl-alt-9");
+  }
+
+  #[test]
   fn keybinding_config_roundtrip() {
     let config = KeybindingConfig::default();
     let serialized = toml::to_string_pretty(&config).unwrap();
@@ -1284,6 +1295,14 @@ mod tests {
         .as_str()
         .unwrap(),
       "paste"
+    );
+    assert_eq!(
+      table
+        .get(&expected_default_select_tab_binding(9))
+        .unwrap()
+        .as_str()
+        .unwrap(),
+      "select_last_tab"
     );
     assert!(!table.contains_key("copy"));
     assert!(!table.contains_key("paste"));

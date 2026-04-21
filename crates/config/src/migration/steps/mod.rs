@@ -78,3 +78,6 @@ pub(super) use migrate_v20260417_2_to_20260417_3::migrate_v20260417_2_to_2026041
 
 mod migrate_v20260417_3_to_20260419_1;
 pub(super) use migrate_v20260417_3_to_20260419_1::migrate_v20260417_3_to_20260419_1;
+
+mod migrate_v20260419_1_to_20260421_1;
+pub(super) use migrate_v20260419_1_to_20260421_1::migrate_v20260419_1_to_20260421_1;
