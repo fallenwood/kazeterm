@@ -10,13 +10,7 @@ use config::KeybindingConfig;
 
 /// Helper: assert that `binding` matches the given modifiers + key via
 /// `KeybindingList::matches`, with no unintended extras.
-fn assert_matches(
-  list: &config::KeybindingList,
-  control: bool,
-  shift: bool,
-  alt: bool,
-  key: &str,
-) {
+fn assert_matches(list: &config::KeybindingList, control: bool, shift: bool, alt: bool, key: &str) {
   assert!(
     list.matches(control, shift, alt, /* platform */ false, key),
     "expected binding to match ctrl={control} shift={shift} alt={alt} key={key}, got {:?}",
@@ -83,14 +77,19 @@ fn default_tab_navigation_bindings() {
 #[test]
 fn default_split_and_pane_bindings() {
   let kb = KeybindingConfig::default();
-  // Non-mac defaults: Alt+Shift+-, Alt+Shift+=, Ctrl+Shift+W, Ctrl+Shift+], [, X
+  // Non-mac defaults: Alt+Shift+-, Alt+Shift+=, Ctrl+Shift+W, Ctrl+Shift+], [, X, H
   assert_matches(&kb.split_horizontal, false, true, true, "-");
   assert_matches(&kb.split_vertical, false, true, true, "=");
+  #[cfg(target_os = "macos")]
+  {
+    assert_matches_platform(&kb.toggle_hidden_panes, false, true, false, "h");
+  }
   #[cfg(not(target_os = "macos"))]
   {
     assert_matches(&kb.close_pane, true, true, false, "w");
     assert_matches(&kb.focus_next_pane, true, true, false, "]");
     assert_matches(&kb.focus_previous_pane, true, true, false, "[");
+    assert_matches(&kb.toggle_hidden_panes, true, true, false, "h");
   }
   assert_matches(&kb.swap_split_panes, true, true, false, "x");
 }
@@ -118,7 +117,10 @@ fn matches_main_window_shortcut_covers_defaults() {
   #[cfg(not(target_os = "macos"))]
   {
     assert!(kb.matches_main_window_shortcut(true, true, false, false, "f")); // toggle_search
+    assert!(kb.matches_main_window_shortcut(true, true, false, false, "h")); // toggle_hidden_panes
   }
+  #[cfg(target_os = "macos")]
+  assert!(kb.matches_main_window_shortcut(false, true, false, true, "h")); // toggle_hidden_panes
   assert!(!kb.matches_main_window_shortcut(true, true, true, false, "q"));
 }
 

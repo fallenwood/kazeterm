@@ -26,6 +26,13 @@ pub(super) fn build_terminal_context_menu(
     .unwrap_or_default();
 
   let active_tab_ix = main_window.read(cx).active_tab_ix;
+  let has_hidden_panes = main_window.read(cx).active_tab_has_hidden_panes();
+  let can_toggle_hidden_panes = main_window.read(cx).active_tab_can_toggle_hidden_panes();
+  let toggle_hidden_panes_label = if has_hidden_panes {
+    "Restore Hidden Panes"
+  } else {
+    "Hide Other Panes"
+  };
 
   // --- Top-level: Copy & Paste ---
   let tv_copy = terminal_view.clone();
@@ -95,12 +102,14 @@ pub(super) fn build_terminal_context_menu(
   let mw_focus_next = main_window.clone();
   let mw_focus_prev = main_window.clone();
   let mw_swap = main_window.clone();
+  let mw_toggle_hidden = main_window.clone();
   let split_h_hint = kb_hint(&kb.split_horizontal);
   let split_v_hint = kb_hint(&kb.split_vertical);
   let close_pane_hint = kb_hint(&kb.close_pane);
   let focus_next_hint = kb_hint(&kb.focus_next_pane);
   let focus_prev_hint = kb_hint(&kb.focus_previous_pane);
   let swap_hint = kb_hint(&kb.swap_split_panes);
+  let toggle_hidden_hint = kb_hint(&kb.toggle_hidden_panes);
 
   let menu = menu.submenu("Split Panes", window, cx, move |menu, _window, _cx| {
     let mw_split_h = mw_split_h.clone();
@@ -109,6 +118,7 @@ pub(super) fn build_terminal_context_menu(
     let mw_focus_next = mw_focus_next.clone();
     let mw_focus_prev = mw_focus_prev.clone();
     let mw_swap = mw_swap.clone();
+    let mw_toggle_hidden = mw_toggle_hidden.clone();
 
     menu
       .item(
@@ -155,6 +165,23 @@ pub(super) fn build_terminal_context_menu(
               this.swap_split_panes(window, cx);
             });
           }),
+      )
+      .item(
+        PopupMenuItem::new(format!(
+          "{} ({})",
+          toggle_hidden_panes_label, toggle_hidden_hint
+        ))
+        .icon(if has_hidden_panes {
+          IconName::Undo
+        } else {
+          IconName::Maximize
+        })
+        .disabled(!can_toggle_hidden_panes)
+        .on_click(move |_, window, cx| {
+          mw_toggle_hidden.update(cx, |this, cx| {
+            this.toggle_hidden_split_panes(window, cx);
+          });
+        }),
       )
       .separator()
       .item(

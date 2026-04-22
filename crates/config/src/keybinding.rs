@@ -158,6 +158,7 @@ pub(crate) enum KeybindingAction {
   FocusPaneLeft,
   FocusPaneRight,
   SwapSplitPanes,
+  ToggleHiddenPanes,
   ToggleFullscreen,
   ToggleTabBar,
   NewTab,
@@ -176,7 +177,7 @@ pub(crate) enum KeybindingAction {
 }
 
 impl KeybindingAction {
-  const ALL: [Self; 42] = [
+  const ALL: [Self; 43] = [
     Self::Copy,
     Self::Paste,
     Self::ZoomIn,
@@ -204,6 +205,7 @@ impl KeybindingAction {
     Self::FocusPaneLeft,
     Self::FocusPaneRight,
     Self::SwapSplitPanes,
+    Self::ToggleHiddenPanes,
     Self::ToggleFullscreen,
     Self::ToggleTabBar,
     Self::NewTab,
@@ -250,6 +252,7 @@ impl KeybindingAction {
       "focus_pane_left" => Some(Self::FocusPaneLeft),
       "focus_pane_right" => Some(Self::FocusPaneRight),
       "swap_split_panes" => Some(Self::SwapSplitPanes),
+      "toggle_hidden_panes" => Some(Self::ToggleHiddenPanes),
       "toggle_fullscreen" => Some(Self::ToggleFullscreen),
       "toggle_tab_bar" => Some(Self::ToggleTabBar),
       "new_tab" => Some(Self::NewTab),
@@ -298,6 +301,7 @@ impl KeybindingAction {
       Self::FocusPaneLeft => "focus_pane_left",
       Self::FocusPaneRight => "focus_pane_right",
       Self::SwapSplitPanes => "swap_split_panes",
+      Self::ToggleHiddenPanes => "toggle_hidden_panes",
       Self::ToggleFullscreen => "toggle_fullscreen",
       Self::ToggleTabBar => "toggle_tab_bar",
       Self::NewTab => "new_tab",
@@ -424,6 +428,8 @@ pub struct KeybindingConfig {
   pub focus_pane_right: KeybindingList,
   /// Swap the two halves of the current split
   pub swap_split_panes: KeybindingList,
+  /// Toggle hiding or restoring other panes in the current split layout
+  pub toggle_hidden_panes: KeybindingList,
   /// Toggle fullscreen mode
   pub toggle_fullscreen: KeybindingList,
   /// Toggle tab bar visibility
@@ -479,10 +485,11 @@ impl KeybindingConfig {
     KeybindingAction::FocusPaneDown,
   ];
 
-  const MAIN_WINDOW_SHORTCUTS_CONTINUED: [KeybindingAction; 7] = [
+  const MAIN_WINDOW_SHORTCUTS_CONTINUED: [KeybindingAction; 8] = [
     KeybindingAction::FocusPaneLeft,
     KeybindingAction::FocusPaneRight,
     KeybindingAction::SwapSplitPanes,
+    KeybindingAction::ToggleHiddenPanes,
     KeybindingAction::ToggleFullscreen,
     KeybindingAction::ToggleTabBar,
     KeybindingAction::NewTab,
@@ -597,6 +604,7 @@ impl KeybindingConfig {
       KeybindingAction::FocusPaneLeft => &self.focus_pane_left,
       KeybindingAction::FocusPaneRight => &self.focus_pane_right,
       KeybindingAction::SwapSplitPanes => &self.swap_split_panes,
+      KeybindingAction::ToggleHiddenPanes => &self.toggle_hidden_panes,
       KeybindingAction::ToggleFullscreen => &self.toggle_fullscreen,
       KeybindingAction::ToggleTabBar => &self.toggle_tab_bar,
       KeybindingAction::NewTab => &self.new_tab,
@@ -644,6 +652,7 @@ impl KeybindingConfig {
       KeybindingAction::FocusPaneLeft => &mut self.focus_pane_left,
       KeybindingAction::FocusPaneRight => &mut self.focus_pane_right,
       KeybindingAction::SwapSplitPanes => &mut self.swap_split_panes,
+      KeybindingAction::ToggleHiddenPanes => &mut self.toggle_hidden_panes,
       KeybindingAction::ToggleFullscreen => &mut self.toggle_fullscreen,
       KeybindingAction::ToggleTabBar => &mut self.toggle_tab_bar,
       KeybindingAction::NewTab => &mut self.new_tab,
@@ -754,6 +763,7 @@ impl Default for KeybindingConfig {
         focus_pane_left: KeybindingList::new("alt-left"),
         focus_pane_right: KeybindingList::new("alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
+        toggle_hidden_panes: KeybindingList::new("cmd-shift-h"),
         toggle_fullscreen: KeybindingList::new("cmd-ctrl-f"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
         new_tab: KeybindingList::new("cmd-t"),
@@ -799,6 +809,7 @@ impl Default for KeybindingConfig {
         focus_pane_left: KeybindingList::new("alt-left"),
         focus_pane_right: KeybindingList::new("alt-right"),
         swap_split_panes: KeybindingList::new("ctrl-shift-x"),
+        toggle_hidden_panes: KeybindingList::new("ctrl-shift-h"),
         toggle_fullscreen: KeybindingList::new("f11"),
         toggle_tab_bar: KeybindingList::new("ctrl-shift-b"),
         new_tab: KeybindingList::new("ctrl-shift-t"),

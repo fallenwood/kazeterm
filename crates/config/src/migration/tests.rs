@@ -821,3 +821,36 @@ select_tab_9 = "ctrl-alt-9"
     CURRENT_CONFIG_VERSION
   );
 }
+
+#[test]
+fn migrate_20260421_1_adds_toggle_hidden_panes_keybinding_using_platform_default() {
+  let mut config: Value = toml::from_str(
+    r#"
+version = "20260421.1"
+
+[keybindings]
+copy = "ctrl-shift-c"
+"#,
+  )
+  .unwrap();
+
+  let migrated = apply_migrations(&mut config);
+  assert!(migrated);
+
+  let default_keybindings = crate::KeybindingConfig::default();
+  assert_eq!(
+    get_nested(
+      &config,
+      "keybindings",
+      default_keybindings.toggle_hidden_panes.first().unwrap()
+    )
+    .unwrap()
+    .as_str()
+    .unwrap(),
+    "toggle_hidden_panes"
+  );
+  assert_eq!(
+    config.get("version").unwrap().as_str().unwrap(),
+    CURRENT_CONFIG_VERSION
+  );
+}
