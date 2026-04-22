@@ -102,3 +102,72 @@ fn insert_new_tab_increments_item_count(cx: &mut TestAppContext) {
 
   clear_terminal_session_factory_for_testing();
 }
+
+#[gpui::test]
+fn split_panes_can_hide_split_again_and_restore(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.split_pane_horizontal(window, cx);
+    })
+    .expect("split_pane_horizontal should succeed");
+  cx.run_until_parked();
+
+  let view = window.root(cx).unwrap();
+  view.read_with(cx, |mw, _| {
+    let split_container = &mw.items[0].split_container;
+    assert_eq!(split_container.all_terminals().len(), 2);
+    assert_eq!(split_container.visible_pane_count(), 2);
+    assert!(!split_container.has_hidden_panes());
+  });
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.toggle_hidden_split_panes(window, cx);
+    })
+    .expect("toggle_hidden_split_panes should hide other panes");
+  cx.run_until_parked();
+
+  view.read_with(cx, |mw, _| {
+    let split_container = &mw.items[0].split_container;
+    assert_eq!(split_container.all_terminals().len(), 2);
+    assert_eq!(split_container.visible_pane_count(), 1);
+    assert!(split_container.has_hidden_panes());
+  });
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.split_pane_vertical(window, cx);
+    })
+    .expect("split_pane_vertical should succeed while other panes are hidden");
+  cx.run_until_parked();
+
+  view.read_with(cx, |mw, _| {
+    let split_container = &mw.items[0].split_container;
+    assert_eq!(split_container.all_terminals().len(), 3);
+    assert_eq!(split_container.visible_pane_count(), 2);
+    assert!(split_container.has_hidden_panes());
+  });
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.toggle_hidden_split_panes(window, cx);
+    })
+    .expect("toggle_hidden_split_panes should restore hidden panes");
+  cx.run_until_parked();
+
+  view.read_with(cx, |mw, _| {
+    let split_container = &mw.items[0].split_container;
+    assert_eq!(split_container.all_terminals().len(), 3);
+    assert_eq!(split_container.visible_pane_count(), 3);
+    assert!(!split_container.has_hidden_panes());
+  });
+
+  clear_terminal_session_factory_for_testing();
+}

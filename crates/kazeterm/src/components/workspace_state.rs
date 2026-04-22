@@ -201,11 +201,8 @@ impl MainWindow {
     // Find the first terminal pane id for active_pane_id
     let first_pane_id = Self::first_pane_id(&root_pane);
 
-    let split_container = SplitContainer {
-      root: root_pane,
-      active_pane_id: first_pane_id,
-      next_pane_id,
-    };
+    let split_container =
+      SplitContainer::from_restored_root(root_pane, first_pane_id, next_pane_id);
 
     let index = self.tab_index.fetch_add(1, Ordering::SeqCst);
 

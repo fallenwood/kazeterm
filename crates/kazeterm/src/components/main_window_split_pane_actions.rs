@@ -98,6 +98,43 @@ impl MainWindow {
     }
   }
 
+  pub(crate) fn active_tab_has_hidden_panes(&self) -> bool {
+    self
+      .active_tab_ix
+      .and_then(|ix| self.items.get(ix))
+      .is_some_and(|item| item.split_container.has_hidden_panes())
+  }
+
+  pub(crate) fn active_tab_can_toggle_hidden_panes(&self) -> bool {
+    self
+      .active_tab_ix
+      .and_then(|ix| self.items.get(ix))
+      .is_some_and(|item| {
+        item.split_container.has_hidden_panes() || item.split_container.can_hide_other_panes()
+      })
+  }
+
+  pub fn toggle_hidden_split_panes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    let hiding_other_panes = self
+      .active_tab_ix
+      .and_then(|ix| self.items.get(ix))
+      .is_some_and(|item| !item.split_container.has_hidden_panes());
+
+    if hiding_other_panes {
+      self.sync_active_pane_from_focus(window, cx);
+    }
+
+    let toggled = self
+      .active_tab_item_mut()
+      .map(|item| item.split_container.toggle_hidden_panes())
+      .unwrap_or(false);
+
+    if toggled {
+      self.focus_active_terminal(window, cx);
+      cx.notify();
+    }
+  }
+
   pub fn focus_next_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.sync_active_pane_from_focus(window, cx);
 

@@ -239,6 +239,33 @@ pub struct ClosePaneResult {
   pub closed: bool,
 }
 
+#[derive(Debug, Clone)]
+struct HiddenPanesState {
+  visible_pane_ids: Vec<PaneId>,
+}
+
+impl HiddenPanesState {
+  fn new(active_pane_id: PaneId) -> Self {
+    Self {
+      visible_pane_ids: vec![active_pane_id],
+    }
+  }
+
+  fn contains(&self, pane_id: PaneId) -> bool {
+    self.visible_pane_ids.contains(&pane_id)
+  }
+
+  fn insert_visible(&mut self, pane_id: PaneId) {
+    if !self.contains(pane_id) {
+      self.visible_pane_ids.push(pane_id);
+    }
+  }
+
+  fn remove(&mut self, pane_id: PaneId) {
+    self.visible_pane_ids.retain(|id| *id != pane_id);
+  }
+}
+
 impl SplitPane {
   pub fn new_terminal(id: PaneId, terminal: Entity<TerminalView>) -> Self {
     SplitPane::Terminal { id, terminal }
@@ -384,6 +411,44 @@ impl SplitPane {
         terminals
       }
     }
+  }
+
+  fn matching_visible_panes(&self, visible_pane_ids: &[PaneId]) -> usize {
+    match self {
+      SplitPane::Terminal { id, .. } => usize::from(visible_pane_ids.contains(id)),
+      SplitPane::Split { first, second, .. } => {
+        first.matching_visible_panes(visible_pane_ids)
+          + second.matching_visible_panes(visible_pane_ids)
+      }
+    }
+  }
+
+  fn visible_subtree_with_path<'a>(
+    &'a self,
+    visible_pane_ids: &[PaneId],
+    path: &mut Vec<bool>,
+  ) -> Option<&'a SplitPane> {
+    if visible_pane_ids.is_empty() {
+      return Some(self);
+    }
+
+    if self.matching_visible_panes(visible_pane_ids) != visible_pane_ids.len() {
+      return None;
+    }
+
+    if let SplitPane::Split { first, second, .. } = self {
+      if first.matching_visible_panes(visible_pane_ids) == visible_pane_ids.len() {
+        path.push(false);
+        return first.visible_subtree_with_path(visible_pane_ids, path);
+      }
+
+      if second.matching_visible_panes(visible_pane_ids) == visible_pane_ids.len() {
+        path.push(true);
+        return second.visible_subtree_with_path(visible_pane_ids, path);
+      }
+    }
+
+    Some(self)
   }
 
   fn collect_pane_bounds(
@@ -723,6 +788,7 @@ pub struct SplitContainer {
   pub root: SplitPane,
   pub active_pane_id: Option<PaneId>,
   pub next_pane_id: usize,
+  hidden_panes: Option<HiddenPanesState>,
 }
 
 impl SplitContainer {
@@ -731,7 +797,130 @@ impl SplitContainer {
       root: SplitPane::new_terminal(PaneId(0), terminal),
       active_pane_id: Some(PaneId(0)),
       next_pane_id: 1,
+      hidden_panes: None,
     }
+  }
+
+  pub(crate) fn from_restored_root(
+    root: SplitPane,
+    active_pane_id: Option<PaneId>,
+    next_pane_id: usize,
+  ) -> Self {
+    Self {
+      root,
+      active_pane_id,
+      next_pane_id,
+      hidden_panes: None,
+    }
+  }
+
+  fn visible_root_with_path(&self) -> (&SplitPane, Vec<bool>) {
+    if let Some(hidden_panes) = &self.hidden_panes {
+      let mut path = Vec::new();
+      if let Some(visible_root) = self
+        .root
+        .visible_subtree_with_path(&hidden_panes.visible_pane_ids, &mut path)
+      {
+        return (visible_root, path);
+      }
+    }
+
+    (&self.root, vec![])
+  }
+
+  fn visible_terminals(&self) -> Vec<(PaneId, Entity<TerminalView>)> {
+    let (visible_root, _) = self.visible_root_with_path();
+    visible_root.all_terminals()
+  }
+
+  fn ensure_active_pane_visible(&mut self) {
+    let visible_terminals = self.visible_terminals();
+    if self
+      .active_pane_id
+      .is_none_or(|id| visible_terminals.iter().all(|(pane_id, _)| *pane_id != id))
+    {
+      self.active_pane_id = visible_terminals.first().map(|(pane_id, _)| *pane_id);
+    }
+  }
+
+  fn sync_hidden_panes_after_tree_change(&mut self) {
+    let total_panes = self.root.count_panes();
+    let fallback_active_pane_id = self
+      .active_pane_id
+      .filter(|id| self.root.find_terminal(*id).is_some())
+      .or_else(|| {
+        self
+          .root
+          .all_terminals()
+          .first()
+          .map(|(pane_id, _)| *pane_id)
+      });
+
+    let clear_hidden_panes = if let Some(hidden_panes) = self.hidden_panes.as_mut() {
+      hidden_panes
+        .visible_pane_ids
+        .retain(|id| self.root.find_terminal(*id).is_some());
+
+      if hidden_panes.visible_pane_ids.is_empty() {
+        if let Some(fallback_active_pane_id) = fallback_active_pane_id {
+          hidden_panes.visible_pane_ids.push(fallback_active_pane_id);
+        }
+      }
+
+      hidden_panes.visible_pane_ids.len() >= total_panes
+    } else {
+      false
+    };
+
+    if clear_hidden_panes {
+      self.hidden_panes = None;
+    }
+
+    self.ensure_active_pane_visible();
+  }
+
+  pub fn has_hidden_panes(&self) -> bool {
+    self.hidden_panes.is_some()
+  }
+
+  pub fn can_hide_other_panes(&self) -> bool {
+    self.hidden_panes.is_none() && self.root.count_panes() > 1
+  }
+
+  pub fn hide_other_panes(&mut self) -> bool {
+    if !self.can_hide_other_panes() {
+      return false;
+    }
+
+    self.ensure_active_pane_visible();
+
+    let Some(active_pane_id) = self.active_pane_id else {
+      return false;
+    };
+
+    self.hidden_panes = Some(HiddenPanesState::new(active_pane_id));
+    self.sync_hidden_panes_after_tree_change();
+    true
+  }
+
+  pub fn restore_hidden_panes(&mut self) -> bool {
+    let restored = self.hidden_panes.take().is_some();
+    self.ensure_active_pane_visible();
+    restored
+  }
+
+  pub fn toggle_hidden_panes(&mut self) -> bool {
+    if self.has_hidden_panes() {
+      self.restore_hidden_panes()
+    } else {
+      self.hide_other_panes()
+    }
+  }
+
+  #[cfg(test)]
+  pub(crate) fn visible_pane_count(&self) -> usize {
+    let (visible_root, _) = self.visible_root_with_path();
+    visible_root.count_panes()
   }
 
   pub fn split_active_pane(
@@ -739,37 +928,54 @@ impl SplitContainer {
     direction: SplitDirection,
     new_terminal: Entity<TerminalView>,
   ) -> Option<PaneId> {
-    if let Some(active_id) = self.active_pane_id {
-      let new_id = PaneId(self.next_pane_id);
-      if self.root.split(active_id, direction, new_terminal, new_id) {
-        self.next_pane_id += 1;
-        self.active_pane_id = Some(new_id);
-        return Some(new_id);
+    let active_id = self.active_pane_id?;
+    let new_id = PaneId(self.next_pane_id);
+
+    if self.root.split(active_id, direction, new_terminal, new_id) {
+      self.next_pane_id += 1;
+
+      if let Some(hidden_panes) = self.hidden_panes.as_mut() {
+        if hidden_panes.contains(active_id) {
+          hidden_panes.insert_visible(new_id);
+        }
       }
+
+      self.active_pane_id = Some(new_id);
+      self.sync_hidden_panes_after_tree_change();
+      return Some(new_id);
     }
+
     None
   }
 
   pub fn close_active_pane(&mut self) -> bool {
-    if let Some(active_id) = self.active_pane_id {
-      // Don't close if it's the last pane
-      if self.root.count_panes() <= 1 {
-        return false;
-      }
+    let Some(active_id) = self.active_pane_id else {
+      return false;
+    };
 
-      let result = self.root.close_pane(active_id);
-      if let Some(new_root) = result.replacement {
-        self.root = new_root;
-      }
-
-      if result.closed {
-        if self.active_pane_id == Some(active_id) && self.root.find_terminal(active_id).is_none() {
-          let terminals = self.root.all_terminals();
-          self.active_pane_id = terminals.first().map(|(id, _)| *id);
-        }
-        return true;
-      }
+    // Don't close if it's the last pane.
+    if self.root.count_panes() <= 1 {
+      return false;
     }
+
+    let result = self.root.close_pane(active_id);
+    if let Some(new_root) = result.replacement {
+      self.root = new_root;
+    }
+
+    if result.closed {
+      if let Some(hidden_panes) = self.hidden_panes.as_mut() {
+        hidden_panes.remove(active_id);
+      }
+
+      if self.active_pane_id == Some(active_id) && self.root.find_terminal(active_id).is_none() {
+        self.active_pane_id = self.root.all_terminals().first().map(|(id, _)| *id);
+      }
+
+      self.sync_hidden_panes_after_tree_change();
+      return true;
+    }
+
     false
   }
 
@@ -787,16 +993,20 @@ impl SplitContainer {
       }
 
       if result.closed {
+        if let Some(hidden_panes) = self.hidden_panes.as_mut() {
+          hidden_panes.remove(pane_id);
+        }
+
         // Update active pane if we closed the active one (or if it no longer exists)
         if self.active_pane_id == Some(pane_id)
           || self
             .active_pane_id
             .is_some_and(|active| self.root.find_terminal(active).is_none())
         {
-          let terminals = self.root.all_terminals();
-          self.active_pane_id = terminals.first().map(|(id, _)| *id);
+          self.active_pane_id = self.root.all_terminals().first().map(|(id, _)| *id);
         }
 
+        self.sync_hidden_panes_after_tree_change();
         return true;
       }
     }
@@ -826,7 +1036,7 @@ impl SplitContainer {
 
   /// Move focus to the next pane (cycles through terminals in tree order).
   pub fn focus_next_pane(&mut self) -> Option<Entity<TerminalView>> {
-    let terminals = self.root.all_terminals();
+    let terminals = self.visible_terminals();
     if terminals.len() <= 1 {
       return None;
     }
@@ -845,7 +1055,7 @@ impl SplitContainer {
 
   /// Move focus to the previous pane (cycles through terminals in tree order).
   pub fn focus_prev_pane(&mut self) -> Option<Entity<TerminalView>> {
-    let terminals = self.root.all_terminals();
+    let terminals = self.visible_terminals();
     if terminals.len() <= 1 {
       return None;
     }
@@ -868,7 +1078,8 @@ impl SplitContainer {
     direction: PaneFocusDirection,
   ) -> Option<Entity<TerminalView>> {
     let active_id = self.active_pane_id?;
-    let bounds = self.root.pane_bounds();
+    let (visible_root, _) = self.visible_root_with_path();
+    let bounds = visible_root.pane_bounds();
     let target_id = find_directional_pane(&bounds, active_id, direction)?;
     self.active_pane_id = Some(target_id);
     self.root.find_terminal(target_id)
@@ -883,10 +1094,10 @@ impl SplitContainer {
   }
 
   pub fn render(&self, window: &mut Window, cx: &mut Context<MainWindow>) -> AnyElement {
-    let has_splits = matches!(self.root, SplitPane::Split { .. });
+    let (visible_root, visible_path) = self.visible_root_with_path();
+    let has_splits = matches!(visible_root, SplitPane::Split { .. });
     let focused_pane_id = self
-      .root
-      .all_terminals()
+      .visible_terminals()
       .into_iter()
       .find_map(|(id, terminal)| {
         terminal
@@ -895,11 +1106,11 @@ impl SplitContainer {
           .is_focused(window)
           .then_some(id)
       });
-    self.root.render(
+    visible_root.render(
       self.active_pane_id,
       focused_pane_id,
       has_splits,
-      vec![],
+      visible_path,
       window,
       cx,
     )

@@ -420,6 +420,13 @@ fn resolve_key_debug_action(
   );
   push_key_debug_action(
     &mut actions,
+    "Toggle Hidden Panes",
+    &keybindings.toggle_hidden_panes,
+    modifiers,
+    key,
+  );
+  push_key_debug_action(
+    &mut actions,
     "Toggle Fullscreen",
     &keybindings.toggle_fullscreen,
     modifiers,
@@ -838,6 +845,12 @@ impl Render for MainWindow {
           this.swap_split_panes(window, cx);
           true
         } else if keybindings
+          .toggle_hidden_panes
+          .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
+        {
+          this.toggle_hidden_split_panes(window, cx);
+          true
+        } else if keybindings
           .toggle_fullscreen
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
@@ -971,6 +984,8 @@ impl Render for MainWindow {
                           let view = cx.entity();
                           let view_for_click = view.clone();
                           let all_terminals = item.split_container.all_terminals();
+                          let has_hidden_panes = self.active_tab_has_hidden_panes();
+                          let can_toggle_hidden_panes = self.active_tab_can_toggle_hidden_panes();
                           // Define colors for selected tab highlight
                           let selected_bg: gpui::Hsla = colors.tab_active_background;
                           let normal_bg = colors.tab_inactive_background;
@@ -1133,20 +1148,22 @@ impl Render for MainWindow {
                                         .context_menu({
                                           let view = view.clone();
                                           move |menu, _window, _cx| {
-                                            build_tab_context_menu(
-                                              menu,
-                                              view.clone(),
-                                              tab_index,
-                                              tab_ix,
-                                              is_first,
-                                              is_last,
-                                              total_tabs,
-                                              "Move Left",
-                                              IconName::ArrowLeft,
-                                              "Move Right",
-                                              IconName::ArrowRight,
-                                            )
-                                          }
+                                              build_tab_context_menu(
+                                                menu,
+                                                view.clone(),
+                                                tab_index,
+                                                tab_ix,
+                                                is_first,
+                                                is_last,
+                                                total_tabs,
+                                                "Move Left",
+                                                IconName::ArrowLeft,
+                                                "Move Right",
+                                                IconName::ArrowRight,
+                                                has_hidden_panes,
+                                                can_toggle_hidden_panes,
+                                              )
+                                            }
                                         }),
                                     ),
                                 ),
@@ -1350,10 +1367,12 @@ impl Render for MainWindow {
                                 .all_terminals()
                                 .iter()
                                 .any(|(_, t)| t.read(cx).has_bell());
-                              let view = cx.entity();
-                              let view_for_click = view.clone();
-                              let all_terminals = item.split_container.all_terminals();
-                              let selected_bg: gpui::Hsla = colors.tab_active_background;
+                               let view = cx.entity();
+                               let view_for_click = view.clone();
+                               let all_terminals = item.split_container.all_terminals();
+                               let has_hidden_panes = self.active_tab_has_hidden_panes();
+                               let can_toggle_hidden_panes = self.active_tab_can_toggle_hidden_panes();
+                               let selected_bg: gpui::Hsla = colors.tab_active_background;
                               let normal_bg = colors.tab_inactive_background;
                               let hover_bg = colors.element_hover;
                               let text_color = colors.text;
@@ -1511,6 +1530,8 @@ impl Render for MainWindow {
                                                   IconName::ArrowUp,
                                                   "Move Down",
                                                   IconName::ArrowDown,
+                                                  has_hidden_panes,
+                                                  can_toggle_hidden_panes,
                                                 )
                                               }
                                             }),

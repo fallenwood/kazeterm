@@ -21,6 +21,8 @@ pub(super) fn build_tab_context_menu(
   move_prev_icon: IconName,
   move_next_label: &'static str,
   move_next_icon: IconName,
+  has_hidden_panes: bool,
+  can_toggle_hidden_panes: bool,
 ) -> PopupMenu {
   let view_rename = view.clone();
   let view_duplicate = view.clone();
@@ -30,11 +32,17 @@ pub(super) fn build_tab_context_menu(
   let view_focus_next = view.clone();
   let view_focus_prev = view.clone();
   let view_swap_panes = view.clone();
+  let view_toggle_hidden = view.clone();
   let view_move_left = view.clone();
   let view_move_right = view.clone();
   let view_close_others = view.clone();
   let view_close_right = view.clone();
   let view_close_tab = view.clone();
+  let toggle_hidden_panes_label = if has_hidden_panes {
+    "Restore Hidden Panes"
+  } else {
+    "Hide Other Panes"
+  };
 
   menu
     .item(
@@ -107,6 +115,20 @@ pub(super) fn build_tab_context_menu(
         .on_click(move |_, window, cx| {
           view_swap_panes.update(cx, |this, cx| {
             this.swap_split_panes(window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new(toggle_hidden_panes_label)
+        .icon(if has_hidden_panes {
+          IconName::Undo
+        } else {
+          IconName::Maximize
+        })
+        .disabled(!can_toggle_hidden_panes)
+        .on_click(move |_, window, cx| {
+          view_toggle_hidden.update(cx, |this, cx| {
+            this.toggle_hidden_split_panes(window, cx);
           });
         }),
     )
