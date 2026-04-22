@@ -265,6 +265,124 @@ impl Focusable for SearchBar {
   }
 }
 
+#[cfg(test)]
+mod tests {
+  use super::{SearchBar, SearchBarCloseEvent, SearchBarState};
+  use gpui::{SharedString, TestAppContext};
+  use std::{cell::RefCell, rc::Rc};
+
+  #[gpui::test]
+  fn new_search_bar_has_default_state(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| SearchBar::new(window, cx));
+    cx.run_until_parked();
+
+    let (query, match_case, use_regex) = window
+      .update(cx, |bar, _, _| {
+        (bar.query.clone(), bar.match_case, bar.use_regex)
+      })
+      .unwrap();
+    assert_eq!(query.as_ref(), "");
+    assert!(!match_case);
+    assert!(!use_regex);
+  }
+
+  #[gpui::test]
+  fn toggle_flags_flip_without_terminal(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| SearchBar::new(window, cx));
+    cx.run_until_parked();
+
+    window
+      .update(cx, |bar, _, cx| {
+        bar.toggle_match_case(cx);
+        bar.toggle_match_whole(cx);
+        bar.toggle_use_regex(cx);
+      })
+      .unwrap();
+    cx.run_until_parked();
+
+    let (mc, mw, re) = window
+      .update(cx, |bar, _, _| {
+        (bar.match_case, bar.match_whole, bar.use_regex)
+      })
+      .unwrap();
+    assert!(mc && mw && re);
+  }
+
+  #[gpui::test]
+  fn close_emits_event(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| SearchBar::new(window, cx));
+    cx.run_until_parked();
+
+    let received: Rc<RefCell<u32>> = Default::default();
+    let received_clone = received.clone();
+    cx.update(|cx| {
+      let bar = window.root(cx).unwrap();
+      cx.subscribe(
+        &bar,
+        move |_, _event: &SearchBarCloseEvent, _cx| {
+          *received_clone.borrow_mut() += 1;
+        },
+      )
+      .detach();
+    });
+
+    window.update(cx, |bar, _, cx| bar.close(cx)).unwrap();
+    cx.run_until_parked();
+
+    assert_eq!(*received.borrow(), 1);
+  }
+
+  #[gpui::test]
+  fn save_and_restore_state_round_trip(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| SearchBar::new(window, cx));
+    cx.run_until_parked();
+
+    // Populate some state, then save it.
+    let saved = window
+      .update(cx, |bar, _window, cx| {
+        bar.match_case = true;
+        bar.use_regex = true;
+        bar.query = SharedString::from("needle");
+        bar.save_state(true, cx)
+      })
+      .unwrap();
+
+    assert_eq!(saved.query.as_ref(), "");
+    assert!(saved.visible);
+    assert!(saved.match_case);
+    assert!(saved.use_regex);
+
+    // Restore onto a fresh bar and verify flags/query propagate.
+    let window2 = cx.add_window(|window, cx| SearchBar::new(window, cx));
+    cx.run_until_parked();
+    let restored_state = SearchBarState {
+      query: SharedString::from("needle"),
+      match_case: true,
+      match_whole: false,
+      use_regex: true,
+      visible: true,
+      ..Default::default()
+    };
+    window2
+      .update(cx, |bar, window, cx| {
+        bar.restore_state(&restored_state, window, cx);
+      })
+      .unwrap();
+    cx.run_until_parked();
+
+    let (q, mc, re) = window2
+      .update(cx, |bar, _, _| (bar.query.clone(), bar.match_case, bar.use_regex))
+      .unwrap();
+    assert_eq!(q.as_ref(), "needle");
+    assert!(mc);
+    assert!(re);
+  }
+}
+
 impl Render for SearchBar {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let theme = cx.theme();

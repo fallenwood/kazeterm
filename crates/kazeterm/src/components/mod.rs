@@ -4,6 +4,7 @@ mod dragged_tab;
 mod import_alacritty_dialog;
 mod main_window;
 mod main_window_dialog_handlers;
+mod main_window_e2e_tests;
 mod main_window_render;
 mod main_window_search;
 mod main_window_split_pane_actions;

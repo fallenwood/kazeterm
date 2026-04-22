@@ -22,6 +22,9 @@ mod terminal_hyperlinks;
 mod terminal_input_handler;
 mod terminal_view;
 
+#[doc(hidden)]
+pub mod test_support;
+
 pub use pty_info::PtyProcessInfo;
 pub use terminal::{PtySender, SelectionPhase, Terminal, TerminalEventListener};
 pub use terminal_bounds::TerminalBounds;

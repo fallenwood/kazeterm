@@ -1,0 +1,8 @@
+---
+source: crates/terminal/tests/snapshot_grid.rs
+assertion_line: 65
+expression: frame
+---
+$ ls
+Cargo.toml  README.md  src
+$

@@ -978,4 +978,141 @@ mod tests {
       None
     );
   }
+
+  #[test]
+  fn directional_focus_returns_none_for_unknown_active_pane() {
+    let panes = vec![PaneBounds {
+      id: PaneId(1),
+      left: 0.0,
+      top: 0.0,
+      right: 1.0,
+      bottom: 1.0,
+    }];
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(999), PaneFocusDirection::Right),
+      None
+    );
+  }
+
+  #[test]
+  fn directional_focus_returns_none_for_single_pane() {
+    let panes = vec![PaneBounds {
+      id: PaneId(1),
+      left: 0.0,
+      top: 0.0,
+      right: 1.0,
+      bottom: 1.0,
+    }];
+    for direction in [
+      PaneFocusDirection::Left,
+      PaneFocusDirection::Right,
+      PaneFocusDirection::Up,
+      PaneFocusDirection::Down,
+    ] {
+      assert_eq!(find_directional_pane(&panes, PaneId(1), direction), None);
+    }
+  }
+
+  #[test]
+  fn directional_focus_picks_closest_of_multiple_candidates_in_a_row() {
+    // Three panes stacked horizontally: 1 | 2 | 3
+    // From 1, moving right, should pick 2 (not 3).
+    let panes = vec![
+      PaneBounds {
+        id: PaneId(1),
+        left: 0.0,
+        top: 0.0,
+        right: 0.33,
+        bottom: 1.0,
+      },
+      PaneBounds {
+        id: PaneId(2),
+        left: 0.33,
+        top: 0.0,
+        right: 0.66,
+        bottom: 1.0,
+      },
+      PaneBounds {
+        id: PaneId(3),
+        left: 0.66,
+        top: 0.0,
+        right: 1.0,
+        bottom: 1.0,
+      },
+    ];
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(1), PaneFocusDirection::Right),
+      Some(PaneId(2))
+    );
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(3), PaneFocusDirection::Left),
+      Some(PaneId(2))
+    );
+  }
+
+  #[test]
+  fn directional_focus_prefers_best_vertical_overlap_tiebreak() {
+    // Active (1) on the left. Two right-side candidates (2, 3) with different
+    // vertical overlap with (1). The pane with more overlap wins.
+    // 1: full-height left
+    // 2: top-right quarter (small overlap)
+    // 3: full-height right (larger overlap)
+    let panes = vec![
+      PaneBounds {
+        id: PaneId(1),
+        left: 0.0,
+        top: 0.0,
+        right: 0.3,
+        bottom: 1.0,
+      },
+      PaneBounds {
+        id: PaneId(2),
+        left: 0.3,
+        top: 0.0,
+        right: 0.6,
+        bottom: 0.2,
+      },
+      PaneBounds {
+        id: PaneId(3),
+        left: 0.3,
+        top: 0.0,
+        right: 1.0,
+        bottom: 1.0,
+      },
+    ];
+    let picked = find_directional_pane(&panes, PaneId(1), PaneFocusDirection::Right);
+    // Either candidate is geometrically to the right, but the one with full
+    // vertical overlap should win.
+    assert_eq!(picked, Some(PaneId(3)));
+  }
+
+  #[test]
+  fn directional_focus_ignores_panes_on_the_same_side() {
+    // A pane that sits fully to the LEFT of active should never be reachable
+    // via PaneFocusDirection::Right.
+    let panes = vec![
+      PaneBounds {
+        id: PaneId(1),
+        left: 0.4,
+        top: 0.0,
+        right: 0.7,
+        bottom: 1.0,
+      },
+      PaneBounds {
+        id: PaneId(2),
+        left: 0.0,
+        top: 0.0,
+        right: 0.4,
+        bottom: 1.0,
+      },
+    ];
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(1), PaneFocusDirection::Right),
+      None
+    );
+    assert_eq!(
+      find_directional_pane(&panes, PaneId(1), PaneFocusDirection::Left),
+      Some(PaneId(2))
+    );
+  }
 }

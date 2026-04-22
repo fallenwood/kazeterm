@@ -28,6 +28,9 @@ mod config;
 mod config_watcher;
 pub mod event_system;
 
+#[cfg(test)]
+mod test_support;
+
 actions!(
   kazeterm,
   [NewWindow, Quit, Hide, HideOthers, ShowAll, Minimize, Zoom]

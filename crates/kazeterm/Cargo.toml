@@ -34,6 +34,9 @@ notify.workspace = true
 notify-debouncer-mini.workspace = true
 terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty" }
 
+[dev-dependencies]
+gpui = { workspace = true, features = ["font-kit", "test-support"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
 raw-window-handle = "0.6"

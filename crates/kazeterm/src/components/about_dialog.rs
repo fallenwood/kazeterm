@@ -181,3 +181,41 @@ impl AboutDialog {
       )
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::{AboutDialog, AboutDialogCloseEvent};
+  use gpui::TestAppContext;
+  use std::{cell::RefCell, rc::Rc};
+
+  #[test]
+  fn metadata_accessors_are_nonempty() {
+    assert_eq!(AboutDialog::get_license(), "GPL-3.0");
+    assert!(!AboutDialog::get_author().is_empty());
+    assert!(AboutDialog::get_repo().starts_with("https://"));
+  }
+
+  #[gpui::test]
+  fn close_emits_event(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| AboutDialog::new(window, cx));
+    cx.run_until_parked();
+
+    let count: Rc<RefCell<u32>> = Default::default();
+    let count_clone = count.clone();
+    cx.update(|cx| {
+      let dialog = window.root(cx).unwrap();
+      cx.subscribe(
+        &dialog,
+        move |_, _event: &AboutDialogCloseEvent, _cx| {
+          *count_clone.borrow_mut() += 1;
+        },
+      )
+      .detach();
+    });
+
+    window.update(cx, |this, _, cx| this.close(cx)).unwrap();
+    cx.run_until_parked();
+    assert_eq!(*count.borrow(), 1);
+  }
+}

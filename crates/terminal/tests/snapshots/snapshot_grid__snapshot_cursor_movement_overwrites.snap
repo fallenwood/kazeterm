@@ -1,0 +1,6 @@
+---
+source: crates/terminal/tests/snapshot_grid.rs
+assertion_line: 72
+expression: frame
+---
+XYcdef

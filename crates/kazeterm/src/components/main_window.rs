@@ -116,7 +116,7 @@ impl MainWindow {
     entity
   }
 
-  fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+  pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
     let index = 0;
     let tab_index: AtomicUsize = AtomicUsize::new(index);
 
