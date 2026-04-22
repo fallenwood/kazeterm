@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 use config::TerminalKernel;
 use futures::{FutureExt, StreamExt as _};
@@ -8,6 +9,42 @@ use terminal::TerminalView;
 
 use crate::components::MainWindow;
 
+/// Signature for a test-injected terminal session factory.
+///
+/// Installed at process start-up by tests; production never sets this.
+pub type TerminalSessionFactory = Box<
+  dyn Fn(
+      String,
+      Vec<String>,
+      Option<PathBuf>,
+      &config::Config,
+    ) -> Result<(terminal::Terminal, terminal_kernel::SessionEvents), String>
+    + Send
+    + Sync,
+>;
+
+static SESSION_FACTORY_OVERRIDE: OnceLock<Mutex<Option<TerminalSessionFactory>>> = OnceLock::new();
+
+/// Install a test-only factory that will be consulted by
+/// [`create_terminal_session`] in lieu of spawning a real PTY.
+///
+/// Called only from tests. Overwrites any previously installed factory.
+#[doc(hidden)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn set_terminal_session_factory_for_testing(factory: TerminalSessionFactory) {
+  let slot = SESSION_FACTORY_OVERRIDE.get_or_init(|| Mutex::new(None));
+  *slot.lock().unwrap() = Some(factory);
+}
+
+/// Remove any test factory override. Called from `#[gpui::test]` teardown.
+#[doc(hidden)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn clear_terminal_session_factory_for_testing() {
+  if let Some(slot) = SESSION_FACTORY_OVERRIDE.get() {
+    *slot.lock().unwrap() = None;
+  }
+}
+
 #[allow(unused_variables)]
 fn create_terminal_session(
   program: String,
@@ -15,6 +52,13 @@ fn create_terminal_session(
   working_directory: Option<PathBuf>,
   app_config: &config::Config,
 ) -> Result<(terminal::Terminal, terminal_kernel::SessionEvents), String> {
+  // Tests can install a factory to avoid spawning a child process.
+  if let Some(slot) = SESSION_FACTORY_OVERRIDE.get()
+    && let Some(factory) = slot.lock().unwrap().as_ref()
+  {
+    return factory(program, args, working_directory, app_config);
+  }
+
   let kernel = app_config.terminal.kernel;
   let term_program_version = crate::build_info::terminal_program_version(kernel);
 

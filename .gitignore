@@ -6,3 +6,7 @@ coverage
 target_codex*
 .claude
 wiki
+
+# insta pending snapshots (local-only; reviewed via `cargo insta review`)
+*.snap.new
+.insta.pending-snap*

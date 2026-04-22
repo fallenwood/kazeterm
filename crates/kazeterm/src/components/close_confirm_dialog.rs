@@ -194,7 +194,8 @@ impl Render for CloseConfirmDialog {
 
 #[cfg(test)]
 mod tests {
-  use super::{CloseConfirmContent, CloseConfirmEvent};
+  use super::{CloseConfirmContent, CloseConfirmDialog, CloseConfirmEvent};
+  use gpui::TestAppContext;
 
   #[test]
   fn restore_workspace_enabled_keeps_save_prompt() {
@@ -219,5 +220,101 @@ mod tests {
     assert!(!content.description().contains("save"));
     assert_eq!(content.primary_action(), CloseConfirmEvent::Close);
     assert_eq!(content.primary_button_label(), "Close");
+  }
+
+  #[gpui::test]
+  fn dialog_constructs_and_is_focusable(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| CloseConfirmDialog::new(true, window, cx));
+    cx.run_until_parked();
+
+    let restore = window
+      .update(cx, |dialog, _, _| dialog.content.restore_workspace)
+      .unwrap();
+    assert!(restore, "restore_workspace flag should round-trip");
+  }
+
+  #[gpui::test]
+  fn escape_emits_cancel_event(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| CloseConfirmDialog::new(true, window, cx));
+    cx.run_until_parked();
+
+    let received: std::rc::Rc<std::cell::RefCell<Vec<CloseConfirmEvent>>> = Default::default();
+    let received_clone = received.clone();
+    cx.update(|cx| {
+      let dialog = window.root(cx).unwrap();
+      cx.subscribe(
+        &dialog,
+        move |_entity, event: &CloseConfirmEvent, _cx| {
+          received_clone.borrow_mut().push(*event);
+        },
+      )
+      .detach();
+    });
+
+    window
+      .update(cx, |dialog, _, cx| dialog.cancel(cx))
+      .unwrap();
+    cx.run_until_parked();
+
+    assert_eq!(received.borrow().as_slice(), &[CloseConfirmEvent::Cancel]);
+  }
+
+  #[gpui::test]
+  fn primary_action_emits_save_and_close_when_restore_enabled(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| CloseConfirmDialog::new(true, window, cx));
+    cx.run_until_parked();
+
+    let received: std::rc::Rc<std::cell::RefCell<Vec<CloseConfirmEvent>>> = Default::default();
+    let received_clone = received.clone();
+    cx.update(|cx| {
+      let dialog = window.root(cx).unwrap();
+      cx.subscribe(
+        &dialog,
+        move |_entity, event: &CloseConfirmEvent, _cx| {
+          received_clone.borrow_mut().push(*event);
+        },
+      )
+      .detach();
+    });
+
+    window
+      .update(cx, |dialog, _, cx| dialog.primary_action(cx))
+      .unwrap();
+    cx.run_until_parked();
+
+    assert_eq!(
+      received.borrow().as_slice(),
+      &[CloseConfirmEvent::SaveAndClose]
+    );
+  }
+
+  #[gpui::test]
+  fn primary_action_emits_close_when_restore_disabled(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| CloseConfirmDialog::new(false, window, cx));
+    cx.run_until_parked();
+
+    let received: std::rc::Rc<std::cell::RefCell<Vec<CloseConfirmEvent>>> = Default::default();
+    let received_clone = received.clone();
+    cx.update(|cx| {
+      let dialog = window.root(cx).unwrap();
+      cx.subscribe(
+        &dialog,
+        move |_entity, event: &CloseConfirmEvent, _cx| {
+          received_clone.borrow_mut().push(*event);
+        },
+      )
+      .detach();
+    });
+
+    window
+      .update(cx, |dialog, _, cx| dialog.primary_action(cx))
+      .unwrap();
+    cx.run_until_parked();
+
+    assert_eq!(received.borrow().as_slice(), &[CloseConfirmEvent::Close]);
   }
 }

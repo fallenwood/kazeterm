@@ -123,11 +123,57 @@ llvm-objcopy --strip-all ./target/release/kazeterm
 
 ## Testing and Coverage
 
-Run all unit tests:
+Run all unit and integration tests:
 
 ```
 cargo test --workspace
 ```
+
+### UI test coverage
+
+Kazeterm's GPUI-based UI is exercised headlessly via `gpui`'s `test-support`
+feature (enabled as a dev-dependency on the `kazeterm` crate):
+
+- **Component tests** live next to the components they exercise
+  (`crates/kazeterm/src/components/*_dialog.rs`, `search_bar.rs`, …) and use
+  `#[gpui::test]` with a shared helper in `crates/kazeterm/src/test_support.rs`
+  that installs a default `Config` + `SettingsStore` for each test window.
+- **Keybinding regression tests** in
+  `crates/config/tests/default_keybindings.rs` lock down the default bindings
+  shipped with `KeybindingConfig::default()`.
+- **Event-protocol tests** in
+  `crates/kazeterm-event-system/tests/json_event_protocol.rs` guard the
+  stdin/socket JSON wire format.
+- **Headless terminal tests** in `crates/terminal/tests/headless_terminal.rs`
+  drive an in-memory `alacritty_terminal::Term` through the ANSI parser — no
+  PTY, no child process — and assert on the resulting grid. This is the
+  foundation for behavioural testing of escape-sequence handling.
+- **Snapshot tests** in `crates/terminal/tests/snapshot_grid.rs` use
+  [`insta`](https://insta.rs) to snapshot rendered grids for a set of canned
+  ANSI scenarios. Run `cargo insta review --workspace` to accept intentional
+  changes; set `INSTA_UPDATE=always` when bulk-regenerating.
+- **End-to-end tests** in
+  `crates/kazeterm/src/components/main_window_e2e_tests.rs` boot a real
+  `MainWindow` against a fake terminal-session factory
+  (`terminal::test_support::fake_terminal_session`). They verify that
+  `insert_new_tab` wires through to the factory and that `MainWindow.items`
+  is updated. No child process is ever spawned.
+
+Running just the UI-level tests:
+
+```
+cargo test --package kazeterm --bin kazeterm
+cargo test --package config --test default_keybindings
+cargo test --package kazeterm-event-system --test json_event_protocol
+cargo test --package terminal --test headless_terminal
+cargo test --package terminal --test snapshot_grid
+cargo test --package terminal --test fake_session
+```
+
+End-to-end tests now boot `MainWindow` against a fake session factory (see
+`crates/kazeterm/src/components/main_window_e2e_tests.rs`). The only remaining
+layer is optional GPU visual snapshots, which are deliberately not shipped
+(documented in plan.md under "Still not shipped").
 
 Generate coverage (requires `cargo-llvm-cov`):
 

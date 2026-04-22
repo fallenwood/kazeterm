@@ -188,4 +188,32 @@ impl PtyProcessInfo {
   pub fn pid(&self) -> Option<Pid> {
     self.pid_getter.pid()
   }
+
+  /// Construct an inert `PtyProcessInfo` that points at no real PTY.
+  ///
+  /// Used exclusively by tests: `pid()` will return `None` on all platforms,
+  /// so no process lookups are ever performed. This lets tests construct a
+  /// `Terminal` without spawning a child process.
+  #[doc(hidden)]
+  pub fn test_stub() -> PtyProcessInfo {
+    let process_refresh_kind = ProcessRefreshKind::nothing()
+      .with_cmd(UpdateKind::Always)
+      .with_cwd(UpdateKind::Always)
+      .with_exe(UpdateKind::Always);
+    let refresh_kind = RefreshKind::nothing().with_processes(process_refresh_kind);
+    let system = System::new_with_specifics(refresh_kind);
+
+    // handle -1 / fallback_pid 0 produces None from `pid()` on both Unix
+    // (`tcgetpgrp(-1)` returns -1 → falls back to `Pid::from_u32(0)`) and
+    // Windows (`GetProcessId(HANDLE(0))` returns 0 + fallback 0 → None).
+    PtyProcessInfo {
+      system,
+      refresh_kind: process_refresh_kind,
+      pid_getter: ProcessIdGetter {
+        handle: -1,
+        fallback_pid: 0,
+      },
+      current: None,
+    }
+  }
 }

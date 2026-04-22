@@ -185,3 +185,65 @@ impl Render for TabRenameDialog {
       )
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::{TabRenameDialog, TabRenameEvent};
+  use gpui::TestAppContext;
+  use std::{cell::RefCell, rc::Rc};
+
+  fn capture_events(
+    cx: &mut TestAppContext,
+    window: gpui::WindowHandle<TabRenameDialog>,
+  ) -> Rc<RefCell<Vec<TabRenameEvent>>> {
+    let received: Rc<RefCell<Vec<TabRenameEvent>>> = Default::default();
+    let received_clone = received.clone();
+    cx.update(|cx| {
+      let dialog = window.root(cx).unwrap();
+      cx.subscribe(
+        &dialog,
+        move |_entity, event: &TabRenameEvent, _cx| {
+          received_clone.borrow_mut().push(event.clone());
+        },
+      )
+      .detach();
+    });
+    received
+  }
+
+  #[gpui::test]
+  fn confirm_emits_current_value(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| TabRenameDialog::new(3, "hello", window, cx));
+    cx.run_until_parked();
+
+    let received = capture_events(cx, window);
+
+    window.update(cx, |this, _, cx| this.confirm(cx)).unwrap();
+    cx.run_until_parked();
+
+    let got = received.borrow();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].tab_index, 3);
+    assert_eq!(got[0].new_title.as_deref(), Some("hello"));
+  }
+
+  #[gpui::test]
+  fn clear_emits_none_title(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| TabRenameDialog::new(1, "whatever", window, cx));
+    cx.run_until_parked();
+
+    let received = capture_events(cx, window);
+
+    window
+      .update(cx, |this, _, cx| this.clear_custom_title(cx))
+      .unwrap();
+    cx.run_until_parked();
+
+    let got = received.borrow();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].tab_index, 1);
+    assert!(got[0].new_title.is_none());
+  }
+}
