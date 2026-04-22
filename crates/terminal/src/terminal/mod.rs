@@ -64,6 +64,15 @@ pub enum Event {
   PromptReturned,
 }
 
+const CWD_FILE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct PromptContextFile {
+  cwd: Option<std::path::PathBuf>,
+  username: Option<String>,
+  hostname: Option<String>,
+}
+
 /// Abstraction for sending data to the PTY process.
 ///
 /// Implementations handle writing bytes (keyboard input, paste) and
@@ -118,6 +127,10 @@ pub struct Terminal {
   pub osc7_cwd: Option<std::path::PathBuf>,
   /// Path to a temp file where the shell writes its CWD on each prompt.
   cwd_file: Option<std::path::PathBuf>,
+  /// Username reported by the shell prompt metadata hook.
+  prompt_username: Option<String>,
+  /// Hostname reported by the shell prompt metadata hook.
+  prompt_hostname: Option<String>,
   /// Last known modification time of `cwd_file`, used to detect prompt returns on Windows.
   cwd_file_mtime: Option<std::time::SystemTime>,
   /// Throttle for cwd_file polling (only check every ~500ms).
@@ -173,6 +186,8 @@ impl Terminal {
       osc7_rx,
       osc7_cwd: None,
       cwd_file,
+      prompt_username: None,
+      prompt_hostname: None,
       cwd_file_mtime: None,
       last_cwd_file_check: None,
       search_state: None,
@@ -182,6 +197,15 @@ impl Terminal {
 
   /// Force-refresh and return the current working directory of the foreground process.
   pub fn current_working_directory(&mut self) -> Option<String> {
+    let prompt_file_cwd = self
+      .cwd_file
+      .as_ref()
+      .and_then(|cwd_file| read_prompt_context_file(cwd_file))
+      .and_then(|prompt_context| {
+        self.update_prompt_identity(prompt_context.username, prompt_context.hostname);
+        prompt_context.cwd.filter(|cwd| cwd.is_dir())
+      });
+
     // Prefer OSC 7 (shell-reported, most reliable on Unix).
     if let Some(osc7) = &self.osc7_cwd {
       tracing::debug!("CWD from OSC 7: {:?}", osc7);
@@ -207,19 +231,9 @@ impl Terminal {
     }
 
     // Read CWD from the shell-written temp file (cross-platform, works on Windows).
-    if let Some(cwd_file) = &self.cwd_file {
-      match std::fs::read_to_string(cwd_file) {
-        Ok(contents) => {
-          let cwd = contents.trim().to_string();
-          if !cwd.is_empty() && std::path::Path::new(&cwd).is_dir() {
-            tracing::debug!("CWD from cwd_file: {:?}", cwd);
-            return Some(cwd);
-          }
-        }
-        Err(e) => {
-          tracing::debug!("Failed to read cwd_file {:?}: {}", cwd_file, e);
-        }
-      }
+    if let Some(cwd) = prompt_file_cwd {
+      tracing::debug!("CWD from cwd_file: {:?}", cwd);
+      return Some(cwd.to_string_lossy().to_string());
     }
 
     // Fallback: sysinfo refresh.
@@ -235,6 +249,13 @@ impl Terminal {
       self.pty_info.pid()
     );
     cwd
+  }
+
+  pub fn prompt_identity(&self) -> Option<String> {
+    prompt_identity(
+      self.prompt_username.as_deref(),
+      self.prompt_hostname.as_deref(),
+    )
   }
 
   pub(crate) fn note_mouse_activity(&mut self) {
@@ -316,7 +337,7 @@ impl Terminal {
     self.process_graphics_commands();
 
     // Detect shell prompt returns and update CWD (non-blocking).
-    self.process_prompt_detection(cx);
+    self.process_prompt_detection(false, cx);
 
     // Collect visible image placements for rendering.
     let viewport_top = history_size - display_offset;
@@ -363,7 +384,7 @@ impl Terminal {
   ///
   /// Emits `Event::PromptReturned` whenever a prompt is detected, which is used
   /// to trigger notifications for long-running command completion.
-  fn process_prompt_detection(&mut self, cx: &mut Context<Self>) {
+  fn process_prompt_detection(&mut self, force_check: bool, cx: &mut Context<Self>) {
     let mut prompt_returned = false;
 
     // OSC 7 channel (Unix: extracted by PTY filter)
@@ -374,27 +395,29 @@ impl Terminal {
         prompt_returned = true;
       }
       if let Some(cwd) = new_cwd {
-        self.update_cwd(cwd, cx);
+        let mut prompt_context = self
+          .cwd_file
+          .as_ref()
+          .and_then(|cwd_file| read_prompt_context_file(cwd_file))
+          .unwrap_or_default();
+        prompt_context.cwd = Some(cwd);
+        self.apply_prompt_context(prompt_context, cx);
       }
     } else if let Some(cwd_file) = self.cwd_file.clone() {
       // Fallback: poll cwd_file modification time (Windows, or when PTY filter is not used).
-      // Throttled to every ~500ms to avoid excessive stat() calls.
-      let should_check = self.last_cwd_file_check.map_or(true, |t| {
-        t.elapsed() >= std::time::Duration::from_millis(500)
-      });
+      // Passive render-time checks are throttled; wakeup-triggered checks bypass the throttle
+      // so prompt returns are reflected immediately after `cd`-style directory changes.
+      let should_check = should_check_cwd_file(self.last_cwd_file_check, force_check);
       if should_check {
         self.last_cwd_file_check = Some(std::time::Instant::now());
         if let Ok(mtime) = std::fs::metadata(&cwd_file).and_then(|m| m.modified()) {
-          // Only treat as prompt return if mtime changed (not the initial read).
-          if self.cwd_file_mtime.is_some_and(|prev| prev < mtime) {
-            prompt_returned = true;
-            if let Ok(contents) = std::fs::read_to_string(&cwd_file) {
-              let cwd_str = contents.trim().to_string();
-              if !cwd_str.is_empty() {
-                self.update_cwd(std::path::PathBuf::from(&cwd_str), cx);
-              }
-            }
+          let (should_apply_context, should_emit_prompt_return) =
+            classify_prompt_context_refresh(self.cwd_file_mtime, mtime);
+          if should_apply_context && let Some(prompt_context) = read_prompt_context_file(&cwd_file)
+          {
+            self.apply_prompt_context(prompt_context, cx);
           }
+          prompt_returned |= should_emit_prompt_return;
           self.cwd_file_mtime = Some(mtime);
         }
       }
@@ -406,15 +429,42 @@ impl Terminal {
   }
 
   /// Update the tracked CWD if it changed.
-  fn update_cwd(&mut self, cwd: std::path::PathBuf, cx: &mut Context<Self>) {
-    let changed = self.osc7_cwd.as_ref() != Some(&cwd);
-    if changed {
-      if let Some(info) = &mut self.pty_info.current {
-        info.cwd = cwd.clone();
+  fn apply_prompt_context(
+    &mut self,
+    mut prompt_context: PromptContextFile,
+    cx: &mut Context<Self>,
+  ) {
+    let identity_changed = self.update_prompt_identity(
+      prompt_context.username.take(),
+      prompt_context.hostname.take(),
+    );
+    let cwd_changed = if let Some(cwd) = prompt_context.cwd {
+      let changed = self.osc7_cwd.as_ref() != Some(&cwd);
+      if changed {
+        if let Some(info) = &mut self.pty_info.current {
+          info.cwd = cwd.clone();
+        }
+        self.osc7_cwd = Some(cwd);
       }
-      self.osc7_cwd = Some(cwd);
+      changed
+    } else {
+      false
+    };
+
+    if identity_changed || cwd_changed {
       cx.emit(Event::TitleChanged);
     }
+  }
+
+  fn update_prompt_identity(&mut self, username: Option<String>, hostname: Option<String>) -> bool {
+    let next_username = username.or_else(|| self.prompt_username.clone());
+    let next_hostname = hostname.or_else(|| self.prompt_hostname.clone());
+    let changed = self.prompt_username != next_username || self.prompt_hostname != next_hostname;
+    if changed {
+      self.prompt_username = next_username;
+      self.prompt_hostname = next_hostname;
+    }
+    changed
   }
 
   fn execute_graphics_command(&mut self, cmd: &KittyCommand, cursor_line: i32, cursor_column: i32) {
@@ -635,7 +685,7 @@ impl Terminal {
         // Run prompt detection on every wakeup so background terminals
         // (which are not painted and therefore never call sync()) can
         // still emit PromptReturned and trigger notifications.
-        self.process_prompt_detection(cx);
+        self.process_prompt_detection(true, cx);
 
         if self.pty_info.has_changed()
           && let Some(info) = &self.pty_info.current
@@ -811,11 +861,65 @@ fn should_hide_mouse_cursor(
   hide_mouse_when_typing && last_input_time > last_mouse_activity_time
 }
 
+fn read_prompt_context_file(path: &std::path::Path) -> Option<PromptContextFile> {
+  std::fs::read_to_string(path)
+    .map(|contents| parse_prompt_context_file(&contents))
+    .inspect_err(|error| tracing::debug!("Failed to read cwd_file {:?}: {}", path, error))
+    .ok()
+}
+
+fn parse_prompt_context_file(contents: &str) -> PromptContextFile {
+  let mut lines = contents.lines().map(str::trim);
+  let cwd = lines
+    .next()
+    .and_then(|line| (!line.is_empty()).then(|| std::path::PathBuf::from(line)));
+  let username = lines
+    .next()
+    .and_then(|line| (!line.is_empty()).then(|| line.to_string()));
+  let hostname = lines
+    .next()
+    .and_then(|line| (!line.is_empty()).then(|| line.to_string()));
+
+  PromptContextFile {
+    cwd,
+    username,
+    hostname,
+  }
+}
+
+fn prompt_identity(username: Option<&str>, hostname: Option<&str>) -> Option<String> {
+  match (
+    username.map(str::trim).filter(|value| !value.is_empty()),
+    hostname.map(str::trim).filter(|value| !value.is_empty()),
+  ) {
+    (Some(username), Some(hostname)) => Some(format!("{username}@{hostname}")),
+    (Some(username), None) => Some(username.to_string()),
+    (None, Some(hostname)) => Some(hostname.to_string()),
+    (None, None) => None,
+  }
+}
+
+fn classify_prompt_context_refresh(
+  previous_mtime: Option<std::time::SystemTime>,
+  current_mtime: std::time::SystemTime,
+) -> (bool, bool) {
+  let prompt_changed = previous_mtime.is_none_or(|prev| prev < current_mtime);
+  let prompt_returned = previous_mtime.is_some_and(|prev| prev < current_mtime);
+  (prompt_changed, prompt_returned)
+}
+
+fn should_check_cwd_file(last_check: Option<std::time::Instant>, force_check: bool) -> bool {
+  force_check || last_check.is_none_or(|last_check| last_check.elapsed() >= CWD_FILE_POLL_INTERVAL)
+}
+
 #[cfg(test)]
 mod tests {
-  use std::time::{Duration, Instant};
+  use std::time::{Duration, Instant, SystemTime};
 
-  use super::should_hide_mouse_cursor;
+  use super::{
+    CWD_FILE_POLL_INTERVAL, classify_prompt_context_refresh, parse_prompt_context_file,
+    prompt_identity, should_check_cwd_file, should_hide_mouse_cursor,
+  };
 
   #[test]
   fn hide_mouse_cursor_when_input_is_newer_than_mouse_activity() {
@@ -840,5 +944,91 @@ mod tests {
       base,
       base + Duration::from_millis(1)
     ));
+  }
+
+  #[test]
+  fn cwd_file_checks_are_forced_on_prompt_wakeup() {
+    let now = Instant::now();
+    assert!(should_check_cwd_file(Some(now), true));
+    assert!(should_check_cwd_file(None, true));
+  }
+
+  #[test]
+  fn cwd_file_checks_are_throttled_during_passive_polling() {
+    let recent = Instant::now();
+    let stale = Instant::now() - CWD_FILE_POLL_INTERVAL - Duration::from_millis(1);
+
+    assert!(!should_check_cwd_file(Some(recent), false));
+    assert!(should_check_cwd_file(Some(stale), false));
+    assert!(should_check_cwd_file(None, false));
+  }
+
+  #[test]
+  fn prompt_context_file_supports_identity_metadata() {
+    let prompt_context =
+      parse_prompt_context_file("C:\\Users\\alice\\project\nalice\nworkstation\n");
+
+    assert_eq!(
+      prompt_context.cwd,
+      Some(std::path::PathBuf::from("C:\\Users\\alice\\project"))
+    );
+    assert_eq!(prompt_context.username.as_deref(), Some("alice"));
+    assert_eq!(prompt_context.hostname.as_deref(), Some("workstation"));
+  }
+
+  #[test]
+  fn prompt_context_file_supports_legacy_cwd_only_contents() {
+    let prompt_context = parse_prompt_context_file("/home/alice/project\n");
+
+    assert_eq!(
+      prompt_context.cwd,
+      Some(std::path::PathBuf::from("/home/alice/project"))
+    );
+    assert_eq!(prompt_context.username, None);
+    assert_eq!(prompt_context.hostname, None);
+  }
+
+  #[test]
+  fn prompt_identity_formats_username_and_hostname() {
+    assert_eq!(
+      prompt_identity(Some("alice"), Some("workstation")),
+      Some("alice@workstation".to_string())
+    );
+    assert_eq!(
+      prompt_identity(Some("alice"), None),
+      Some("alice".to_string())
+    );
+    assert_eq!(
+      prompt_identity(None, Some("workstation")),
+      Some("workstation".to_string())
+    );
+  }
+
+  #[test]
+  fn initial_prompt_context_refresh_updates_title_without_prompt_return() {
+    let now = SystemTime::now();
+
+    assert_eq!(classify_prompt_context_refresh(None, now), (true, false));
+  }
+
+  #[test]
+  fn subsequent_prompt_context_refresh_triggers_prompt_return() {
+    let previous = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+    let current = SystemTime::UNIX_EPOCH + Duration::from_secs(2);
+
+    assert_eq!(
+      classify_prompt_context_refresh(Some(previous), current),
+      (true, true)
+    );
+  }
+
+  #[test]
+  fn unchanged_prompt_context_refresh_does_not_reapply_context() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+
+    assert_eq!(
+      classify_prompt_context_refresh(Some(now), now),
+      (false, false)
+    );
   }
 }

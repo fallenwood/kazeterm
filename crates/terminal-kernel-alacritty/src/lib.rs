@@ -104,7 +104,12 @@ pub fn create_terminal_session(
 
   let cwd_file_str = cwd_file.to_string_lossy();
   let bash_hook = format!(
-    r#"printf '\e]7;file://%s%s\e\\' "$(hostname)" "$PWD"; printf '%s' "$PWD" >| "{}""#,
+    concat!(
+      r#"__kazeterm_user="${{USER:-$(id -un 2>/dev/null || whoami)}}"; "#,
+      r#"__kazeterm_host="${{HOSTNAME:-$(hostname)}}"; "#,
+      r#"printf '%s\n%s\n%s\n' "$PWD" "$__kazeterm_user" "$__kazeterm_host" >| "{}"; "#,
+      r#"printf '\e]7;file://%s%s\e\\' "$__kazeterm_host" "$PWD""#,
+    ),
     cwd_file_str,
   );
   env.insert("__KAZETERM_OSC7".to_string(), bash_hook.clone());
@@ -126,9 +131,10 @@ pub fn create_terminal_session(
       r#"$__kazeterm_orig_prompt = $function:prompt; "#,
       r#"function prompt {{ "#,
       r#"$cwd = (Get-Location).Path; "#,
-      r#"[System.IO.File]::WriteAllText('{}', $cwd); "#,
-      r#"$esc = [char]27; "#,
+      r#"$user_name = [Environment]::UserName; "#,
       r#"$host_name = [System.Net.Dns]::GetHostName(); "#,
+      r#"[System.IO.File]::WriteAllText('{}', "$cwd`n$user_name`n$host_name"); "#,
+      r#"$esc = [char]27; "#,
       r#"[Console]::Write("${{esc}}]7;file://${{host_name}}${{cwd}}${{esc}}\"); "#,
       r#"if ($__kazeterm_orig_prompt) {{ & $__kazeterm_orig_prompt }} "#,
       r#"else {{ "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }} "#,

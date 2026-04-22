@@ -713,6 +713,7 @@ fn subscribe_for_terminal_events(
       }
       crate::terminal::Event::SelectionsChanged => {}
       crate::terminal::Event::PromptReturned => {
+        terminal_view.schedule_tab_title_update(window, cx);
         cx.emit(TerminalEvent::CommandFinished);
       }
       crate::terminal::Event::Open(url) => {

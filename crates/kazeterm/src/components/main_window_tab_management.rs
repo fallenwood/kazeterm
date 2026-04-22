@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui::{Context, Focusable, Window};
 use terminal::TerminalView;
@@ -15,6 +15,75 @@ fn shell_name_for(program: &str) -> String {
     .and_then(|name| name.to_str())
     .unwrap_or(program)
     .to_lowercase()
+}
+
+fn working_directory_title(cwd: &str) -> Option<String> {
+  let path = Path::new(cwd);
+  path
+    .file_name()
+    .and_then(|name| name.to_str())
+    .map(ToOwned::to_owned)
+    .or_else(|| {
+      let display = path.to_string_lossy();
+      (!display.is_empty()).then(|| display.to_string())
+    })
+}
+
+fn decorate_auto_tab_title(
+  title: String,
+  prompt_identity: Option<&str>,
+  include_identity: bool,
+) -> String {
+  let prompt_identity = prompt_identity
+    .map(str::trim)
+    .filter(|identity| !identity.is_empty());
+  if include_identity && let Some(prompt_identity) = prompt_identity {
+    return format!("{title} - {prompt_identity}");
+  }
+
+  title
+}
+
+fn resolve_auto_tab_title(
+  shell_name: &str,
+  terminal_title: &str,
+  process_name: Option<&str>,
+  working_directory: Option<&str>,
+  prompt_identity: Option<&str>,
+) -> String {
+  let normalized_shell = shell_name_for(shell_name);
+  let normalized_process = process_name.map(shell_name_for);
+  let normalized_title = (!terminal_title.is_empty()).then(|| shell_name_for(terminal_title));
+  let cwd_title = working_directory.and_then(working_directory_title);
+
+  let title_is_shell_derived = terminal_title.is_empty()
+    || normalized_title.as_deref() == Some(normalized_shell.as_str())
+    || normalized_title == normalized_process;
+  let process_is_shell = normalized_process
+    .as_deref()
+    .is_none_or(|process_name| process_name == normalized_shell.as_str());
+
+  if !process_is_shell {
+    let primary_title = if !terminal_title.is_empty() && !title_is_shell_derived {
+      terminal_title.to_string()
+    } else if let Some(process_name) = process_name.filter(|name| !name.is_empty()) {
+      process_name.to_string()
+    } else {
+      cwd_title.unwrap_or_else(|| shell_name.to_string())
+    };
+
+    return decorate_auto_tab_title(primary_title, prompt_identity, true);
+  }
+
+  if title_is_shell_derived && let Some(cwd_title) = cwd_title {
+    return decorate_auto_tab_title(cwd_title, prompt_identity, true);
+  }
+
+  if !terminal_title.is_empty() {
+    return decorate_auto_tab_title(terminal_title.to_string(), prompt_identity, false);
+  }
+
+  decorate_auto_tab_title(shell_name.to_string(), prompt_identity, true)
 }
 
 fn resolve_tab_launch(
@@ -274,7 +343,7 @@ impl MainWindow {
       terminal::TerminalEvent::UpdateTab => {
         // Update tab title only if no custom title is set
         let tab_index = terminal_view.read(cx).index;
-        if let Some(item) = this.items.iter_mut().find(|item| {
+        if let Some(tab_pos) = this.items.iter().position(|item| {
           item
             .split_container
             .all_terminals()
@@ -282,17 +351,30 @@ impl MainWindow {
             .any(|(_, t)| t.read(cx).index == tab_index)
         }) {
           // Skip update if user has set a custom title
-          if item.custom_title.is_some() {
+          if this.items[tab_pos].custom_title.is_some() {
             return;
           }
-          let new_title = terminal_view
-            .read(cx)
-            .terminal()
-            .read(cx)
-            .title_text
-            .clone();
-          if item.title != new_title {
-            item.title = new_title;
+          let shell_name = this.items[tab_pos]._shell_name.clone();
+          let terminal = terminal_view.read(cx).terminal().clone();
+          let (terminal_title, process_name, working_directory, prompt_identity) =
+            terminal.update(cx, |term, _cx| {
+              let working_directory = term.current_working_directory();
+              (
+                term.title_text.clone(),
+                term.pty_info.current.as_ref().map(|info| info.name.clone()),
+                working_directory,
+                term.prompt_identity(),
+              )
+            });
+          let new_title = resolve_auto_tab_title(
+            &shell_name,
+            &terminal_title,
+            process_name.as_deref(),
+            working_directory.as_deref(),
+            prompt_identity.as_deref(),
+          );
+          if this.items[tab_pos].title != new_title {
+            this.items[tab_pos].title = new_title;
             cx.notify();
           }
         }
@@ -442,7 +524,9 @@ pub(crate) fn get_working_directory_pathbuf(working_directory: Option<String>) -
 mod tests {
   use config::{Config, Profile, TerminalConfig};
 
-  use super::{resolve_tab_launch, tab_index_for_shortcut};
+  use super::{
+    resolve_auto_tab_title, resolve_tab_launch, tab_index_for_shortcut, working_directory_title,
+  };
 
   #[test]
   fn resolve_profile_launch_uses_default_profile_args() {
@@ -503,5 +587,75 @@ mod tests {
     assert_eq!(tab_index_for_shortcut(1, 9), Some(0));
     assert_eq!(tab_index_for_shortcut(5, 9), Some(4));
     assert_eq!(tab_index_for_shortcut(12, 9), Some(11));
+  }
+
+  #[test]
+  fn working_directory_title_uses_leaf_name_when_available() {
+    assert_eq!(
+      working_directory_title("C:\\Users\\alice\\project"),
+      Some("project".to_string())
+    );
+    assert_eq!(
+      working_directory_title("/home/alice/project"),
+      Some("project".to_string())
+    );
+  }
+
+  #[test]
+  fn working_directory_title_falls_back_to_root_path() {
+    assert_eq!(working_directory_title("/"), Some("/".to_string()));
+    assert_eq!(working_directory_title("C:\\"), Some("C:\\".to_string()));
+  }
+
+  #[test]
+  fn auto_tab_title_prefers_cwd_for_shell_prompt() {
+    let title = resolve_auto_tab_title(
+      "pwsh",
+      "pwsh",
+      Some("pwsh"),
+      Some("C:\\Users\\alice\\project"),
+      Some("alice@workstation"),
+    );
+
+    assert_eq!(title, "project - alice@workstation");
+  }
+
+  #[test]
+  fn auto_tab_title_keeps_running_process_title() {
+    let title = resolve_auto_tab_title(
+      "pwsh",
+      "nvim",
+      Some("nvim"),
+      Some("C:\\Users\\alice\\project"),
+      Some("alice@workstation"),
+    );
+
+    assert_eq!(title, "nvim - alice@workstation");
+  }
+
+  #[test]
+  fn auto_tab_title_preserves_explicit_shell_title() {
+    let title = resolve_auto_tab_title(
+      "bash",
+      "custom session name",
+      Some("bash"),
+      Some("/home/alice/project"),
+      Some("alice@workstation"),
+    );
+
+    assert_eq!(title, "custom session name");
+  }
+
+  #[test]
+  fn auto_tab_title_uses_explicit_process_title_with_identity() {
+    let title = resolve_auto_tab_title(
+      "pwsh",
+      "file.rs - nvim",
+      Some("nvim"),
+      Some("C:\\Users\\alice\\project"),
+      Some("alice@workstation"),
+    );
+
+    assert_eq!(title, "file.rs - nvim - alice@workstation");
   }
 }
