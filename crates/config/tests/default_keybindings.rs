@@ -24,6 +24,22 @@ fn assert_matches(
   );
 }
 
+/// Like `assert_matches` but with `platform=true` (Cmd on macOS).
+#[cfg(target_os = "macos")]
+fn assert_matches_platform(
+  list: &config::KeybindingList,
+  control: bool,
+  shift: bool,
+  alt: bool,
+  key: &str,
+) {
+  assert!(
+    list.matches(control, shift, alt, /* platform */ true, key),
+    "expected binding to match ctrl={control} shift={shift} alt={alt} platform=true key={key}, got {:?}",
+    list.display_text()
+  );
+}
+
 #[test]
 fn default_copy_and_paste() {
   let kb = KeybindingConfig::default();
@@ -37,9 +53,18 @@ fn default_copy_and_paste() {
 #[test]
 fn default_zoom_bindings() {
   let kb = KeybindingConfig::default();
-  assert_matches(&kb.zoom_in, true, false, false, "=");
-  assert_matches(&kb.zoom_out, true, false, false, "-");
-  assert_matches(&kb.zoom_reset, true, false, false, "0");
+  #[cfg(target_os = "macos")]
+  {
+    assert_matches_platform(&kb.zoom_in, false, false, false, "=");
+    assert_matches_platform(&kb.zoom_out, false, false, false, "-");
+    assert_matches_platform(&kb.zoom_reset, false, false, false, "0");
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    assert_matches(&kb.zoom_in, true, false, false, "=");
+    assert_matches(&kb.zoom_out, true, false, false, "-");
+    assert_matches(&kb.zoom_reset, true, false, false, "0");
+  }
 }
 
 #[test]
