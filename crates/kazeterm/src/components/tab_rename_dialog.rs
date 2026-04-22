@@ -2,6 +2,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{ActiveTheme, Sizable};
+use themeing::SettingsStore;
 
 /// Event emitted when the rename dialog is closed
 #[derive(Clone)]
@@ -98,6 +99,7 @@ impl Focusable for TabRenameDialog {
 impl Render for TabRenameDialog {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let theme = cx.theme();
+    let colors = cx.global::<SettingsStore>().theme().colors();
 
     div()
       .absolute()
@@ -105,7 +107,7 @@ impl Render for TabRenameDialog {
       .flex()
       .items_center()
       .justify_center()
-      .bg(gpui::black().opacity(0.5))
+      .bg(colors.overlay_background)
       .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
         cx.stop_propagation();
       })

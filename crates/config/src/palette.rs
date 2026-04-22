@@ -1,4 +1,4 @@
-use gpui::{Hsla, Rgba, hsla};
+use gpui::{Hsla, Rgba};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Palette {
@@ -67,6 +67,7 @@ pub struct Palette {
   pub tab_active_background: Hsla,
   pub search_match_background: Hsla,
   pub search_highlight_background: Hsla,
+  pub overlay_background: Hsla,
 
   // ===
   // Terminal
@@ -144,156 +145,236 @@ pub struct Palette {
   pub link_text_hover: Hsla,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ThemeSeed {
+  pub background: Hsla,
+  pub foreground: Hsla,
+  pub accent: Hsla,
+  pub border: Hsla,
+  pub black: Hsla,
+  pub red: Hsla,
+  pub green: Hsla,
+  pub yellow: Hsla,
+  pub blue: Hsla,
+  pub magenta: Hsla,
+  pub cyan: Hsla,
+  pub white: Hsla,
+  pub bright_black: Option<Hsla>,
+  pub bright_red: Option<Hsla>,
+  pub bright_green: Option<Hsla>,
+  pub bright_yellow: Option<Hsla>,
+  pub bright_blue: Option<Hsla>,
+  pub bright_magenta: Option<Hsla>,
+  pub bright_cyan: Option<Hsla>,
+  pub bright_white: Option<Hsla>,
+  pub cursor: Option<Hsla>,
+  pub overlay_background: Option<Hsla>,
+  pub selection_background: Option<Hsla>,
+  pub search_match_background: Option<Hsla>,
+  pub search_highlight_background: Option<Hsla>,
+}
+
 impl Default for Palette {
   fn default() -> Self {
-    let background = rgb_u8(40, 44, 51);
-    let surface_background = rgb_u8(36, 40, 59);
-    let elevated_surface_background = rgb_u8(47, 51, 77);
-    let element_background = rgb_u8(36, 40, 59);
-    let element_hover = rgb_u8(47, 51, 77);
-    let element_active = rgb_u8(59, 66, 97);
-    let element_selected = rgb_u8(59, 66, 97);
-    let element_selection_background = rgba_u8(122, 162, 247, 110);
-    let element_disabled = rgb_u8(22, 23, 33);
-    let accent = rgb_u8(116, 173, 232);
-    let accent_bright = rgb_u8(142, 178, 255);
-    let border = rgb_u8(70, 75, 87);
-    let border_variant = rgb_u8(36, 40, 59);
-    let border_disabled = rgb_u8(31, 35, 52);
-    let border_transparent = rgba_u8(0, 0, 0, 0);
-    let text = rgb_u8(220, 224, 229);
-    let text_muted = rgb_u8(220, 224, 229);
-    let text_placeholder = rgb_u8(86, 95, 137);
-    let text_disabled = rgb_u8(65, 72, 104);
-    let text_accent = accent;
-    let title_bar_background = rgb_u8(47, 52, 62);
-    let title_bar_inactive_background = rgb_u8(22, 25, 37);
-    let tab_inactive_background = rgb_u8(43, 48, 57); // Between title_bar_background and background
-    let tab_active_background = background;
-    let search_match_background = hsla(30.0 / 360.0, 1.0, 0.5, 0.8);
-    let search_highlight_background = hsla(60.0 / 360.0, 1.0, 0.5, 0.6);
-    let terminal_background = background;
-    let terminal_foreground = text;
-    let terminal_bright_foreground = rgb_u8(250, 250, 250);
-    let terminal_dim_foreground = text_muted;
-    let terminal_ansi_background = background;
-    let terminal_ansi_black = rgb_u8(40, 44, 51);
-    let terminal_ansi_bright_black = rgb_u8(82, 85, 97);
-    let terminal_ansi_dim_black = rgb_u8(15, 16, 22);
-    let terminal_ansi_red = rgb_u8(208, 114, 119);
-    let terminal_ansi_bright_red = rgb_u8(103, 58, 60);
-    let terminal_ansi_dim_red = rgb_u8(179, 86, 103);
-    let terminal_ansi_green = rgb_u8(161, 193, 129);
-    let terminal_ansi_bright_green = rgb_u8(79, 100, 65);
-    let terminal_ansi_dim_green = rgb_u8(114, 149, 78);
-    let terminal_ansi_yellow = rgb_u8(222, 193, 132);
-    let terminal_ansi_bright_yellow = rgb_u8(229, 192, 123);
-    let terminal_ansi_dim_yellow = rgb_u8(163, 127, 75);
-    let terminal_ansi_blue = rgb_u8(116, 173, 232);
-    let terminal_ansi_bright_blue = rgb_u8(56, 83, 120);
-    let terminal_ansi_dim_blue = rgb_u8(89, 118, 179);
-    let terminal_ansi_magenta = rgb_u8(180, 119, 207);
-    let terminal_ansi_bright_magenta = rgb_u8(214, 180, 228);
-    let terminal_ansi_dim_magenta = rgb_u8(136, 112, 179);
-    let terminal_ansi_cyan = rgb_u8(110, 180, 191);
-    let terminal_ansi_bright_cyan = rgb_u8(58, 86, 91);
-    let terminal_ansi_dim_cyan = rgb_u8(90, 149, 184);
-    let terminal_ansi_white = rgb_u8(220, 224, 229);
-    let terminal_ansi_bright_white = rgb_u8(250, 250, 250);
-    let terminal_ansi_dim_white = text_muted;
-    let terminal_cursor = accent;
-    let scrollbar_track_background = rgb_u8(47, 52, 62);
-    let scrollbar_thumb_background = rgb_u8(100, 110, 130);
-    let link_text_hover = accent_bright;
+    Self::builtin(true)
+  }
+}
+
+impl Palette {
+  pub(crate) fn builtin(is_dark: bool) -> Self {
+    crate::theme::default_theme_variant(is_dark).to_palette(is_dark)
+  }
+
+  pub(crate) fn from_seed(seed: ThemeSeed) -> Self {
+    let background_is_dark = is_dark(seed.background);
+    let bright_pole = if background_is_dark {
+      seed.bright_white.unwrap_or(seed.white)
+    } else {
+      seed.black
+    };
+
+    let terminal_ansi_bright_black =
+      derive_bright_variant(seed.black, seed.bright_black, bright_pole);
+    let terminal_ansi_bright_red = derive_bright_variant(seed.red, seed.bright_red, bright_pole);
+    let terminal_ansi_bright_green =
+      derive_bright_variant(seed.green, seed.bright_green, bright_pole);
+    let terminal_ansi_bright_yellow =
+      derive_bright_variant(seed.yellow, seed.bright_yellow, bright_pole);
+    let terminal_ansi_bright_blue = derive_bright_variant(seed.blue, seed.bright_blue, bright_pole);
+    let terminal_ansi_bright_magenta =
+      derive_bright_variant(seed.magenta, seed.bright_magenta, bright_pole);
+    let terminal_ansi_bright_cyan = derive_bright_variant(seed.cyan, seed.bright_cyan, bright_pole);
+    let terminal_ansi_bright_white =
+      derive_bright_variant(seed.white, seed.bright_white, bright_pole);
+
+    let surface_background = blend(seed.background, seed.border, 0.18);
+    let elevated_surface_background = blend(seed.background, seed.border, 0.30);
+    let element_background = blend(seed.background, seed.border, 0.22);
+    let element_hover = blend(element_background, seed.accent, 0.08);
+    let element_active = blend(element_background, seed.accent, 0.18);
+    let element_selected = blend(seed.background, seed.accent, 0.18);
+    let text_muted = blend(seed.foreground, seed.background, 0.35);
+    let text_placeholder = blend(seed.foreground, seed.background, 0.55);
+    let text_disabled = blend(seed.foreground, seed.background, 0.70);
+    let title_bar_background = blend(seed.background, seed.border, 0.28);
+    let title_bar_inactive_background = blend(seed.background, seed.border, 0.14);
+    let tab_inactive_background = blend(seed.background, seed.border, 0.24);
+    let overlay_background =
+      seed
+        .overlay_background
+        .unwrap_or(
+          seed
+            .black
+            .opacity(if background_is_dark { 0.55 } else { 0.45 }),
+        );
 
     Palette {
-      border,
-      border_variant,
-      border_focused: {
-        // Derive from accent: reduce saturation and shift lightness toward grey
-        let mut c = accent;
-        c.s *= 0.5;
-        c.l = c.l * 0.8 + 0.5 * 0.2;
-        c
-      },
-      border_selected: accent,
-      border_transparent,
-      border_disabled,
+      border: seed.border,
+      border_variant: blend(seed.border, seed.background, 0.45),
+      border_focused: blend(seed.accent, bright_pole, 0.18),
+      border_selected: blend(seed.border, seed.accent, 0.72),
+      border_transparent: seed.background.opacity(0.0),
+      border_disabled: blend(seed.border, seed.background, 0.70),
       elevated_surface_background,
       surface_background,
-      background,
+      background: seed.background,
       element_background,
       element_hover,
       element_active,
       element_selected,
-      element_selection_background,
-      element_disabled,
-      text,
+      element_selection_background: seed
+        .selection_background
+        .unwrap_or(seed.accent.opacity(0.28)),
+      element_disabled: blend(element_background, seed.background, 0.55),
+      text: seed.foreground,
       text_muted,
       text_placeholder,
       text_disabled,
-      text_accent,
+      text_accent: seed.accent,
       title_bar_background,
       title_bar_inactive_background,
       tab_inactive_background,
-      tab_active_background,
-      search_match_background,
-      search_highlight_background,
-      terminal_background,
-      terminal_foreground,
-      terminal_bright_foreground,
-      terminal_dim_foreground,
-      terminal_ansi_background,
-      terminal_ansi_black,
+      tab_active_background: seed.background,
+      search_match_background: seed
+        .search_match_background
+        .unwrap_or(terminal_ansi_bright_yellow.opacity(0.52)),
+      search_highlight_background: seed
+        .search_highlight_background
+        .unwrap_or(blend(seed.accent, seed.background, 0.15).opacity(0.42)),
+      overlay_background,
+      terminal_background: seed.background,
+      terminal_foreground: seed.foreground,
+      terminal_bright_foreground: blend(seed.foreground, bright_pole, 0.22),
+      terminal_dim_foreground: derive_dim_variant(seed.foreground, seed.background),
+      terminal_ansi_background: seed.background,
+      terminal_ansi_black: seed.black,
       terminal_ansi_bright_black,
-      terminal_ansi_dim_black,
-      terminal_ansi_red,
+      terminal_ansi_dim_black: derive_dim_variant(seed.black, seed.background),
+      terminal_ansi_red: seed.red,
       terminal_ansi_bright_red,
-      terminal_ansi_dim_red,
-      terminal_ansi_green,
+      terminal_ansi_dim_red: derive_dim_variant(seed.red, seed.background),
+      terminal_ansi_green: seed.green,
       terminal_ansi_bright_green,
-      terminal_ansi_dim_green,
-      terminal_ansi_yellow,
+      terminal_ansi_dim_green: derive_dim_variant(seed.green, seed.background),
+      terminal_ansi_yellow: seed.yellow,
       terminal_ansi_bright_yellow,
-      terminal_ansi_dim_yellow,
-      terminal_ansi_blue,
+      terminal_ansi_dim_yellow: derive_dim_variant(seed.yellow, seed.background),
+      terminal_ansi_blue: seed.blue,
       terminal_ansi_bright_blue,
-      terminal_ansi_dim_blue,
-      terminal_ansi_magenta,
+      terminal_ansi_dim_blue: derive_dim_variant(seed.blue, seed.background),
+      terminal_ansi_magenta: seed.magenta,
       terminal_ansi_bright_magenta,
-      terminal_ansi_dim_magenta,
-      terminal_ansi_cyan,
+      terminal_ansi_dim_magenta: derive_dim_variant(seed.magenta, seed.background),
+      terminal_ansi_cyan: seed.cyan,
       terminal_ansi_bright_cyan,
-      terminal_ansi_dim_cyan,
-      terminal_ansi_white,
+      terminal_ansi_dim_cyan: derive_dim_variant(seed.cyan, seed.background),
+      terminal_ansi_white: seed.white,
       terminal_ansi_bright_white,
-      terminal_ansi_dim_white,
-      terminal_cursor,
-      scrollbar_track_background,
-      scrollbar_thumb_background,
-      link_text_hover,
+      terminal_ansi_dim_white: derive_dim_variant(seed.white, seed.background),
+      terminal_cursor: seed.cursor.unwrap_or(seed.accent),
+      scrollbar_track_background: blend(seed.background, seed.border, 0.34),
+      scrollbar_thumb_background: blend(seed.border, bright_pole, 0.18),
+      link_text_hover: blend(seed.accent, bright_pole, 0.16),
     }
   }
 }
 
-fn rgba_u8(r: u8, g: u8, b: u8, a: u8) -> Hsla {
+pub(crate) fn blend(from: Hsla, to: Hsla, amount: f32) -> Hsla {
+  let amount = amount.clamp(0.0, 1.0);
+  let from = from.to_rgb();
+  let to = to.to_rgb();
   Rgba {
-    r: r as f32 / 255.0,
-    g: g as f32 / 255.0,
-    b: b as f32 / 255.0,
-    a: a as f32 / 255.0,
+    r: from.r + (to.r - from.r) * amount,
+    g: from.g + (to.g - from.g) * amount,
+    b: from.b + (to.b - from.b) * amount,
+    a: from.a + (to.a - from.a) * amount,
   }
   .into()
 }
 
-fn rgb_u8(r: u8, g: u8, b: u8) -> Hsla {
-  rgba_u8(r, g, b, 255)
+fn derive_bright_variant(base: Hsla, explicit: Option<Hsla>, bright_pole: Hsla) -> Hsla {
+  explicit.unwrap_or_else(|| blend(base, bright_pole, 0.22))
+}
+
+fn derive_dim_variant(base: Hsla, background: Hsla) -> Hsla {
+  blend(base, background, 0.32)
+}
+
+fn is_dark(color: Hsla) -> bool {
+  let rgb = color.to_rgb();
+  let luminance = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+  luminance < 0.5
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::to_hex_string;
+  use gpui::Rgba;
+
+  fn rgba_u8(r: u8, g: u8, b: u8, a: u8) -> Hsla {
+    Rgba {
+      r: r as f32 / 255.0,
+      g: g as f32 / 255.0,
+      b: b as f32 / 255.0,
+      a: a as f32 / 255.0,
+    }
+    .into()
+  }
+
+  fn rgb_u8(r: u8, g: u8, b: u8) -> Hsla {
+    rgba_u8(r, g, b, 255)
+  }
+
+  fn sample_seed() -> ThemeSeed {
+    ThemeSeed {
+      background: rgb_u8(24, 28, 33),
+      foreground: rgb_u8(226, 232, 240),
+      accent: rgb_u8(96, 165, 250),
+      border: rgb_u8(71, 85, 105),
+      black: rgb_u8(15, 23, 42),
+      red: rgb_u8(248, 113, 113),
+      green: rgb_u8(74, 222, 128),
+      yellow: rgb_u8(250, 204, 21),
+      blue: rgb_u8(96, 165, 250),
+      magenta: rgb_u8(217, 70, 239),
+      cyan: rgb_u8(34, 211, 238),
+      white: rgb_u8(226, 232, 240),
+      bright_black: Some(rgb_u8(100, 116, 139)),
+      bright_red: None,
+      bright_green: None,
+      bright_yellow: None,
+      bright_blue: None,
+      bright_magenta: None,
+      bright_cyan: None,
+      bright_white: Some(rgb_u8(248, 250, 252)),
+      cursor: None,
+      overlay_background: None,
+      selection_background: None,
+      search_match_background: None,
+      search_highlight_background: None,
+    }
+  }
 
   #[test]
   fn rgb_u8_round_trips_to_hex() {
@@ -321,5 +402,41 @@ mod tests {
       to_hex_string(&palette.terminal_cursor.to_rgb()),
       "#74ADE8FF"
     );
+    assert_eq!(
+      to_hex_string(&palette.overlay_background.to_rgb()),
+      "#282C338C"
+    );
+  }
+
+  #[test]
+  fn light_builtin_palette_uses_light_seed() {
+    let palette = Palette::builtin(false);
+    assert_eq!(to_hex_string(&palette.background.to_rgb()), "#FAFAFAFF");
+    assert_eq!(to_hex_string(&palette.text.to_rgb()), "#383A42FF");
+    assert!(palette.surface_background.to_rgb().r < palette.background.to_rgb().r);
+  }
+
+  #[test]
+  fn palette_seed_overrides_are_respected() {
+    let overlay = rgba_u8(10, 20, 30, 120);
+    let selection = rgba_u8(90, 100, 110, 130);
+    let search_match = rgba_u8(120, 130, 140, 150);
+    let search_highlight = rgba_u8(150, 160, 170, 180);
+    let cursor = rgb_u8(200, 210, 220);
+
+    let palette = Palette::from_seed(ThemeSeed {
+      overlay_background: Some(overlay),
+      selection_background: Some(selection),
+      search_match_background: Some(search_match),
+      search_highlight_background: Some(search_highlight),
+      cursor: Some(cursor),
+      ..sample_seed()
+    });
+
+    assert_eq!(palette.overlay_background, overlay);
+    assert_eq!(palette.element_selection_background, selection);
+    assert_eq!(palette.search_match_background, search_match);
+    assert_eq!(palette.search_highlight_background, search_highlight);
+    assert_eq!(palette.terminal_cursor, cursor);
   }
 }

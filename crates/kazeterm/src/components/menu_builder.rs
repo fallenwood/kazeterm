@@ -3,6 +3,7 @@ use gpui_component::{
   Icon, IconName, h_flex,
   menu::{PopupMenu, PopupMenuItem},
 };
+use themeing::SettingsStore;
 
 use super::main_window::MainWindow;
 use super::shell_icon::ShellIcon;
@@ -178,7 +179,8 @@ pub(super) fn build_new_tab_menu(
     let shortcut_text = profile_shortcuts.get(idx).cloned().unwrap_or_default();
     let view_clone = view.clone();
     menu = menu.item(
-      PopupMenuItem::element(move |_window, _cx| {
+      PopupMenuItem::element(move |_window, cx| {
+        let colors = cx.global::<SettingsStore>().theme().colors();
         let shell_icon = ShellIcon::new(&shell_path);
         let mut row = h_flex()
           .w_full()
@@ -204,7 +206,7 @@ pub(super) fn build_new_tab_menu(
           row = row.child(
             div()
               .pl_4()
-              .text_color(gpui::rgb(0x888888))
+              .text_color(colors.text_muted)
               .text_size(px(11.0))
               .child(shortcut_text.clone()),
           );

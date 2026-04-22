@@ -426,6 +426,10 @@ fn build_theme(colors: &AlacrittyColors) -> Option<ThemeFile> {
     bright_cyan: colors.bright.cyan.as_ref().map(|s| normalize_color(s)),
     bright_white: colors.bright.white.as_ref().map(|s| normalize_color(s)),
     cursor: colors.cursor.cursor.as_ref().map(|s| normalize_color(s)),
+    overlay: None,
+    selection: None,
+    search_match: None,
+    search_highlight: None,
   };
 
   Some(ThemeFile {

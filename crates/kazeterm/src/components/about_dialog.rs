@@ -48,6 +48,7 @@ impl Render for AboutDialog {
     let theme = cx.theme();
     let settings = cx.global::<SettingsStore>();
     let active_theme = settings.theme();
+    let colors = active_theme.colors();
 
     let short_hash = crate::build_info::short_commit_hash();
     let version = crate::build_info::app_version();
@@ -71,7 +72,7 @@ impl Render for AboutDialog {
       .flex()
       .items_center()
       .justify_center()
-      .bg(gpui::black().opacity(0.5))
+      .bg(colors.overlay_background)
       .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
         cx.stop_propagation();
       })
