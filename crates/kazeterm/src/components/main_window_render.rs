@@ -1026,7 +1026,7 @@ impl Render for MainWindow {
                                       move |style, _dragged, _window, _cx| {
                                         // Visual feedback during drag - show drop indicator
                                         style
-                                          .bg(accent_color.opacity(0.15))
+                                          .bg(accent_color)
                                           .border_l_2()
                                           .border_color(accent_color)
                                       },
@@ -1406,7 +1406,7 @@ impl Render for MainWindow {
                                         .drag_over::<DraggedTab>(
                                           move |style, _dragged, _window, _cx| {
                                             style
-                                              .bg(accent_color.opacity(0.15))
+                                              .bg(accent_color)
                                               .border_l_2()
                                               .border_color(accent_color)
                                           },
