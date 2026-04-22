@@ -1626,7 +1626,9 @@ mod tests {
   #[test]
   fn renderable_snapshot_exposes_simple_selection() {
     let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
-    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None, true)));
+    let state = Arc::new(Mutex::new(VteTermInner::new(
+      2, 5, 100, event_tx, None, true,
+    )));
 
     {
       let mut inner = state.lock();
@@ -1650,7 +1652,9 @@ mod tests {
   #[test]
   fn selection_to_string_uses_visible_range() {
     let (event_tx, _event_rx) = futures::channel::mpsc::unbounded();
-    let state = Arc::new(Mutex::new(VteTermInner::new(2, 5, 100, event_tx, None, true)));
+    let state = Arc::new(Mutex::new(VteTermInner::new(
+      2, 5, 100, event_tx, None, true,
+    )));
 
     {
       let mut inner = state.lock();

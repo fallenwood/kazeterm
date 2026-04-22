@@ -3,6 +3,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{ActiveTheme, Sizable};
+use themeing::SettingsStore;
 
 /// Event emitted when the import dialog completes
 #[derive(Clone)]
@@ -84,6 +85,7 @@ impl Focusable for ImportAlacrittyDialog {
 impl Render for ImportAlacrittyDialog {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let theme = cx.theme();
+    let colors = cx.global::<SettingsStore>().theme().colors();
 
     div()
       .absolute()
@@ -91,7 +93,7 @@ impl Render for ImportAlacrittyDialog {
       .flex()
       .items_center()
       .justify_center()
-      .bg(gpui::black().opacity(0.5))
+      .bg(colors.overlay_background)
       .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
         cx.stop_propagation();
       })
@@ -135,7 +137,7 @@ impl Render for ImportAlacrittyDialog {
               )
               .when(self.error_message.is_some(), |this: Div| {
                 if let Some(ref msg) = self.error_message {
-                  this.child(div().text_xs().text_color(gpui::red()).child(msg.clone()))
+                  this.child(div().text_xs().text_color(theme.red).child(msg.clone()))
                 } else {
                   this
                 }

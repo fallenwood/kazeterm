@@ -22,6 +22,24 @@ imports = ["~/kazeterm.windows.toml"]
 
 Relative import paths are resolved from the file that declares them, and nested imports are supported.
 
+### Themes
+
+Theme files in `assets/themes/*.toml` are seed-based. Most UI colors are derived from:
+
+- `background`
+- `foreground`
+- `accent`
+- `border`
+- ANSI `black`..`white` plus optional `bright_*`
+
+Kazeterm also supports a small set of optional semantic overrides when the derived defaults are not enough:
+
+- `cursor`
+- `overlay`
+- `selection`
+- `search_match`
+- `search_highlight`
+
 ### Terminal kernel
 
 Terminal backends are selected through the terminal kernel abstraction:

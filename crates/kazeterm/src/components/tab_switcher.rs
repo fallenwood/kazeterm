@@ -38,7 +38,7 @@ impl Render for TabSwitcher {
       .flex()
       .items_center()
       .justify_center()
-      .bg(gpui::black().opacity(0.3))
+      .bg(colors.overlay_background)
       .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
         cx.stop_propagation();
       })
@@ -46,7 +46,7 @@ impl Render for TabSwitcher {
         v_flex()
           .gap_1()
           .p_2()
-          .bg(colors.background)
+          .bg(colors.elevated_surface_background)
           .border_1()
           .border_color(colors.border)
           .rounded_lg()

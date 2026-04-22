@@ -34,6 +34,10 @@ static EMBEDDED_THEME_LISTER: OnceLock<EmbeddedThemeLister> = OnceLock::new();
 /// Global holder for custom themes path
 static CUSTOM_THEMES_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 
+/// Built-in default theme content and parsed representation.
+const DEFAULT_THEME_CONTENT: &str = include_str!("../../../../assets/themes/one.toml");
+static DEFAULT_THEME_FILE: OnceLock<ThemeFile> = OnceLock::new();
+
 /// Register the embedded theme loader function
 ///
 /// This should be called once at startup from the main crate.
@@ -156,11 +160,33 @@ pub struct ThemeColors {
 
   // Optional: cursor color (defaults to accent)
   pub cursor: Option<String>,
+
+  // Optional semantic overrides. When omitted, these are derived from the seed colors.
+  pub overlay: Option<String>,
+  pub selection: Option<String>,
+  pub search_match: Option<String>,
+  pub search_highlight: Option<String>,
 }
 
 /// Parse a theme from TOML content
 pub fn parse_theme_content(content: &str) -> Option<ThemeFile> {
   toml::from_str::<ThemeFile>(content).ok()
+}
+
+pub(crate) fn default_theme_file() -> &'static ThemeFile {
+  DEFAULT_THEME_FILE.get_or_init(|| {
+    parse_theme_content(DEFAULT_THEME_CONTENT)
+      .expect("the built-in default theme file must parse successfully")
+  })
+}
+
+pub(crate) fn default_theme_variant(is_dark: bool) -> &'static ThemeColors {
+  let theme = default_theme_file();
+  if is_dark {
+    &theme.dark
+  } else {
+    theme.light.as_ref().unwrap_or(&theme.dark)
+  }
 }
 
 /// Load a theme from the custom themes directory
@@ -301,7 +327,13 @@ pub fn load_theme(name: &str, is_dark: bool) -> (String, Palette) {
     (format!("{}{}", theme_file.name, variant), palette)
   } else {
     tracing::info!("Using default palette for theme '{}'", name);
-    ("One".to_string(), Palette::default())
+    let theme_file = default_theme_file();
+    let colors = default_theme_variant(is_dark);
+    let variant = if is_dark { "" } else { " Light" };
+    (
+      format!("{}{}", theme_file.name, variant),
+      colors.to_palette(is_dark),
+    )
   }
 }
 
@@ -363,6 +395,41 @@ mod tests {
     assert!(palette.terminal_ansi_bright_red.l > palette.terminal_ansi_red.l);
     // Dim red should be darker than base red
     assert!(palette.terminal_ansi_dim_red.l < palette.terminal_ansi_red.l);
+  }
+
+  #[test]
+  fn semantic_overrides_apply_to_palette() {
+    let mut colors = ThemeColors::default();
+    colors.overlay = Some("#01020380".to_string());
+    colors.selection = Some("#11223344".to_string());
+    colors.search_match = Some("#22334455".to_string());
+    colors.search_highlight = Some("#33445566".to_string());
+
+    let palette = colors.to_palette(true);
+
+    assert_eq!(palette.overlay_background.to_rgb().a, 128.0 / 255.0);
+    assert_eq!(
+      palette.element_selection_background.to_rgb().a,
+      68.0 / 255.0
+    );
+    assert_eq!(palette.search_match_background.to_rgb().a, 85.0 / 255.0);
+    assert_eq!(
+      palette.search_highlight_background.to_rgb().a,
+      102.0 / 255.0
+    );
+  }
+
+  #[test]
+  fn accent_defaults_to_blue_and_border_derives_from_core_colors() {
+    let mut colors = ThemeColors::default();
+    colors.background = Some("#101418".to_string());
+    colors.foreground = Some("#E8ECF1".to_string());
+    colors.blue = Some("#5599FF".to_string());
+
+    let palette = colors.to_palette(true);
+
+    assert_eq!(palette.text_accent, palette.terminal_ansi_blue);
+    assert_ne!(palette.border, Palette::builtin(true).border);
   }
 
   #[test]

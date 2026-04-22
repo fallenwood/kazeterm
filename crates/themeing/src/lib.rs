@@ -227,7 +227,7 @@ pub fn get_color_at_index(index: usize, theme: &Theme) -> Hsla {
     267 => colors.terminal_bright_foreground,
     268 => colors.terminal_ansi_black, // 'Dim Background', non-standard color
 
-    _ => Hsla::black(),
+    _ => colors.terminal_ansi_black,
   }
 }
 
