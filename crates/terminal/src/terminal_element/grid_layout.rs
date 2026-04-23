@@ -6,12 +6,17 @@ use gpui::{
 };
 use itertools::Itertools;
 use terminal_kernel::{
+  ANSI_COLOR_COUNT,
   index::Point as AlacPoint,
-  vte::ansi::{Color, NamedColor},
+  vte::ansi::{Color, NamedColor, Rgb},
 };
-use themeing::{ActiveTheme as _, convert_color};
+use themeing::ActiveTheme as _;
 
-use crate::{background_region::BackgroundRegion, indexed_cell::IndexedCell};
+use crate::{
+  background_region::BackgroundRegion,
+  indexed_cell::IndexedCell,
+  mappings::colors::resolve_terminal_color,
+};
 
 use super::BatchedTextRun;
 use super::LayoutRect;
@@ -26,6 +31,7 @@ impl TerminalElement {
     hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
     minimum_contrast: f32,
     bold_as_bright: bool,
+    color_table: &[Option<Rgb>; ANSI_COLOR_COUNT],
     cx: &App,
   ) -> (Vec<LayoutRect>, Vec<BatchedTextRun>) {
     let theme = cx.theme();
@@ -68,7 +74,7 @@ impl TerminalElement {
         }
 
         if !terminal_kernel::is_default_background(&bg) {
-          let color = convert_color(&terminal_kernel::to_themeing_color(&bg), theme);
+          let color = resolve_terminal_color(&bg, theme, color_table);
           let col = cell.point.column.0 as i32;
 
           if let Some(last_region) = background_regions.last_mut() {
@@ -102,14 +108,15 @@ impl TerminalElement {
         {
           if !is_blank(&cell) {
             let cell_style = Self::cell_style(
-              &cell,
-              fg,
-              bg,
-              theme,
-              text_style,
-              hyperlink,
-              minimum_contrast,
-            );
+                &cell,
+                fg,
+                bg,
+                theme,
+                text_style,
+                hyperlink,
+                minimum_contrast,
+                color_table,
+              );
 
             let cell_point = AlacPoint::new(alac_line, cell.point.column.0 as i32);
 
@@ -171,10 +178,11 @@ impl TerminalElement {
     text_style: &TextStyle,
     hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
     minimum_contrast: f32,
+    color_table: &[Option<Rgb>; ANSI_COLOR_COUNT],
   ) -> TextRun {
     let flags = indexed.cell.flags;
-    let mut fg = convert_color(&terminal_kernel::to_themeing_color(&fg), colors);
-    let bg = convert_color(&terminal_kernel::to_themeing_color(&bg), colors);
+    let mut fg = resolve_terminal_color(&fg, colors, color_table);
+    let bg = resolve_terminal_color(&bg, colors, color_table);
 
     if !is_decorative_character(indexed.c) {
       fg = crate::apca_contrast::ensure_minimum_contrast(fg, bg, minimum_contrast);

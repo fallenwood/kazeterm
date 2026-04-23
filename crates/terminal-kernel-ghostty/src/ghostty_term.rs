@@ -14,7 +14,7 @@ use terminal_kernel::selection::{Selection, SelectionRange, SelectionType};
 use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
 use terminal_kernel::term::{RenderableCursor, TermMode};
 use terminal_kernel::vte::ansi::{CursorShape, CursorStyle, Rgb};
-use terminal_kernel::{RenderableSnapshot, SelectionDisplay, TerminalBackend};
+use terminal_kernel::{ANSI_COLOR_COUNT, RenderableSnapshot, SelectionDisplay, TerminalBackend};
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -47,7 +47,7 @@ pub struct GhosttyTermInner {
   selection: Option<Selection>,
   selection_display: Option<SelectionDisplay>,
 
-  pub(crate) colors: [Option<Rgb>; 256],
+  pub(crate) colors: [Option<Rgb>; ANSI_COLOR_COUNT],
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ impl GhosttyTermInner {
       display_offset: 0,
       selection: None,
       selection_display: None,
-      colors: [None; 256],
+      colors: [None; ANSI_COLOR_COUNT],
     }
   }
 
@@ -133,7 +133,7 @@ impl GhosttyTermInner {
     cursor_point: AlacPoint,
     cursor_style: CursorStyle,
     mode: TermMode,
-    palette: [Option<Rgb>; 256],
+    palette: [Option<Rgb>; ANSI_COLOR_COUNT],
     scrollback_delta: Vec<Vec<Cell>>,
   ) {
     // Push newly-scrolled-off rows into our scrollback.

@@ -3,11 +3,15 @@ use gpui::{
   MouseButton, Pixels, Point, TextRun, TextStyle, UnderlineStyle, WhiteSpace, Window, fill, px,
   relative,
 };
-use terminal_kernel::{grid::Dimensions, vte::ansi::CursorShape as AlacCursorShape};
+use terminal_kernel::{
+  BACKGROUND_COLOR_INDEX, CURSOR_COLOR_INDEX, FOREGROUND_COLOR_INDEX, grid::Dimensions,
+  vte::ansi::CursorShape as AlacCursorShape,
+};
 use themeing::ActiveTheme as _;
 
 use crate::{
   cursor_layout::CursorLayout,
+  mappings::colors::resolve_palette_index,
   highlighted_range_line::HighlightedRange,
   minimap::{MINIMAP_WIDTH, MinimapState, paint_minimap},
   scrollbar::{MIN_THUMB_HEIGHT, SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
@@ -94,9 +98,7 @@ impl Element for TerminalElement {
 
         let theme = cx.theme().clone();
 
-        let terminal_background_color = theme.colors().terminal_ansi_background;
-
-        let text_style = TextStyle {
+        let mut text_style = TextStyle {
           font_family,
           font_features,
           font_weight,
@@ -104,7 +106,7 @@ impl Element for TerminalElement {
           font_size,
           font_style: FontStyle::Normal,
           line_height: relative(line_height_multiplier),
-          background_color: Some(terminal_background_color),
+          background_color: Some(theme.colors().terminal_ansi_background),
           white_space: WhiteSpace::Normal,
           color: theme.colors().terminal_foreground,
           ..Default::default()
@@ -146,18 +148,29 @@ impl Element for TerminalElement {
           )
         };
 
-        let background_color = terminal_background_color;
-
         self.terminal.update(cx, |terminal, cx| {
           terminal.set_size(dimensions);
           terminal.sync(window, cx);
         });
 
-        let minimap_cells = if minimap_enabled {
-          self.terminal.read(cx).collect_minimap_cells()
-        } else {
-          Vec::new()
+        let (minimap_cells, color_table) = {
+          let terminal = self.terminal.read(cx);
+          let minimap_cells = if minimap_enabled {
+            terminal.collect_minimap_cells()
+          } else {
+            Vec::new()
+          };
+          (minimap_cells, terminal.color_table())
         };
+        let terminal_background_color =
+          resolve_palette_index(BACKGROUND_COLOR_INDEX, theme.as_ref(), &color_table);
+        let terminal_foreground_color =
+          resolve_palette_index(FOREGROUND_COLOR_INDEX, theme.as_ref(), &color_table);
+        let cursor_color = resolve_palette_index(CURSOR_COLOR_INDEX, theme.as_ref(), &color_table);
+        text_style.background_color = Some(terminal_background_color);
+        text_style.color = terminal_foreground_color;
+
+        let background_color = terminal_background_color;
 
         let TerminalContent {
           cells,
@@ -218,6 +231,7 @@ impl Element for TerminalElement {
             .map(|last_hovered_word| (link_style, &last_hovered_word.word_match)),
           minimum_contrast,
           bold_as_bright,
+          &color_table,
           cx,
         );
 
@@ -225,7 +239,6 @@ impl Element for TerminalElement {
           None
         } else {
           let cursor_point = DisplayCursor::from(cursor.point, display_offset);
-          let cursor_color = theme.colors().terminal_cursor;
           let cursor_text: gpui::ShapedLine = {
             let str_trxt = cursor_char.to_string();
             let len = str_trxt.len();
@@ -235,7 +248,7 @@ impl Element for TerminalElement {
               &[TextRun {
                 len,
                 font: text_style.font(),
-                color: theme.colors().terminal_ansi_background,
+                color: terminal_background_color,
                 background_color: None,
                 underline: Default::default(),
                 strikethrough: None,
@@ -326,6 +339,7 @@ impl Element for TerminalElement {
           scrollbar_bounds,
           minimap_state,
           minimap_bounds,
+          color_table,
           minimap_cells,
           image_placements,
         };
@@ -628,6 +642,7 @@ impl Element for TerminalElement {
           layout.dimensions.columns(),
           minimap_state,
           theme,
+          &layout.color_table,
           background_color,
           viewport_color,
           window,

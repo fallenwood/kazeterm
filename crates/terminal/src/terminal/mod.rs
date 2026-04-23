@@ -253,6 +253,16 @@ impl Terminal {
     &self.last_content
   }
 
+  pub fn color_table(
+    &self,
+  ) -> [Option<terminal_kernel::vte::ansi::Rgb>; terminal_kernel::ANSI_COLOR_COUNT] {
+    let mut colors = [None; terminal_kernel::ANSI_COLOR_COUNT];
+    for (index, slot) in colors.iter_mut().enumerate() {
+      *slot = self.term.color_at(index);
+    }
+    colors
+  }
+
   /// Collect all grid cells (history + visible) for minimap rendering.
   /// Returns cells with 0-based line numbers (0 = oldest history line).
   pub fn collect_minimap_cells(&self) -> Vec<IndexedCell> {
