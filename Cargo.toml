@@ -54,7 +54,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 notify = "8.2.0"
 notify-debouncer-mini = "0.7"
 notify-rust = "4"
-mimalloc = { version = "0.1.50", default-features = false }
 which = "8.0.2"
 
 [workspace.dependencies.windows]

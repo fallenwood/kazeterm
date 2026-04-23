@@ -1,9 +1,10 @@
 // Disable command line from opening on release mode
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(not(target_os = "macos"))]
 use mimalloc::MiMalloc;
 
-#![cfg(target_os = "macos")]
+#[cfg(not(target_os = "macos"))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
