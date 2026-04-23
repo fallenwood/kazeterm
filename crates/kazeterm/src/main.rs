@@ -3,6 +3,7 @@
 
 use mimalloc::MiMalloc;
 
+#![cfg(target_os = "macos")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
