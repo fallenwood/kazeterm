@@ -9,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use parking_lot::Mutex;
+use terminal_kernel::{ANSI_COLOR_COUNT, BACKGROUND_COLOR_INDEX, CURSOR_COLOR_INDEX, FOREGROUND_COLOR_INDEX};
 use terminal_kernel::event::{OnResize, WindowSize};
 use terminal_kernel::index::{Column, Line, Point as AlacPoint};
 use terminal_kernel::term::TermMode;
@@ -217,7 +218,7 @@ impl GhosttyEventLoop {
           AlacPoint::default(),
           CursorStyle::default(),
           TermMode::empty(),
-          [None; 256],
+          [None; ANSI_COLOR_COUNT],
           vec![],
         );
         return;
@@ -573,16 +574,37 @@ fn sync_to_inner<'a>(
     mode.insert(TermMode::MOUSE_MOTION);
   }
 
-  // Colors (256-color palette).
-  let mut palette = [None; 256];
-  if let Ok(colors) = snapshot.colors() {
-    for (i, c) in colors.palette.iter().enumerate() {
+  // Colors (indexed palette + effective default foreground/background/cursor).
+  let mut palette = [None; ANSI_COLOR_COUNT];
+  if let Ok(colors) = terminal.color_palette() {
+    for (i, c) in colors.iter().enumerate() {
       palette[i] = Some(Rgb {
         r: c.r,
         g: c.g,
         b: c.b,
       });
     }
+  }
+  if let Ok(Some(fg)) = terminal.fg_color() {
+    palette[FOREGROUND_COLOR_INDEX] = Some(Rgb {
+      r: fg.r,
+      g: fg.g,
+      b: fg.b,
+    });
+  }
+  if let Ok(Some(bg)) = terminal.bg_color() {
+    palette[BACKGROUND_COLOR_INDEX] = Some(Rgb {
+      r: bg.r,
+      g: bg.g,
+      b: bg.b,
+    });
+  }
+  if let Ok(Some(cursor)) = terminal.cursor_color() {
+    palette[CURSOR_COLOR_INDEX] = Some(Rgb {
+      r: cursor.r,
+      g: cursor.g,
+      b: cursor.b,
+    });
   }
 
   // Scrollback delta: check if new scrollback lines appeared.
@@ -643,11 +665,16 @@ fn emit_title_event_if_changed(
 
 #[cfg(test)]
 mod tests {
-  use futures::{FutureExt as _, StreamExt as _, channel::mpsc::unbounded, executor::block_on};
+  use std::sync::Arc;
 
-  use super::emit_title_event_if_changed;
-  use libghostty_vt::{Terminal, TerminalOptions};
+  use futures::{FutureExt as _, StreamExt as _, channel::mpsc::unbounded, executor::block_on};
+  use parking_lot::Mutex;
+
+  use super::{emit_title_event_if_changed, sync_to_inner};
+  use crate::ghostty_term::GhosttyTermInner;
+  use libghostty_vt::{RenderState, Terminal, TerminalOptions, style::RgbColor};
   use terminal_kernel::event::Event;
+  use terminal_kernel::{BACKGROUND_COLOR_INDEX, FOREGROUND_COLOR_INDEX, vte::ansi::Rgb};
 
   fn register_effects(terminal: &mut Terminal<'_, '_>) {
     use libghostty_vt::terminal::{
@@ -735,6 +762,64 @@ mod tests {
       other => panic!("expected first title event, got {other:?}"),
     }
     assert!(event_rx.next().now_or_never().is_none());
+  }
+
+  #[test]
+  fn sync_to_inner_captures_dynamic_terminal_colors() {
+    let mut terminal = Terminal::new(TerminalOptions {
+      cols: 80,
+      rows: 24,
+      max_scrollback: 0,
+    })
+    .expect("ghostty terminal should initialize");
+    let mut render_state = RenderState::new().expect("ghostty render state should initialize");
+    let (event_tx, _event_rx) = unbounded();
+    let state = Arc::new(Mutex::new(GhosttyTermInner::new(24, 80, 0, event_tx, true)));
+    let mut prev_scrollback_count = 0;
+
+    let mut palette = terminal.default_color_palette().expect("default palette");
+    palette[1] = RgbColor {
+      r: 0x12,
+      g: 0x34,
+      b: 0x56,
+    };
+    terminal
+      .set_default_color_palette(Some(palette))
+      .expect("set palette");
+    terminal
+      .set_default_fg_color(Some(RgbColor {
+        r: 0xaa,
+        g: 0xbb,
+        b: 0xcc,
+      }))
+      .expect("set foreground");
+    terminal
+      .set_default_bg_color(Some(RgbColor {
+        r: 0x22,
+        g: 0x44,
+        b: 0x66,
+      }))
+      .expect("set background");
+    sync_to_inner(&terminal, &mut render_state, &state, &mut prev_scrollback_count);
+
+    let state = state.lock();
+    assert_eq!(state.colors[1], Some(Rgb { r: 0x12, g: 0x34, b: 0x56 }));
+    assert_eq!(
+      state.colors[FOREGROUND_COLOR_INDEX],
+      Some(Rgb {
+        r: 0xaa,
+        g: 0xbb,
+        b: 0xcc,
+      }),
+    );
+    assert_eq!(
+      state.colors[BACKGROUND_COLOR_INDEX],
+      Some(Rgb {
+        r: 0x22,
+        g: 0x44,
+        b: 0x66,
+      }),
+    );
   }
 
   #[cfg(target_os = "windows")]

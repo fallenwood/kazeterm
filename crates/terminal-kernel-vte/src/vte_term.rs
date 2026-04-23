@@ -10,7 +10,10 @@ use terminal_kernel::selection::{Selection, SelectionRange, SelectionType};
 use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
 use terminal_kernel::term::{RenderableCursor, TermMode};
 use terminal_kernel::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor, Rgb};
-use terminal_kernel::{RenderableSnapshot, SelectionDisplay, TerminalBackend};
+use terminal_kernel::{
+  ANSI_COLOR_COUNT, BACKGROUND_COLOR_INDEX, FOREGROUND_COLOR_INDEX, RenderableSnapshot,
+  SelectionDisplay, TerminalBackend,
+};
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -61,7 +64,7 @@ pub struct VteTermInner {
 
   tab_stops: Vec<bool>,
   title: String,
-  colors: [Option<Rgb>; 256],
+  colors: [Option<Rgb>; ANSI_COLOR_COUNT],
 
   using_alt_screen: bool,
   pending_wrap: bool,
@@ -122,7 +125,7 @@ impl VteTermInner {
       template_cell: Cell::default(),
       tab_stops: default_tab_stops(cols),
       title: String::new(),
-      colors: [None; 256],
+      colors: [None; ANSI_COLOR_COUNT],
       using_alt_screen: false,
       pending_wrap: false,
       event_tx,
@@ -229,6 +232,32 @@ impl VteTermInner {
 
   pub(crate) fn send_event(&self, event: terminal_kernel::event::Event) {
     let _ = self.event_tx.unbounded_send(event);
+  }
+
+  fn set_color_entry(&mut self, index: usize, color: Rgb) {
+    if index < self.colors.len() {
+      self.colors[index] = Some(color);
+    }
+  }
+
+  fn request_color_entry(&self, index: usize, prefix: String, bell_terminated: bool) {
+    let terminator = if bell_terminated { "\x07" } else { "\x1b\\" }.to_string();
+    self.send_event(terminal_kernel::event::Event::ColorRequest(
+      index,
+      Arc::new(move |color| {
+        format!(
+          "\x1b]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}{}",
+          prefix,
+          color.r,
+          color.r,
+          color.g,
+          color.g,
+          color.b,
+          color.b,
+          terminator,
+        )
+      }),
+    ));
   }
 
   // -- Alternate screen ---------------------------------------------------
@@ -492,6 +521,51 @@ fn bounds_to_string_state(s: &VteTermInner, start: AlacPoint, end: AlacPoint) ->
   }
 
   result
+}
+
+fn parse_osc_palette_index(param: &[u8]) -> Option<usize> {
+  let index = std::str::from_utf8(param).ok()?.parse::<usize>().ok()?;
+  (index < 256).then_some(index)
+}
+
+fn parse_osc_color_component(component: &str) -> Option<u8> {
+  if component.is_empty() || component.len() > 4 {
+    return None;
+  }
+
+  let value = u32::from_str_radix(component, 16).ok()?;
+  let max_value = (1_u32 << (component.len() * 4)) - 1;
+  Some(((value * 255 + max_value / 2) / max_value) as u8)
+}
+
+fn parse_osc_color_spec(spec: &[u8]) -> Option<Rgb> {
+  let spec = std::str::from_utf8(spec).ok()?;
+
+  if let Some(rest) = spec.strip_prefix("rgb:") {
+    let mut parts = rest.split('/');
+    let r = parse_osc_color_component(parts.next()?)?;
+    let g = parse_osc_color_component(parts.next()?)?;
+    let b = parse_osc_color_component(parts.next()?)?;
+    if parts.next().is_some() {
+      return None;
+    }
+    return Some(Rgb { r, g, b });
+  }
+
+  let rest = spec.strip_prefix('#')?;
+  if rest.is_empty() || rest.len() % 3 != 0 {
+    return None;
+  }
+
+  let width = rest.len() / 3;
+  if width == 0 || width > 4 {
+    return None;
+  }
+
+  let r = parse_osc_color_component(&rest[0..width])?;
+  let g = parse_osc_color_component(&rest[width..width * 2])?;
+  let b = parse_osc_color_component(&rest[width * 2..])?;
+  Some(Rgb { r, g, b })
 }
 
 // ---------------------------------------------------------------------------
@@ -964,7 +1038,7 @@ impl vte::Perform for VteTermInner {
     }
   }
 
-  fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+  fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
     if params.is_empty() {
       return;
     }
@@ -975,6 +1049,36 @@ impl vte::Perform for VteTermInner {
         if let Some(title) = params.get(1) {
           self.title = String::from_utf8_lossy(title).to_string();
           self.send_event(terminal_kernel::event::Event::Title(self.title.clone()));
+        }
+      }
+      "4" => {
+        for pair in params[1..].chunks(2) {
+          let Some(index) = pair.first().and_then(|param| parse_osc_palette_index(param)) else {
+            continue;
+          };
+          let Some(spec) = pair.get(1) else {
+            continue;
+          };
+
+          if *spec == b"?" {
+            self.request_color_entry(index, format!("4;{index}"), bell_terminated);
+          } else if let Some(color) = parse_osc_color_spec(spec) {
+            self.set_color_entry(index, color);
+          }
+        }
+      }
+      "10" | "11" => {
+        let color_index = if cmd == "10" {
+          FOREGROUND_COLOR_INDEX
+        } else {
+          BACKGROUND_COLOR_INDEX
+        };
+        if let Some(spec) = params.get(1) {
+          if *spec == b"?" {
+            self.request_color_entry(color_index, cmd.to_string(), bell_terminated);
+          } else if let Some(color) = parse_osc_color_spec(spec) {
+            self.set_color_entry(color_index, color);
+          }
         }
       }
       "7" => {
@@ -1351,7 +1455,7 @@ impl TerminalBackend for VteBackend {
 
   fn color_at(&self, index: usize) -> Option<Rgb> {
     let s = self.state.lock();
-    if index < 256 { s.colors[index] } else { None }
+    if index < s.colors.len() { s.colors[index] } else { None }
   }
 
   fn selection_to_string(&self) -> Option<String> {
@@ -1613,6 +1717,8 @@ impl TerminalBackend for VteBackend {
 
 #[cfg(test)]
 mod tests {
+  use futures::{StreamExt as _, executor::block_on};
+
   use super::*;
 
   fn populate_row(text: &str, width: usize) -> Vec<Cell> {
@@ -1671,5 +1777,95 @@ mod tests {
     let backend = VteBackend::new(state);
 
     assert_eq!(backend.selection_to_string().as_deref(), Some("ell"));
+  }
+
+  fn feed(inner: &mut VteTermInner, bytes: &[u8]) {
+    let mut parser = vte::Parser::new();
+    parser.advance(inner, bytes);
+  }
+
+  #[test]
+  fn osc_4_sets_palette_entries_and_answers_queries() {
+    let (event_tx, mut event_rx) = futures::channel::mpsc::unbounded();
+    let mut inner = VteTermInner::new(2, 5, 100, event_tx, None, true);
+
+    feed(&mut inner, b"\x1b]4;1;rgb:12/34/56\x07");
+    assert_eq!(inner.colors[1], Some(Rgb { r: 0x12, g: 0x34, b: 0x56 }));
+
+    feed(&mut inner, b"\x1b]4;1;?\x1b\\");
+    match block_on(event_rx.next()) {
+      Some(terminal_kernel::event::Event::ColorRequest(index, formatter)) => {
+        assert_eq!(index, 1);
+        assert_eq!(
+          formatter(Rgb { r: 0x12, g: 0x34, b: 0x56 }),
+          "\x1b]4;1;rgb:1212/3434/5656\x1b\\",
+        );
+      }
+      other => panic!("expected OSC 4 color request, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn osc_10_sets_default_foreground_and_answers_queries() {
+    let (event_tx, mut event_rx) = futures::channel::mpsc::unbounded();
+    let mut inner = VteTermInner::new(2, 5, 100, event_tx, None, true);
+
+    feed(&mut inner, b"\x1b]10;#aabbcc\x07");
+    assert_eq!(
+      inner.colors[FOREGROUND_COLOR_INDEX],
+      Some(Rgb {
+        r: 0xaa,
+        g: 0xbb,
+        b: 0xcc,
+      }),
+    );
+
+    feed(&mut inner, b"\x1b]10;?\x07");
+    match block_on(event_rx.next()) {
+      Some(terminal_kernel::event::Event::ColorRequest(index, formatter)) => {
+        assert_eq!(index, FOREGROUND_COLOR_INDEX);
+        assert_eq!(
+          formatter(Rgb {
+            r: 0xaa,
+            g: 0xbb,
+            b: 0xcc,
+          }),
+          "\x1b]10;rgb:aaaa/bbbb/cccc\x07",
+        );
+      }
+      other => panic!("expected OSC 10 color request, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn osc_11_sets_default_background_and_answers_queries() {
+    let (event_tx, mut event_rx) = futures::channel::mpsc::unbounded();
+    let mut inner = VteTermInner::new(2, 5, 100, event_tx, None, true);
+
+    feed(&mut inner, b"\x1b]11;#123456\x07");
+    assert_eq!(
+      inner.colors[BACKGROUND_COLOR_INDEX],
+      Some(Rgb {
+        r: 0x12,
+        g: 0x34,
+        b: 0x56,
+      }),
+    );
+
+    feed(&mut inner, b"\x1b]11;?\x1b\\");
+    match block_on(event_rx.next()) {
+      Some(terminal_kernel::event::Event::ColorRequest(index, formatter)) => {
+        assert_eq!(index, BACKGROUND_COLOR_INDEX);
+        assert_eq!(
+          formatter(Rgb {
+            r: 0x12,
+            g: 0x34,
+            b: 0x56,
+          }),
+          "\x1b]11;rgb:1212/3434/5656\x1b\\",
+        );
+      }
+      other => panic!("expected OSC 11 color request, got {other:?}"),
+    }
   }
 }

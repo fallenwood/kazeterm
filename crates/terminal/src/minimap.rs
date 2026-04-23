@@ -1,7 +1,7 @@
 use gpui::{BorderStyle, Bounds, Hsla, Pixels, Point, Window, fill, px};
-use themeing::convert_color;
+use terminal_kernel::{ANSI_COLOR_COUNT, vte::ansi::Rgb};
 
-use crate::indexed_cell::IndexedCell;
+use crate::{indexed_cell::IndexedCell, mappings::colors::resolve_terminal_color};
 
 /// Minimap width in pixels
 pub const MINIMAP_WIDTH: f32 = 80.0;
@@ -89,6 +89,7 @@ pub fn paint_minimap(
   columns: usize,
   state: &MinimapState,
   theme: &themeing::Theme,
+  color_table: &[Option<Rgb>; ANSI_COLOR_COUNT],
   background_color: Hsla,
   viewport_color: Hsla,
   window: &mut Window,
@@ -139,11 +140,7 @@ pub fn paint_minimap(
       cell.fg
     };
 
-    let color = if terminal_kernel::is_default_foreground(&fg) {
-      theme.colors().terminal_foreground
-    } else {
-      convert_color(&terminal_kernel::to_themeing_color(&fg), theme)
-    };
+    let color = resolve_terminal_color(&fg, theme, color_table);
 
     // Calculate position in minimap
     let col = cell.point.column.0 as f32;

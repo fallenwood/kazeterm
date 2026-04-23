@@ -4,7 +4,7 @@ use gpui::{
   Entity, FocusHandle, Hsla, InteractiveElement, IntoElement, Pixels, Point, ShapedLine,
   StatefulInteractiveElement, TextStyle, point,
 };
-use terminal_kernel::{grid::Dimensions, index::Point as AlacPoint, term::TermMode};
+use terminal_kernel::{ANSI_COLOR_COUNT, grid::Dimensions, index::Point as AlacPoint, term::TermMode, vte::ansi::Rgb};
 
 use crate::{cursor_layout::CursorLayout, minimap::MinimapState, scrollbar::ScrollbarState};
 
@@ -126,6 +126,7 @@ pub struct LayoutState {
   scrollbar_bounds: Option<gpui::Bounds<Pixels>>,
   minimap_state: Option<MinimapState>,
   minimap_bounds: Option<gpui::Bounds<Pixels>>,
+  color_table: [Option<Rgb>; ANSI_COLOR_COUNT],
   minimap_cells: Vec<crate::indexed_cell::IndexedCell>,
   image_placements: Vec<crate::kitty_graphics::VisiblePlacement>,
 }

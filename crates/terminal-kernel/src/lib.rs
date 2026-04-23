@@ -53,6 +53,16 @@ pub use backend::{AlacrittyBackend, RenderableSnapshot, SelectionDisplay, Termin
 // Color conversion helpers
 // ---------------------------------------------------------------------------
 
+/// Total number of color slots exposed by Alacritty's `Colors` table.
+///
+/// Slots `0..=255` are the indexed palette. Slots `256..=258` are the
+/// effective foreground, background, and cursor colors. The remaining entries
+/// are the dim/bright compatibility slots used by the renderer fallback path.
+pub const ANSI_COLOR_COUNT: usize = 269;
+pub const FOREGROUND_COLOR_INDEX: usize = 256;
+pub const BACKGROUND_COLOR_INDEX: usize = 257;
+pub const CURSOR_COLOR_INDEX: usize = 258;
+
 pub fn to_themeing_color(color: &vte::ansi::Color) -> themeing::AnsiColor {
   use themeing::{AnsiColor, AnsiNamedColor, AnsiRgb};
 
