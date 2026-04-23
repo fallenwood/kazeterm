@@ -10,7 +10,7 @@ use crate::components::search_bar::SearchBar;
 use crate::components::shell_error_dialog::ShellErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
-use crate::components::workspace_state::WorkspaceState;
+use crate::reconciler::UITreeStore;
 
 pub(crate) use super::main_window_tab_item::TabItem;
 
@@ -82,6 +82,8 @@ pub struct MainWindow {
   pub(crate) tab_bar_visible: bool,
   /// Subscription for system appearance changes (used by ThemeMode::System)
   pub(crate) _appearance_subscription: gpui::Subscription,
+  /// Data-driven UI tree store for serialization, diffing, and external API.
+  pub(crate) ui_tree: UITreeStore,
 }
 
 impl MainWindow {
@@ -174,20 +176,66 @@ impl MainWindow {
       last_notification_time: None,
       tab_bar_visible: true,
       _appearance_subscription: appearance_subscription,
+      ui_tree: UITreeStore::new(),
     };
 
     // Try to restore previous workspace
     let config = cx.global::<::config::Config>();
     if config.window.restore_workspace {
-      if let Some(state) = WorkspaceState::load() {
-        main_window.restore_workspace(state, window, cx);
-        WorkspaceState::delete();
+      if let Some(tree) = UITreeStore::load_workspace() {
+        main_window.restore_from_ui_tree(&tree, window, cx);
+        UITreeStore::delete_workspace();
         return main_window;
       }
     }
 
     main_window.insert_new_tab(window, cx);
     main_window
+  }
+
+  /// Capture the current GPUI state into the UI tree.
+  /// Call this before snapshotting or after external changes to sync state.
+  pub fn sync_ui_tree(&mut self, cx: &mut Context<Self>) {
+    let mut tree_store = std::mem::replace(&mut self.ui_tree, UITreeStore::new());
+    tree_store.capture_from_main_window(self, cx);
+    self.ui_tree = tree_store;
+  }
+
+  /// Dump the current UI tree as a JSON string.
+  pub fn snapshot_ui_tree(&mut self, cx: &mut Context<Self>) -> Result<String, serde_json::Error> {
+    self.sync_ui_tree(cx);
+    self.ui_tree.to_json()
+  }
+
+  /// Dump the current UI tree as a `serde_json::Value`.
+  pub fn snapshot_ui_tree_value(
+    &mut self,
+    cx: &mut Context<Self>,
+  ) -> Result<serde_json::Value, serde_json::Error> {
+    self.sync_ui_tree(cx);
+    self.ui_tree.to_json_value()
+  }
+
+  /// Apply a `UIAction` through the tree, producing diffs and reconciling
+  /// them back into the live GPUI state.
+  pub fn dispatch_ui_action(
+    &mut self,
+    action: kazeterm_ui_tree::action::UIAction,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) -> Result<(), anyhow::Error> {
+    let diffs = self.ui_tree.apply_action(action)?;
+    UITreeStore::reconcile(&diffs, self, window, cx);
+    Ok(())
+  }
+
+  /// Load a full UI tree from JSON and reconcile it.
+  /// This can recreate an entire window layout from a snapshot.
+  pub fn load_ui_tree_json(
+    &mut self,
+    json: &str,
+  ) -> Result<(), serde_json::Error> {
+    self.ui_tree.load_json(json)
   }
 }
 

@@ -26,3 +26,4 @@ pub(crate) mod terminal_window;
 pub(crate) mod workspace_state;
 
 pub use main_window::MainWindow;
+pub(crate) use split_pane::{SplitDirection, SplitPane};

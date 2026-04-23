@@ -166,6 +166,32 @@ pub fn build_default_event_bus(source_config: EventSourceConfig) -> EventBus<Mai
     }
   });
 
+  bus.subscribe("DispatchUIAction", |mw, event, window, cx| {
+    if let AppEvent::DispatchUIAction { action_json } = event {
+      match serde_json::from_str::<kazeterm_ui_tree::action::UIAction>(&action_json) {
+        Ok(action) => {
+          if let Err(e) = mw.dispatch_ui_action(action, window, cx) {
+            tracing::error!("Failed to dispatch UIAction: {e}");
+          }
+        }
+        Err(e) => {
+          tracing::error!("Failed to parse UIAction JSON: {e}");
+        }
+      }
+    }
+  });
+
+  bus.subscribe("SnapshotUITree", |mw, _event, _window, cx| {
+    match mw.snapshot_ui_tree(cx) {
+      Ok(json) => {
+        tracing::info!("UI tree snapshot:\n{}", json);
+      }
+      Err(e) => {
+        tracing::error!("Failed to snapshot UI tree: {e}");
+      }
+    }
+  });
+
   bus
 }
 
@@ -224,6 +250,8 @@ mod tests {
       "Quit",
       "SendTextToTerminal",
       "Custom",
+      "DispatchUIAction",
+      "SnapshotUITree",
     ];
 
     for event in expected_events {

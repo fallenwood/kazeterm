@@ -60,6 +60,13 @@ pub enum JsonEvent {
     name: String,
     data: String,
   },
+  /// Dispatch a UIAction through the data-driven UI tree.
+  /// The `action_json` field is the JSON-serialized `UIAction`.
+  DispatchUIAction {
+    action_json: String,
+  },
+  /// Request a snapshot of the current UI tree as JSON.
+  SnapshotUITree,
 }
 
 impl From<JsonEvent> for AppEvent {
@@ -99,6 +106,10 @@ impl From<JsonEvent> for AppEvent {
       JsonEvent::Quit => AppEvent::Quit,
       JsonEvent::SendTextToTerminal { text } => AppEvent::SendTextToTerminal { text },
       JsonEvent::Custom { name, data } => AppEvent::Custom { name, data },
+      JsonEvent::DispatchUIAction { action_json } => {
+        AppEvent::DispatchUIAction { action_json }
+      }
+      JsonEvent::SnapshotUITree => AppEvent::SnapshotUITree,
     }
   }
 }

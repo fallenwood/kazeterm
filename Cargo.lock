@@ -3302,6 +3302,7 @@ dependencies = [
  "gpui-macros",
  "image",
  "kazeterm-event-system",
+ "kazeterm-ui-tree",
  "notify 8.2.0",
  "notify-debouncer-mini",
  "notify-rust",
@@ -3338,6 +3339,15 @@ dependencies = [
  "smol",
  "tracing",
  "uds_windows",
+]
+
+[[package]]
+name = "kazeterm-ui-tree"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
