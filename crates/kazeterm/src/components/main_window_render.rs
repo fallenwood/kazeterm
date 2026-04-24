@@ -1269,6 +1269,7 @@ impl Render for MainWindow {
         // Sync active pane from OS focus so the inactive-pane dimming
         // reflects the currently focused terminal immediately.
         self.sync_active_pane_from_focus(window, cx);
+        let pane_search_bar = if search_visible { Some(search_bar) } else { None };
         let content = div()
           .flex_1()
           .size_full()
@@ -1276,7 +1277,7 @@ impl Render for MainWindow {
             self
               .items
               .get(active_ix)
-              .map(|item| item.split_container.render(window, cx))
+              .map(|item| item.split_container.render(pane_search_bar, window, cx))
               .unwrap_or_else(|| {
                 tracing::warn!(
                   "render: NO ITEM FOUND at index {}, showing empty div",
@@ -1288,7 +1289,6 @@ impl Render for MainWindow {
           .when(key_debug_mode, |this| {
             this.child(render_key_debug_overlay(&key_debug_entries, self.key_debug_modifiers, cx))
           })
-          .when(search_visible, |this| this.child(search_bar))
           .when(self.tab_switcher_visible, |this| {
             if let Some(tab_switcher) = &self.tab_switcher {
               this.child(tab_switcher.clone())

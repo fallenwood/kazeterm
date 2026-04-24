@@ -1,9 +1,11 @@
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{h_flex, menu::ContextMenuExt, v_flex};
 use terminal::TerminalView;
 use themeing::SettingsStore;
 
 use super::main_window::MainWindow;
+use super::search_bar::SearchBar;
 use super::split_pane_context_menu::build_terminal_context_menu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -574,6 +576,7 @@ impl SplitPane {
     active_pane_id: Option<PaneId>,
     focused_pane_id: Option<PaneId>,
     has_splits: bool,
+    search_bar: Option<Entity<SearchBar>>,
     path: Vec<bool>,
     window: &mut Window,
     cx: &mut Context<MainWindow>,
@@ -607,15 +610,25 @@ impl SplitPane {
           colors.border_transparent
         };
 
+        let show_search = is_active && search_bar.is_some();
+
         let base = if has_splits {
           div()
             .id(pane_id)
+            .relative()
+            .overflow_hidden()
             .size_full()
             .border_2()
             .border_color(border_color)
             .child(terminal.clone())
+            .when(show_search, |this| this.child(search_bar.clone().unwrap()))
         } else {
-          div().id(pane_id).size_full().child(terminal.clone())
+          div()
+            .id(pane_id)
+            .relative()
+            .size_full()
+            .child(terminal.clone())
+            .when(show_search, |this| this.child(search_bar.unwrap()))
         };
 
         if right_click_context_menu {
@@ -656,6 +669,7 @@ impl SplitPane {
           active_pane_id,
           focused_pane_id,
           has_splits,
+          search_bar.clone(),
           first_path,
           window,
           cx,
@@ -664,6 +678,7 @@ impl SplitPane {
           active_pane_id,
           focused_pane_id,
           has_splits,
+          search_bar,
           second_path,
           window,
           cx,
@@ -1097,7 +1112,12 @@ impl SplitContainer {
     self.root.update_ratio(path, new_ratio);
   }
 
-  pub fn render(&self, window: &mut Window, cx: &mut Context<MainWindow>) -> AnyElement {
+  pub fn render(
+    &self,
+    search_bar: Option<Entity<SearchBar>>,
+    window: &mut Window,
+    cx: &mut Context<MainWindow>,
+  ) -> AnyElement {
     let (visible_root, visible_path) = self.visible_root_with_path();
     let has_splits = matches!(visible_root, SplitPane::Split { .. });
     let focused_pane_id = self
@@ -1114,6 +1134,7 @@ impl SplitContainer {
       self.active_pane_id,
       focused_pane_id,
       has_splits,
+      search_bar,
       visible_path,
       window,
       cx,
