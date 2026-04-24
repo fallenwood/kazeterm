@@ -142,7 +142,7 @@ To add a new config field:
 | focus_next_pane | `ctrl-shift-]` |
 | focus_previous_pane | `ctrl-shift-[` |
 | swap_split_panes | `ctrl-shift-x` |
-| toggle_hidden_panes | `ctrl-shift-h` (macOS: `cmd-shift-h`) |
+| toggle_hidden_panes | `ctrl-shift-enter` (macOS: `cmd-shift-enter`) |
 | toggle_fullscreen | `f11` (macOS: `f12`) |
 | toggle_tab_bar | `ctrl-shift-b` |
 
