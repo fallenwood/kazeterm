@@ -1,4 +1,4 @@
-pub mod node;
 pub mod action;
-pub mod reducer;
 pub mod diff;
+pub mod node;
+pub mod reducer;

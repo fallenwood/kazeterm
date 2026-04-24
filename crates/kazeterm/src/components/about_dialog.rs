@@ -205,12 +205,9 @@ mod tests {
     let count_clone = count.clone();
     cx.update(|cx| {
       let dialog = window.root(cx).unwrap();
-      cx.subscribe(
-        &dialog,
-        move |_, _event: &AboutDialogCloseEvent, _cx| {
-          *count_clone.borrow_mut() += 1;
-        },
-      )
+      cx.subscribe(&dialog, move |_, _event: &AboutDialogCloseEvent, _cx| {
+        *count_clone.borrow_mut() += 1;
+      })
       .detach();
     });
 

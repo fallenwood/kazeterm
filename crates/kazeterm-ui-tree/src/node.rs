@@ -219,9 +219,9 @@ impl PaneNode {
   pub fn find_pane(&self, pane_id: &str) -> Option<&PaneNode> {
     match self {
       PaneNode::Terminal { id, .. } if id == pane_id => Some(self),
-      PaneNode::Split {
-        first, second, ..
-      } => first.find_pane(pane_id).or_else(|| second.find_pane(pane_id)),
+      PaneNode::Split { first, second, .. } => first
+        .find_pane(pane_id)
+        .or_else(|| second.find_pane(pane_id)),
       _ => None,
     }
   }
@@ -230,9 +230,7 @@ impl PaneNode {
   pub fn find_pane_mut(&mut self, pane_id: &str) -> Option<&mut PaneNode> {
     match self {
       PaneNode::Terminal { id, .. } if id == pane_id => Some(self),
-      PaneNode::Split {
-        first, second, ..
-      } => first
+      PaneNode::Split { first, second, .. } => first
         .find_pane_mut(pane_id)
         .or_else(|| second.find_pane_mut(pane_id)),
       _ => None,
@@ -243,9 +241,7 @@ impl PaneNode {
   pub fn terminal_ids(&self) -> Vec<&str> {
     match self {
       PaneNode::Terminal { id, .. } => vec![id.as_str()],
-      PaneNode::Split {
-        first, second, ..
-      } => {
+      PaneNode::Split { first, second, .. } => {
         let mut ids = first.terminal_ids();
         ids.extend(second.terminal_ids());
         ids
@@ -257,11 +253,9 @@ impl PaneNode {
   pub fn focused_pane_id(&self) -> Option<&str> {
     match self {
       PaneNode::Terminal { id, focused, .. } if *focused => Some(id.as_str()),
-      PaneNode::Split {
-        first, second, ..
-      } => first
-        .focused_pane_id()
-        .or_else(|| second.focused_pane_id()),
+      PaneNode::Split { first, second, .. } => {
+        first.focused_pane_id().or_else(|| second.focused_pane_id())
+      }
       _ => None,
     }
   }
@@ -272,9 +266,7 @@ impl PaneNode {
       PaneNode::Terminal { id, focused, .. } => {
         *focused = id == target_id;
       }
-      PaneNode::Split {
-        first, second, ..
-      } => {
+      PaneNode::Split { first, second, .. } => {
         first.set_focus(target_id);
         second.set_focus(target_id);
       }
@@ -285,9 +277,7 @@ impl PaneNode {
   pub fn terminal_count(&self) -> usize {
     match self {
       PaneNode::Terminal { .. } => 1,
-      PaneNode::Split {
-        first, second, ..
-      } => first.terminal_count() + second.terminal_count(),
+      PaneNode::Split { first, second, .. } => first.terminal_count() + second.terminal_count(),
     }
   }
 
@@ -298,9 +288,7 @@ impl PaneNode {
         *self = replacement;
         true
       }
-      PaneNode::Split {
-        first, second, ..
-      } => {
+      PaneNode::Split { first, second, .. } => {
         first.replace_pane(target_id, replacement.clone())
           || second.replace_pane(target_id, replacement)
       }
@@ -312,9 +300,7 @@ impl PaneNode {
   /// Returns `None` if the pane wasn't found or is the only pane.
   pub fn remove_pane(&mut self, target_id: &str) -> Option<()> {
     match self {
-      PaneNode::Split {
-        first, second, ..
-      } => {
+      PaneNode::Split { first, second, .. } => {
         // Check if first child is the target terminal
         if matches!(first.as_ref(), PaneNode::Terminal { id, .. } if id == target_id) {
           *self = *second.clone();
@@ -326,7 +312,9 @@ impl PaneNode {
           return Some(());
         }
         // Recurse
-        first.remove_pane(target_id).or_else(|| second.remove_pane(target_id))
+        first
+          .remove_pane(target_id)
+          .or_else(|| second.remove_pane(target_id))
       }
       _ => None,
     }
@@ -481,9 +469,7 @@ mod tests {
       OverlayNode::ShellError {
         message: "Shell crashed".into(),
       },
-      OverlayNode::TabSwitcher {
-        selected_index: 2,
-      },
+      OverlayNode::TabSwitcher { selected_index: 2 },
     ];
 
     for overlay in &overlays {

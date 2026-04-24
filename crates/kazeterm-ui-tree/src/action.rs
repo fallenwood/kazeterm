@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::node::{SplitDirection, Position};
+use crate::node::{Position, SplitDirection};
 
 /// Every mutation to the UI tree is expressed as a `UIAction`.
 /// Actions are serializable so they can be replayed, logged, or sent via JSON API.

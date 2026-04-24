@@ -11,8 +11,8 @@ use themeing::ActiveTheme as _;
 
 use crate::{
   cursor_layout::CursorLayout,
-  mappings::colors::resolve_palette_index,
   highlighted_range_line::HighlightedRange,
+  mappings::colors::resolve_palette_index,
   minimap::{MINIMAP_WIDTH, MinimapState, paint_minimap},
   scrollbar::{MIN_THUMB_HEIGHT, SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
   terminal_input_handler::TerminalInputHandler,

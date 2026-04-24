@@ -6,7 +6,7 @@
 //! No GPUI dependency — these exercise the pure data layer.
 
 use kazeterm_ui_tree::action::UIAction;
-use kazeterm_ui_tree::diff::{diff_trees, TreeDiff};
+use kazeterm_ui_tree::diff::{TreeDiff, diff_trees};
 use kazeterm_ui_tree::node::*;
 
 /// Load a UITree from a JSON snapshot and verify its structure.
@@ -472,9 +472,7 @@ fn nested_split_operations() {
     } => {
       assert_eq!(*d1, SplitDirection::Horizontal);
       match second.as_ref() {
-        PaneNode::Split {
-          direction: d2, ..
-        } => {
+        PaneNode::Split { direction: d2, .. } => {
           assert_eq!(*d2, SplitDirection::Vertical);
         }
         _ => panic!("expected nested split"),

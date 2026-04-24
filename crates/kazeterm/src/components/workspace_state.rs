@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use gpui::{Context, Window};
+use gpui::{Context, Window, px};
 use kazeterm_ui_tree::node::{PaneNode, TabNode, UITree};
 use serde::Deserialize;
 
@@ -53,14 +53,7 @@ impl UITreeStore {
     }
     match std::fs::read_to_string(&path) {
       Ok(content) => match serde_json::from_str::<UITree>(&content) {
-        Ok(tree)
-          if tree
-            .windows
-            .first()
-            .is_some_and(|w| !w.tabs.is_empty()) =>
-        {
-          Some(tree)
-        }
+        Ok(tree) if tree.windows.first().is_some_and(|w| !w.tabs.is_empty()) => Some(tree),
         Ok(_) => None,
         Err(e) => {
           tracing::error!("Failed to parse workspace state: {e}");
@@ -99,10 +92,19 @@ impl MainWindow {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) {
+    let was_reconciling = self.reconciling_ui_tree;
+    self.reconciling_ui_tree = true;
+
     let win = match tree.windows.first() {
       Some(w) => w,
-      None => return,
+      None => {
+        self.reconciling_ui_tree = was_reconciling;
+        return;
+      }
     };
+
+    self.tab_bar_visible = win.tab_bar.visible;
+    self.search_visible = win.search.visible;
 
     for tab_node in &win.tabs {
       self.restore_tab_from_node(tab_node, window, cx);
@@ -112,57 +114,92 @@ impl MainWindow {
       if active_ix < self.items.len() {
         self.set_active_tab(active_ix, window, cx);
       }
+    } else if !self.items.is_empty() {
+      self.set_active_tab(0, window, cx);
     }
+
+    self.reconciling_ui_tree = was_reconciling;
   }
 
-  fn restore_tab_from_node(
+  pub(crate) fn load_ui_tree_from_path(
+    &mut self,
+    path: &std::path::Path,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) -> Result<(), String> {
+    let content = std::fs::read_to_string(path).map_err(|err| {
+      format!(
+        "Failed to read UI tree JSON from '{}': {err}",
+        path.display()
+      )
+    })?;
+    self.load_ui_tree_from_str(&content, window, cx)?;
+    tracing::info!("Loaded UI tree JSON from {}", path.display());
+    Ok(())
+  }
+
+  pub(crate) fn load_ui_tree_from_str(
+    &mut self,
+    json: &str,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) -> Result<(), String> {
+    let tree: UITree =
+      serde_json::from_str(json).map_err(|err| format!("Failed to parse UI tree JSON: {err}"))?;
+    if tree.windows.first().is_none_or(|win| win.tabs.is_empty()) {
+      return Err("UI tree must contain at least one window with tabs".to_string());
+    }
+
+    self.replace_with_ui_tree(&tree, window, cx);
+    Ok(())
+  }
+
+  fn replace_with_ui_tree(&mut self, tree: &UITree, window: &mut Window, cx: &mut Context<Self>) {
+    let was_reconciling = self.reconciling_ui_tree;
+    self.reconciling_ui_tree = true;
+
+    self.items.clear();
+    self.active_tab_ix = None;
+    self.search_visible = false;
+    self.tab_bar_visible = true;
+    self.scroll_tabs_to_end = false;
+    self.scroll_to_active_tab = false;
+    self.tab_switcher_visible = false;
+    self.tab_switcher = None;
+    self.tab_switcher_selection = 0;
+
+    self.restore_from_ui_tree(tree, window, cx);
+
+    self.reconciling_ui_tree = was_reconciling;
+    self.ui_tree = UITreeStore::from_tree(tree.clone());
+    self.sync_ui_tree(cx);
+  }
+
+  pub(crate) fn restore_tab_from_node(
     &mut self,
     tab: &TabNode,
     window: &mut Window,
     cx: &mut Context<Self>,
   ) {
-    let mut next_pane_id: usize = 0;
-    let (root_pane, subscriptions) = match Self::build_split_pane_from_node(
-      &tab.pane_tree,
-      &tab.shell.path,
-      &tab.shell.args,
-      &mut next_pane_id,
-      &self.tab_index,
-      window,
-      cx,
-    ) {
-      Ok(result) => result,
-      Err(err) => {
-        tracing::error!("Failed to restore tab: {err}");
-        self.show_shell_error_dialog(err, window, cx);
-        return;
-      }
-    };
-
-    let first_pane_id = Self::first_pane_id(&root_pane);
-    let split_container =
-      SplitContainer::from_restored_root(root_pane, first_pane_id, next_pane_id);
+    let (split_container, first_sub) =
+      match Self::build_split_container_from_tab_node(tab, &self.tab_index, window, cx) {
+        Ok(result) => result,
+        Err(err) => {
+          tracing::error!("Failed to restore tab: {err}");
+          self.show_shell_error_dialog(err, window, cx);
+          return;
+        }
+      };
 
     let index = self.tab_index.fetch_add(1, Ordering::SeqCst);
-
-    let shell_name = std::path::Path::new(&tab.shell.path)
-      .file_stem()
-      .and_then(|n| n.to_str())
-      .unwrap_or(&tab.shell.path)
-      .to_lowercase();
-
+    let shell_name = Self::shell_name_for_tab(tab);
     let title = tab
       .custom_title
       .clone()
       .unwrap_or_else(|| shell_name.clone());
 
-    let mut sub_iter = subscriptions.into_iter();
-    let first_sub = sub_iter.next().expect("at least one terminal in tab");
-    for sub in sub_iter {
-      std::mem::forget(sub);
-    }
-
     let item = TabItem {
+      ui_tree_id: tab.id.clone(),
       index,
       title,
       custom_title: tab.custom_title.clone(),
@@ -171,12 +208,111 @@ impl MainWindow {
       _shell_name: shell_name,
       split_container,
       _subscription: first_sub,
-      search_bar_state: SearchBarState::default(),
+      search_bar_state: Self::search_bar_state_from_node(&tab.search),
     };
     self.items.push(item);
 
     let new_ix = self.items.len() - 1;
     self.set_active_tab(new_ix, window, cx);
+  }
+
+  pub(crate) fn rebuild_tab_from_node(
+    &mut self,
+    tab_id: &str,
+    tab: &TabNode,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) -> Result<(), String> {
+    let (split_container, first_sub) =
+      Self::build_split_container_from_tab_node(tab, &self.tab_index, window, cx)?;
+    let Some(ix) = self.items.iter().position(|item| item.ui_tree_id == tab_id) else {
+      return Err(format!("Tab '{tab_id}' not found"));
+    };
+
+    let was_active = self.active_tab_ix == Some(ix);
+    let shell_name = Self::shell_name_for_tab(tab);
+    let title = tab
+      .custom_title
+      .clone()
+      .unwrap_or_else(|| self.items[ix].title.clone());
+
+    {
+      let item = &mut self.items[ix];
+      item.ui_tree_id = tab.id.clone();
+      item.title = title;
+      item.custom_title = tab.custom_title.clone();
+      item.shell_path = tab.shell.path.clone();
+      item.shell_args = tab.shell.args.clone();
+      item._shell_name = shell_name;
+      item.split_container = split_container;
+      item._subscription = first_sub;
+      item.search_bar_state = Self::search_bar_state_from_node(&tab.search);
+    }
+
+    if was_active {
+      self.active_tab_ix = None;
+      self.set_active_tab(ix, window, cx);
+    } else {
+      cx.notify();
+    }
+
+    Ok(())
+  }
+
+  fn shell_name_for_tab(tab: &TabNode) -> String {
+    std::path::Path::new(&tab.shell.path)
+      .file_stem()
+      .and_then(|n| n.to_str())
+      .unwrap_or(&tab.shell.path)
+      .to_lowercase()
+  }
+
+  fn search_bar_state_from_node(search: &kazeterm_ui_tree::node::SearchState) -> SearchBarState {
+    SearchBarState {
+      query: search.query.clone().into(),
+      match_case: search.match_case,
+      match_whole: search.match_whole,
+      use_regex: search.use_regex,
+      visible: search.visible,
+      position: gpui::Point::new(px(search.position.x), px(search.position.y)),
+    }
+  }
+
+  fn build_split_container_from_tab_node(
+    tab: &TabNode,
+    tab_index_counter: &std::sync::atomic::AtomicUsize,
+    window: &mut Window,
+    cx: &mut Context<MainWindow>,
+  ) -> Result<(SplitContainer, gpui::Subscription), String> {
+    let mut next_pane_id: usize = 0;
+    let (root_pane, subscriptions) = Self::build_split_pane_from_node(
+      &tab.pane_tree,
+      &tab.shell.path,
+      &tab.shell.args,
+      &mut next_pane_id,
+      tab_index_counter,
+      window,
+      cx,
+    )?;
+    let active_pane_id =
+      Self::active_pane_id_from_node(&tab.pane_tree).or_else(|| Self::first_pane_id(&root_pane));
+    let split_container =
+      SplitContainer::from_restored_root(root_pane, active_pane_id, next_pane_id);
+    let first_sub = Self::take_primary_subscription(subscriptions)?;
+    Ok((split_container, first_sub))
+  }
+
+  fn take_primary_subscription(
+    subscriptions: Vec<gpui::Subscription>,
+  ) -> Result<gpui::Subscription, String> {
+    let mut sub_iter = subscriptions.into_iter();
+    let first_sub = sub_iter
+      .next()
+      .ok_or_else(|| "expected at least one terminal subscription".to_string())?;
+    for sub in sub_iter {
+      std::mem::forget(sub);
+    }
+    Ok(first_sub)
   }
 
   fn build_split_pane_from_node(
@@ -190,7 +326,9 @@ impl MainWindow {
   ) -> Result<(SplitPane, Vec<gpui::Subscription>), String> {
     match pane {
       PaneNode::Terminal {
-        working_directory, ..
+        id,
+        working_directory,
+        ..
       } => {
         let index = tab_index_counter.fetch_add(1, Ordering::SeqCst);
         let wd = get_working_directory_pathbuf(working_directory.clone());
@@ -203,8 +341,8 @@ impl MainWindow {
           cx,
         )?;
         let sub = cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event);
-        let pane_id = PaneId(*next_pane_id);
-        *next_pane_id += 1;
+        let pane_id = Self::parse_pane_id(id).unwrap_or(PaneId(*next_pane_id));
+        *next_pane_id = (*next_pane_id).max(pane_id.0 + 1);
         Ok((SplitPane::new_terminal(pane_id, terminal), vec![sub]))
       }
       PaneNode::Split {
@@ -252,6 +390,17 @@ impl MainWindow {
       SplitPane::Terminal { id, .. } => Some(*id),
       SplitPane::Split { first, .. } => Self::first_pane_id(first),
     }
+  }
+
+  fn active_pane_id_from_node(pane: &PaneNode) -> Option<PaneId> {
+    pane.focused_pane_id().and_then(Self::parse_pane_id)
+  }
+
+  fn parse_pane_id(pane_id: &str) -> Option<PaneId> {
+    pane_id
+      .strip_prefix("pane-")
+      .and_then(|id| id.parse::<usize>().ok())
+      .map(PaneId)
   }
 }
 
@@ -372,9 +521,7 @@ fn convert_legacy_pane_tree(pane: &LegacyPaneTreeState, tree: &mut UITree) -> Pa
       ratio,
     } => PaneNode::Split {
       direction: match direction {
-        LegacySplitDirectionState::Horizontal => {
-          kazeterm_ui_tree::node::SplitDirection::Horizontal
-        }
+        LegacySplitDirectionState::Horizontal => kazeterm_ui_tree::node::SplitDirection::Horizontal,
         LegacySplitDirectionState::Vertical => kazeterm_ui_tree::node::SplitDirection::Vertical,
       },
       ratio: *ratio,
@@ -448,10 +595,7 @@ mod tests {
       PaneNode::Terminal {
         working_directory, ..
       } => {
-        assert_eq!(
-          working_directory.as_deref(),
-          Some("/home/user")
-        );
+        assert_eq!(working_directory.as_deref(), Some("/home/user"));
       }
       _ => panic!("expected terminal pane"),
     }

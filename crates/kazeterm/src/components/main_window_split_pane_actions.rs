@@ -1,4 +1,5 @@
 use gpui::{Context, Window};
+use kazeterm_ui_tree::action::UIAction;
 
 use super::main_window::MainWindow;
 use super::main_window_tab_management::get_working_directory_pathbuf;
@@ -19,11 +20,80 @@ impl MainWindow {
     }
   }
 
+  fn active_ui_tree_tab_and_pane_ids(&self) -> Option<(String, String)> {
+    let item = self.active_tab_ix.and_then(|ix| self.items.get(ix))?;
+    let pane_id = item
+      .split_container
+      .active_pane_id
+      .map(|pane_id| format!("pane-{}", pane_id.0))?;
+    Some((item.ui_tree_id.clone(), pane_id))
+  }
+
   pub fn split_pane_horizontal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
+      self.sync_active_pane_from_focus(window, cx);
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      let Some((tab_id, pane_id)) = self.active_ui_tree_tab_and_pane_ids() else {
+        return;
+      };
+      let working_directory = self.active_terminal_working_directory(cx);
+      let (shell_path, shell_args) = self
+        .active_tab_item_mut()
+        .map(|item| (item.shell_path.clone(), item.shell_args.clone()))
+        .unwrap_or_else(|| (cx.global::<::config::Config>().get_shell().clone(), vec![]));
+      self.dispatch_default_ui_action(
+        UIAction::SplitPane {
+          window_id,
+          tab_id,
+          pane_id,
+          direction: kazeterm_ui_tree::node::SplitDirection::Horizontal,
+          shell_path,
+          shell_args,
+          working_directory,
+        },
+        "split pane horizontally",
+        window,
+        cx,
+      );
+      return;
+    }
+
     self.split_pane(SplitDirection::Horizontal, window, cx);
   }
 
   pub fn split_pane_vertical(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
+      self.sync_active_pane_from_focus(window, cx);
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      let Some((tab_id, pane_id)) = self.active_ui_tree_tab_and_pane_ids() else {
+        return;
+      };
+      let working_directory = self.active_terminal_working_directory(cx);
+      let (shell_path, shell_args) = self
+        .active_tab_item_mut()
+        .map(|item| (item.shell_path.clone(), item.shell_args.clone()))
+        .unwrap_or_else(|| (cx.global::<::config::Config>().get_shell().clone(), vec![]));
+      self.dispatch_default_ui_action(
+        UIAction::SplitPane {
+          window_id,
+          tab_id,
+          pane_id,
+          direction: kazeterm_ui_tree::node::SplitDirection::Vertical,
+          shell_path,
+          shell_args,
+          working_directory,
+        },
+        "split pane vertically",
+        window,
+        cx,
+      );
+      return;
+    }
+
     self.split_pane(SplitDirection::Vertical, window, cx);
   }
 
@@ -85,6 +155,34 @@ impl MainWindow {
   }
 
   pub fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
+      if self
+        .active_tab_ix
+        .and_then(|ix| self.items.get(ix))
+        .is_some_and(|item| item.split_container.root.count_panes() <= 1)
+      {
+        return;
+      }
+      self.sync_active_pane_from_focus(window, cx);
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      let Some((tab_id, pane_id)) = self.active_ui_tree_tab_and_pane_ids() else {
+        return;
+      };
+      self.dispatch_default_ui_action(
+        UIAction::ClosePane {
+          window_id,
+          tab_id,
+          pane_id,
+        },
+        "close pane",
+        window,
+        cx,
+      );
+      return;
+    }
+
     self.sync_active_pane_from_focus(window, cx);
 
     let pane_closed = self
@@ -136,6 +234,23 @@ impl MainWindow {
   }
 
   pub fn focus_next_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
+      self.sync_active_pane_from_focus(window, cx);
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      let Some((tab_id, _)) = self.active_ui_tree_tab_and_pane_ids() else {
+        return;
+      };
+      self.dispatch_default_ui_action(
+        UIAction::FocusNextPane { window_id, tab_id },
+        "focus next pane",
+        window,
+        cx,
+      );
+      return;
+    }
+
     self.sync_active_pane_from_focus(window, cx);
 
     if let Some(item) = self.active_tab_item_mut() {
@@ -147,6 +262,23 @@ impl MainWindow {
   }
 
   pub fn focus_prev_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
+      self.sync_active_pane_from_focus(window, cx);
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      let Some((tab_id, _)) = self.active_ui_tree_tab_and_pane_ids() else {
+        return;
+      };
+      self.dispatch_default_ui_action(
+        UIAction::FocusPreviousPane { window_id, tab_id },
+        "focus previous pane",
+        window,
+        cx,
+      );
+      return;
+    }
+
     self.sync_active_pane_from_focus(window, cx);
 
     if let Some(item) = self.active_tab_item_mut() {
@@ -190,6 +322,23 @@ impl MainWindow {
   }
 
   pub fn swap_split_panes(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
+      self.sync_active_pane_from_focus(_window, cx);
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      let Some((tab_id, _)) = self.active_ui_tree_tab_and_pane_ids() else {
+        return;
+      };
+      self.dispatch_default_ui_action(
+        UIAction::SwapPanes { window_id, tab_id },
+        "swap panes",
+        _window,
+        cx,
+      );
+      return;
+    }
+
     self.sync_active_pane_from_focus(_window, cx);
 
     if let Some(item) = self.active_tab_item_mut() {

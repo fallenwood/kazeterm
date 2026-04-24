@@ -106,9 +106,7 @@ impl From<JsonEvent> for AppEvent {
       JsonEvent::Quit => AppEvent::Quit,
       JsonEvent::SendTextToTerminal { text } => AppEvent::SendTextToTerminal { text },
       JsonEvent::Custom { name, data } => AppEvent::Custom { name, data },
-      JsonEvent::DispatchUIAction { action_json } => {
-        AppEvent::DispatchUIAction { action_json }
-      }
+      JsonEvent::DispatchUIAction { action_json } => AppEvent::DispatchUIAction { action_json },
       JsonEvent::SnapshotUITree => AppEvent::SnapshotUITree,
     }
   }

@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 
-use crate::action::{UIAction, SplitChild};
+use crate::action::{SplitChild, UIAction};
 use crate::node::*;
 
 impl UITree {
@@ -327,9 +327,7 @@ impl UITree {
         let mut node = &mut tab.pane_tree;
         for step in &split_path {
           match node {
-            PaneNode::Split {
-              first, second, ..
-            } => {
+            PaneNode::Split { first, second, .. } => {
               node = match step {
                 SplitChild::First => first.as_mut(),
                 SplitChild::Second => second.as_mut(),
@@ -339,9 +337,7 @@ impl UITree {
           }
         }
         match node {
-          PaneNode::Split {
-            ratio: r, ..
-          } => {
+          PaneNode::Split { ratio: r, .. } => {
             *r = ratio;
             Ok(())
           }
@@ -349,10 +345,7 @@ impl UITree {
         }
       }
 
-      UIAction::SwapPanes {
-        window_id,
-        tab_id,
-      } => {
+      UIAction::SwapPanes { window_id, tab_id } => {
         let win = self
           .window_mut(&window_id)
           .ok_or_else(|| anyhow::anyhow!("Window '{}' not found", window_id))?;
@@ -363,10 +356,7 @@ impl UITree {
         Ok(())
       }
 
-      UIAction::FocusNextPane {
-        window_id,
-        tab_id,
-      } => {
+      UIAction::FocusNextPane { window_id, tab_id } => {
         let win = self
           .window_mut(&window_id)
           .ok_or_else(|| anyhow::anyhow!("Window '{}' not found", window_id))?;
@@ -377,10 +367,7 @@ impl UITree {
         Ok(())
       }
 
-      UIAction::FocusPreviousPane {
-        window_id,
-        tab_id,
-      } => {
+      UIAction::FocusPreviousPane { window_id, tab_id } => {
         let win = self
           .window_mut(&window_id)
           .ok_or_else(|| anyhow::anyhow!("Window '{}' not found", window_id))?;
@@ -404,10 +391,7 @@ impl UITree {
         let (_, tab) = win
           .tab_mut(&tab_id)
           .ok_or_else(|| anyhow::anyhow!("Tab '{}' not found", tab_id))?;
-        if let Some(PaneNode::Terminal {
-          title: t, ..
-        }) = tab.pane_tree.find_pane_mut(&pane_id)
-        {
+        if let Some(PaneNode::Terminal { title: t, .. }) = tab.pane_tree.find_pane_mut(&pane_id) {
           *t = title;
         }
         Ok(())
@@ -505,10 +489,7 @@ impl UITree {
       }
 
       // ── Overlays ──
-      UIAction::ShowOverlay {
-        window_id,
-        overlay,
-      } => {
+      UIAction::ShowOverlay { window_id, overlay } => {
         let win = self
           .window_mut(&window_id)
           .ok_or_else(|| anyhow::anyhow!("Window '{}' not found", window_id))?;
@@ -538,10 +519,7 @@ impl UITree {
 
 /// Swap the children of the innermost split that contains the focused pane.
 fn swap_innermost_split(node: &mut PaneNode) {
-  if let PaneNode::Split {
-    first, second, ..
-  } = node
-  {
+  if let PaneNode::Split { first, second, .. } = node {
     let first_has_focus = first.focused_pane_id().is_some();
     let second_has_focus = second.focused_pane_id().is_some();
 
@@ -604,11 +582,12 @@ mod tests {
 
   fn setup_tree_with_window() -> (UITree, String) {
     let mut tree = UITree::new();
-    tree.apply(UIAction::AddWindow {
-      width: None,
-      height: None,
-    })
-    .unwrap();
+    tree
+      .apply(UIAction::AddWindow {
+        width: None,
+        height: None,
+      })
+      .unwrap();
     let win_id = tree.windows[0].id.clone();
     (tree, win_id)
   }
@@ -628,9 +607,7 @@ mod tests {
 
     let win_id = tree.windows[0].id.clone();
     tree
-      .apply(UIAction::CloseWindow {
-        window_id: win_id,
-      })
+      .apply(UIAction::CloseWindow { window_id: win_id })
       .unwrap();
     assert!(tree.windows.is_empty());
   }
@@ -741,11 +718,7 @@ mod tests {
     assert_eq!(tab.pane_tree.terminal_count(), 2);
 
     // New pane should be focused
-    let new_pane_id = tab
-      .pane_tree
-      .focused_pane_id()
-      .unwrap()
-      .to_string();
+    let new_pane_id = tab.pane_tree.focused_pane_id().unwrap().to_string();
     assert_ne!(new_pane_id, pane_id);
 
     // Close the new pane
@@ -889,7 +862,9 @@ mod tests {
       .unwrap();
 
     assert_eq!(
-      tree.window(&win_id).unwrap().tabs[0].custom_title.as_deref(),
+      tree.window(&win_id).unwrap().tabs[0]
+        .custom_title
+        .as_deref(),
       Some("Build Server")
     );
 
@@ -940,12 +915,10 @@ mod tests {
 
   #[test]
   fn test_action_replay_determinism() {
-    let actions = vec![
-      UIAction::AddWindow {
-        width: Some(800.0),
-        height: Some(600.0),
-      },
-    ];
+    let actions = vec![UIAction::AddWindow {
+      width: Some(800.0),
+      height: Some(600.0),
+    }];
 
     // We need the window ID, so apply first action to get it.
     let mut tree1 = UITree::new();

@@ -320,12 +320,9 @@ mod tests {
     let received_clone = received.clone();
     cx.update(|cx| {
       let bar = window.root(cx).unwrap();
-      cx.subscribe(
-        &bar,
-        move |_, _event: &SearchBarCloseEvent, _cx| {
-          *received_clone.borrow_mut() += 1;
-        },
-      )
+      cx.subscribe(&bar, move |_, _event: &SearchBarCloseEvent, _cx| {
+        *received_clone.borrow_mut() += 1;
+      })
       .detach();
     });
 
@@ -375,7 +372,9 @@ mod tests {
     cx.run_until_parked();
 
     let (q, mc, re) = window2
-      .update(cx, |bar, _, _| (bar.query.clone(), bar.match_case, bar.use_regex))
+      .update(cx, |bar, _, _| {
+        (bar.query.clone(), bar.match_case, bar.use_regex)
+      })
       .unwrap();
     assert_eq!(q.as_ref(), "needle");
     assert!(mc);

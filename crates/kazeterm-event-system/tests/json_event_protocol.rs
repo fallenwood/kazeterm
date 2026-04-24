@@ -23,10 +23,7 @@ fn simple_events_parse_and_convert() {
     AppEvent::from(parse(r#"{"event":"ToggleSearch"}"#)),
     AppEvent::ToggleSearch
   );
-  assert_eq!(
-    AppEvent::from(parse(r#"{"event":"Quit"}"#)),
-    AppEvent::Quit
-  );
+  assert_eq!(AppEvent::from(parse(r#"{"event":"Quit"}"#)), AppEvent::Quit);
 }
 
 #[test]

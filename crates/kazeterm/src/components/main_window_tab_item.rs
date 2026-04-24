@@ -3,6 +3,7 @@ use crate::components::split_pane::SplitContainer;
 
 /// A single tab containing a terminal or split container
 pub struct TabItem {
+  pub(crate) ui_tree_id: String,
   pub(crate) index: usize,
   pub(crate) title: String,
   /// Custom title set by the user. When Some, auto-title updates are ignored.

@@ -1,4 +1,5 @@
 use gpui::{Context, Entity, Window};
+use kazeterm_ui_tree::action::UIAction;
 
 use super::main_window::MainWindow;
 use crate::components::search_bar::{SearchBar, SearchBarCloseEvent};
@@ -15,6 +16,19 @@ impl MainWindow {
   }
 
   pub(crate) fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree {
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      self.dispatch_default_ui_action(
+        UIAction::ToggleSearch { window_id },
+        "toggle search",
+        window,
+        cx,
+      );
+      return;
+    }
+
     self.search_visible = !self.search_visible;
     if self.search_visible {
       let font_size = cx.global::<::config::Config>().font.size;
@@ -56,7 +70,20 @@ impl MainWindow {
     cx.notify();
   }
 
-  pub(crate) fn toggle_tab_bar(&mut self, cx: &mut Context<Self>) {
+  pub(crate) fn toggle_tab_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree {
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      self.dispatch_default_ui_action(
+        UIAction::ToggleTabBar { window_id },
+        "toggle tab bar",
+        window,
+        cx,
+      );
+      return;
+    }
+
     self.tab_bar_visible = !self.tab_bar_visible;
     cx.notify();
   }

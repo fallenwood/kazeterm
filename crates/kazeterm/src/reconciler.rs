@@ -4,9 +4,9 @@
 //! 1. **apply_action**: mutates the tree and returns diffs
 //! 2. **reconcile**: translates diffs into `MainWindow` method calls
 //!
-//! This module does NOT replace the existing `MainWindow` methods — it wraps
-//! them, providing an alternative entry point for mutations that flow through
-//! the serializable tree first.
+//! The existing `MainWindow` methods remain the concrete GPUI mutation layer,
+//! but the default high-level mutation path now flows through the serializable
+//! tree first and reconciles back into those methods.
 
 use kazeterm_ui_tree::action::UIAction;
 use kazeterm_ui_tree::diff::{self, Reconciler, TreeDiff};
@@ -14,8 +14,7 @@ use kazeterm_ui_tree::node::*;
 
 use gpui::{Context, Window};
 
-use crate::components::MainWindow;
-use crate::components::SplitDirection;
+use crate::components::{MainWindow, PaneId, SplitDirection};
 
 /// Holds the canonical `UITree` alongside a `MainWindow` entity.
 /// All UI mutations should flow through this struct.
@@ -33,6 +32,11 @@ impl UITreeStore {
     }
   }
 
+  pub fn from_tree(tree: UITree) -> Self {
+    let window_id = tree.windows.first().map(|window| window.id.clone());
+    Self { tree, window_id }
+  }
+
   /// Get a reference to the current tree (for serialization/snapshot).
   pub fn tree(&self) -> &UITree {
     &self.tree
@@ -41,6 +45,7 @@ impl UITreeStore {
   /// Load the tree from a JSON string, replacing the current state.
   pub fn load_json(&mut self, json: &str) -> Result<(), serde_json::Error> {
     self.tree = serde_json::from_str(json)?;
+    self.window_id = self.tree.windows.first().map(|window| window.id.clone());
     Ok(())
   }
 
@@ -59,6 +64,10 @@ impl UITreeStore {
     self.window_id.as_deref()
   }
 
+  pub fn alloc_id(&mut self, prefix: &str) -> String {
+    self.tree.next_id(prefix)
+  }
+
   /// Apply an action to the tree and return the diffs produced.
   /// Does NOT apply diffs to GPUI — call `reconcile()` separately.
   pub fn apply_action(&mut self, action: UIAction) -> Result<Vec<TreeDiff>, anyhow::Error> {
@@ -74,7 +83,11 @@ impl UITreeStore {
     main_window: &MainWindow,
     cx: &mut Context<MainWindow>,
   ) {
-    let win_id = self.tree.next_id("win");
+    let win_id = self
+      .window_id
+      .clone()
+      .or_else(|| self.tree.windows.first().map(|window| window.id.clone()))
+      .unwrap_or_else(|| self.tree.next_id("win"));
     self.window_id = Some(win_id.clone());
 
     let config = cx.global::<::config::Config>();
@@ -84,11 +97,22 @@ impl UITreeStore {
     let config_key_debug = config.window.key_debug_mode;
 
     let mut tabs = Vec::with_capacity(main_window.items.len());
-    for item in &main_window.items {
-      let pane_tree = capture_split_pane(&item.split_container.root, cx);
-      let tab_id = self.tree.next_id("tab");
+    for (ix, item) in main_window.items.iter().enumerate() {
+      let search_state = if main_window.active_tab_ix == Some(ix) {
+        main_window
+          .search_bar
+          .read(cx)
+          .save_state(main_window.search_visible, cx)
+      } else {
+        item.search_bar_state.clone()
+      };
+      let pane_tree = capture_split_pane(
+        &item.split_container.root,
+        item.split_container.active_pane_id,
+        cx,
+      );
       tabs.push(TabNode {
-        id: tab_id,
+        id: item.ui_tree_id.clone(),
         custom_title: item.custom_title.clone(),
         shell: ShellConfig {
           path: item.shell_path.clone(),
@@ -97,11 +121,11 @@ impl UITreeStore {
         },
         pane_tree,
         search: SearchState {
-          visible: item.search_bar_state.visible,
-          query: item.search_bar_state.query.to_string(),
-          match_case: item.search_bar_state.match_case,
-          match_whole: item.search_bar_state.match_whole,
-          use_regex: item.search_bar_state.use_regex,
+          visible: search_state.visible,
+          query: search_state.query.to_string(),
+          match_case: search_state.match_case,
+          match_whole: search_state.match_whole,
+          use_regex: search_state.use_regex,
           position: Position::default(),
         },
       });
@@ -136,6 +160,7 @@ impl UITreeStore {
   /// Apply tree diffs to the live `MainWindow`.
   /// This is the core reconciliation step.
   pub fn reconcile(
+    &self,
     diffs: &[TreeDiff],
     main_window: &mut MainWindow,
     window: &mut Window,
@@ -143,40 +168,22 @@ impl UITreeStore {
   ) {
     for d in diffs {
       match d {
-        TreeDiff::TabAdded {
-          tab,
-          ..
-        } => {
-          main_window.insert_new_tab_with_profile(
-            tab.shell.profile.as_deref(),
-            find_pane_working_directory(&tab.pane_tree).map(|s| s.to_string()),
-            window,
-            cx,
-          );
-          // If tab has a custom title, apply it
-          if let Some(title) = &tab.custom_title {
-            if let Some(item) = main_window.items.last_mut() {
-              item.custom_title = Some(title.clone());
-            }
-          }
+        TreeDiff::TabAdded { tab, .. } => {
+          main_window.restore_tab_from_node(tab, window, cx);
         }
 
-        TreeDiff::TabRemoved {
-          tab_id, ..
-        } => {
-          if let Some(item) = main_window.items.iter().find(|i| {
-            // Match by tab position in items list
-            // (tree tab IDs don't directly map to MainWindow indices yet)
-            i.custom_title.as_deref() == Some(tab_id.as_str())
-          }) {
+        TreeDiff::TabRemoved { tab_id, .. } => {
+          if let Some(item) = main_window
+            .items
+            .iter()
+            .find(|item| item.ui_tree_id == *tab_id)
+          {
             let index = item.index;
             main_window.remove_tab_by(index, window, cx);
           }
         }
 
-        TreeDiff::ActiveTabChanged {
-          active_tab, ..
-        } => {
+        TreeDiff::ActiveTabChanged { active_tab, .. } => {
           if let Some(ix) = active_tab {
             if *ix < main_window.items.len() {
               main_window.set_active_tab(*ix, window, cx);
@@ -185,30 +192,61 @@ impl UITreeStore {
         }
 
         TreeDiff::TabRenamed {
-          custom_title, ..
+          tab_id,
+          custom_title,
+          ..
         } => {
-          if let Some(ix) = main_window.active_tab_ix {
-            if let Some(item) = main_window.items.get_mut(ix) {
-              item.custom_title = custom_title.clone();
-            }
+          if let Some(item) = main_window
+            .items
+            .iter_mut()
+            .find(|item| item.ui_tree_id == *tab_id)
+          {
+            item.custom_title = custom_title.clone();
           }
           cx.notify();
         }
 
-        TreeDiff::PaneTreeChanged { .. } => {
-          // Full pane tree rebuild — complex, will be implemented
-          // when we do full integration. For now, incremental ops
-          // (split/close/focus) handle common cases.
-          cx.notify();
-        }
-
-        TreeDiff::PaneFocusChanged { .. } => {
-          main_window.focus_active_terminal(window, cx);
-        }
-
-        TreeDiff::SearchVisibilityChanged {
-          visible, ..
+        TreeDiff::PaneTreeChanged {
+          window_id, tab_id, ..
         } => {
+          if let Some((_, tab)) = self
+            .tree
+            .window(window_id)
+            .and_then(|window| window.tab(tab_id))
+            && let Err(err) = main_window.rebuild_tab_from_node(tab_id, tab, window, cx)
+          {
+            tracing::error!("Failed to rebuild tab '{tab_id}' from UITree: {err}");
+          }
+        }
+
+        TreeDiff::PaneFocusChanged {
+          tab_id, pane_id, ..
+        } => {
+          if let Some(tab_ix) = main_window
+            .items
+            .iter()
+            .position(|item| item.ui_tree_id == *tab_id)
+          {
+            if main_window.active_tab_ix != Some(tab_ix) {
+              main_window.set_active_tab(tab_ix, window, cx);
+            }
+
+            if let Some(target_pane_id) = pane_id.as_deref().and_then(parse_pane_id) {
+              if let Some(item) = main_window.items.get_mut(tab_ix) {
+                item.split_container.set_active_pane(target_pane_id);
+                if let Some(terminal) = item.split_container.get_active_terminal() {
+                  MainWindow::focus_terminal(window, &terminal, cx);
+                }
+              }
+            } else {
+              main_window.focus_active_terminal(window, cx);
+            }
+
+            cx.notify();
+          }
+        }
+
+        TreeDiff::SearchVisibilityChanged { visible, .. } => {
           if *visible != main_window.search_visible {
             main_window.toggle_search(window, cx);
           }
@@ -222,17 +260,13 @@ impl UITreeStore {
           // Search flags are managed by SearchBar entity directly
         }
 
-        TreeDiff::TabBarVisibilityChanged {
-          visible, ..
-        } => {
+        TreeDiff::TabBarVisibilityChanged { visible, .. } => {
           if *visible != main_window.tab_bar_visible {
-            main_window.toggle_tab_bar(cx);
+            main_window.toggle_tab_bar(window, cx);
           }
         }
 
-        TreeDiff::OverlayChanged {
-          overlay, ..
-        } => {
+        TreeDiff::OverlayChanged { overlay, .. } => {
           reconcile_overlay(overlay, main_window, window, cx);
         }
 
@@ -245,10 +279,44 @@ impl UITreeStore {
         | TreeDiff::WindowRemoved { .. }
         | TreeDiff::WindowResized { .. }
         | TreeDiff::WindowMaximizedChanged { .. }
-        | TreeDiff::TabMoved { .. }
         | TreeDiff::TabBarVerticalChanged { .. }
         | TreeDiff::PaneTitleChanged { .. }
         | TreeDiff::PaneWorkingDirectoryChanged { .. } => {}
+
+        TreeDiff::TabMoved {
+          tab_id,
+          old_index,
+          new_index,
+          ..
+        } => {
+          if let Some(current_ix) = main_window
+            .items
+            .iter()
+            .position(|item| item.ui_tree_id == *tab_id)
+          {
+            let new_index = (*new_index).min(main_window.items.len().saturating_sub(1));
+            if current_ix != new_index {
+              let item = main_window.items.remove(current_ix);
+              main_window.items.insert(new_index, item);
+
+              if let Some(active_ix) = main_window.active_tab_ix {
+                main_window.active_tab_ix = Some(if active_ix == current_ix {
+                  new_index
+                } else if current_ix < active_ix && active_ix <= new_index {
+                  active_ix - 1
+                } else if new_index <= active_ix && active_ix < current_ix {
+                  active_ix + 1
+                } else {
+                  active_ix
+                });
+              }
+            }
+
+            if *old_index != new_index {
+              cx.notify();
+            }
+          }
+        }
       }
     }
   }
@@ -262,7 +330,10 @@ impl UITreeStore {
     cx: &mut Context<MainWindow>,
   ) -> Result<(), anyhow::Error> {
     let diffs = self.apply_action(action)?;
-    Self::reconcile(&diffs, main_window, window, cx);
+    let was_reconciling = main_window.reconciling_ui_tree;
+    main_window.reconciling_ui_tree = true;
+    self.reconcile(&diffs, main_window, window, cx);
+    main_window.reconciling_ui_tree = was_reconciling;
     Ok(())
   }
 }
@@ -278,6 +349,7 @@ impl Reconciler for UITreeStore {
 
 fn capture_split_pane(
   pane: &crate::components::SplitPane,
+  active_pane_id: Option<PaneId>,
   cx: &mut Context<MainWindow>,
 ) -> PaneNode {
   match pane {
@@ -289,7 +361,7 @@ fn capture_split_pane(
         id: format!("pane-{}", id.0),
         working_directory: cwd,
         title,
-        focused: false, // Will be set by caller based on active_pane_id
+        focused: Some(*id) == active_pane_id,
       }
     }
     crate::components::SplitPane::Split {
@@ -303,8 +375,8 @@ fn capture_split_pane(
         SplitDirection::Vertical => kazeterm_ui_tree::node::SplitDirection::Vertical,
       },
       ratio: *ratio,
-      first: Box::new(capture_split_pane(first, cx)),
-      second: Box::new(capture_split_pane(second, cx)),
+      first: Box::new(capture_split_pane(first, active_pane_id, cx)),
+      second: Box::new(capture_split_pane(second, active_pane_id, cx)),
     },
   }
 }
@@ -385,17 +457,11 @@ fn reconcile_overlay(
   }
 }
 
-// ── PaneNode helper ──
-
-/// Find the first working directory in a pane tree.
-fn find_pane_working_directory(pane: &PaneNode) -> Option<&str> {
-  match pane {
-    PaneNode::Terminal {
-      working_directory, ..
-    } => working_directory.as_deref(),
-    PaneNode::Split { first, second, .. } => find_pane_working_directory(first)
-      .or_else(|| find_pane_working_directory(second)),
-  }
+fn parse_pane_id(pane_id: &str) -> Option<PaneId> {
+  pane_id
+    .strip_prefix("pane-")
+    .and_then(|id| id.parse::<usize>().ok())
+    .map(PaneId)
 }
 
 #[cfg(test)]
@@ -439,9 +505,11 @@ mod tests {
       })
       .unwrap();
     assert!(!diffs.is_empty());
-    assert!(diffs
-      .iter()
-      .any(|d| matches!(d, TreeDiff::WindowAdded { .. })));
+    assert!(
+      diffs
+        .iter()
+        .any(|d| matches!(d, TreeDiff::WindowAdded { .. }))
+    );
 
     let win_id = store.tree().windows[0].id.clone();
     let diffs = store
@@ -453,9 +521,7 @@ mod tests {
         working_directory: None,
       })
       .unwrap();
-    assert!(diffs
-      .iter()
-      .any(|d| matches!(d, TreeDiff::TabAdded { .. })));
+    assert!(diffs.iter().any(|d| matches!(d, TreeDiff::TabAdded { .. })));
   }
 
   #[test]

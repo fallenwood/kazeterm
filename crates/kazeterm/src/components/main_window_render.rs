@@ -860,7 +860,7 @@ impl Render for MainWindow {
           .toggle_tab_bar
           .matches(mods.control, mods.shift, mods.alt, mods.platform, key)
         {
-          this.toggle_tab_bar(cx);
+          this.toggle_tab_bar(window, cx);
           true
         } else if keybindings
           .new_tab
@@ -1195,8 +1195,8 @@ impl Render for MainWindow {
                       .on_mouse_down(MouseButton::Left, |_, _, cx| {
                         cx.stop_propagation();
                       })
-                      .on_click(cx.listener(|this, _e, _window, cx| {
-                        this.toggle_tab_bar(cx);
+                      .on_click(cx.listener(|this, _e, window, cx| {
+                        this.toggle_tab_bar(window, cx);
                       })),
                   )
                   .child(

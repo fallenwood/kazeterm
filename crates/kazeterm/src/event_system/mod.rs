@@ -119,7 +119,7 @@ pub fn build_default_event_bus(source_config: EventSourceConfig) -> EventBus<Mai
   });
 
   bus.subscribe("ToggleTabBar", |mw, _event, _window, cx| {
-    mw.toggle_tab_bar(cx);
+    mw.toggle_tab_bar(_window, cx);
   });
 
   bus.subscribe("ShowAboutDialog", |mw, _event, window, cx| {

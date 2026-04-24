@@ -227,12 +227,7 @@ fn diff_windows(old: &WindowNode, new: &WindowNode, diffs: &mut Vec<TreeDiff>) {
   diff_tabs(win_id, &old.tabs, &new.tabs, diffs);
 }
 
-fn diff_tabs(
-  win_id: &str,
-  old_tabs: &[TabNode],
-  new_tabs: &[TabNode],
-  diffs: &mut Vec<TreeDiff>,
-) {
+fn diff_tabs(win_id: &str, old_tabs: &[TabNode], new_tabs: &[TabNode], diffs: &mut Vec<TreeDiff>) {
   // Removed tabs
   for old_tab in old_tabs {
     if !new_tabs.iter().any(|t| t.id == old_tab.id) {
@@ -245,7 +240,11 @@ fn diff_tabs(
 
   // Added or changed tabs
   for (new_ix, new_tab) in new_tabs.iter().enumerate() {
-    match old_tabs.iter().enumerate().find(|(_, t)| t.id == new_tab.id) {
+    match old_tabs
+      .iter()
+      .enumerate()
+      .find(|(_, t)| t.id == new_tab.id)
+    {
       None => {
         diffs.push(TreeDiff::TabAdded {
           window_id: win_id.to_string(),
@@ -278,7 +277,13 @@ fn diff_tabs(
           let new_focus = new_tab.pane_tree.focused_pane_id().map(String::from);
 
           // Check for title/cwd changes in individual panes
-          diff_pane_contents(win_id, &new_tab.id, &old_tab.pane_tree, &new_tab.pane_tree, diffs);
+          diff_pane_contents(
+            win_id,
+            &new_tab.id,
+            &old_tab.pane_tree,
+            &new_tab.pane_tree,
+            diffs,
+          );
 
           if old_focus != new_focus {
             diffs.push(TreeDiff::PaneFocusChanged {
@@ -305,10 +310,7 @@ fn diff_tabs(
 /// Check if two pane trees are structurally different (ignoring focus, title, cwd).
 fn structurally_different(a: &PaneNode, b: &PaneNode) -> bool {
   match (a, b) {
-    (
-      PaneNode::Terminal { id: id_a, .. },
-      PaneNode::Terminal { id: id_b, .. },
-    ) => id_a != id_b,
+    (PaneNode::Terminal { id: id_a, .. }, PaneNode::Terminal { id: id_b, .. }) => id_a != id_b,
     (
       PaneNode::Split {
         direction: dir_a,
@@ -450,9 +452,11 @@ mod tests {
 
     let diffs = diff_trees(&old, &new);
     assert!(diffs.iter().any(|d| matches!(d, TreeDiff::TabAdded { .. })));
-    assert!(diffs
-      .iter()
-      .any(|d| matches!(d, TreeDiff::ActiveTabChanged { .. })));
+    assert!(
+      diffs
+        .iter()
+        .any(|d| matches!(d, TreeDiff::ActiveTabChanged { .. }))
+    );
   }
 
   #[test]
@@ -480,12 +484,16 @@ mod tests {
       .unwrap();
 
     let diffs = diff_trees(&old, &new);
-    assert!(diffs
-      .iter()
-      .any(|d| matches!(d, TreeDiff::SearchVisibilityChanged { visible: true, .. })));
-    assert!(diffs
-      .iter()
-      .any(|d| matches!(d, TreeDiff::SearchQueryChanged { .. })));
+    assert!(
+      diffs
+        .iter()
+        .any(|d| matches!(d, TreeDiff::SearchVisibilityChanged { visible: true, .. }))
+    );
+    assert!(
+      diffs
+        .iter()
+        .any(|d| matches!(d, TreeDiff::SearchQueryChanged { .. }))
+    );
   }
 
   #[test]
@@ -531,12 +539,16 @@ mod tests {
       .unwrap();
 
     let diffs = diff_trees(&old, &new);
-    assert!(diffs
-      .iter()
-      .any(|d| matches!(d, TreeDiff::PaneFocusChanged { .. })));
+    assert!(
+      diffs
+        .iter()
+        .any(|d| matches!(d, TreeDiff::PaneFocusChanged { .. }))
+    );
     // No structural change, so no PaneTreeChanged
-    assert!(!diffs
-      .iter()
-      .any(|d| matches!(d, TreeDiff::PaneTreeChanged { .. })));
+    assert!(
+      !diffs
+        .iter()
+        .any(|d| matches!(d, TreeDiff::PaneTreeChanged { .. }))
+    );
   }
 }
