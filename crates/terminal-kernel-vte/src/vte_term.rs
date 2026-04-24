@@ -247,14 +247,7 @@ impl VteTermInner {
       Arc::new(move |color| {
         format!(
           "\x1b]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}{}",
-          prefix,
-          color.r,
-          color.r,
-          color.g,
-          color.g,
-          color.b,
-          color.b,
-          terminator,
+          prefix, color.r, color.r, color.g, color.g, color.b, color.b, terminator,
         )
       }),
     ));
@@ -1053,7 +1046,10 @@ impl vte::Perform for VteTermInner {
       }
       "4" => {
         for pair in params[1..].chunks(2) {
-          let Some(index) = pair.first().and_then(|param| parse_osc_palette_index(param)) else {
+          let Some(index) = pair
+            .first()
+            .and_then(|param| parse_osc_palette_index(param))
+          else {
             continue;
           };
           let Some(spec) = pair.get(1) else {
@@ -1455,7 +1451,11 @@ impl TerminalBackend for VteBackend {
 
   fn color_at(&self, index: usize) -> Option<Rgb> {
     let s = self.state.lock();
-    if index < s.colors.len() { s.colors[index] } else { None }
+    if index < s.colors.len() {
+      s.colors[index]
+    } else {
+      None
+    }
   }
 
   fn selection_to_string(&self) -> Option<String> {
@@ -1790,14 +1790,25 @@ mod tests {
     let mut inner = VteTermInner::new(2, 5, 100, event_tx, None, true);
 
     feed(&mut inner, b"\x1b]4;1;rgb:12/34/56\x07");
-    assert_eq!(inner.colors[1], Some(Rgb { r: 0x12, g: 0x34, b: 0x56 }));
+    assert_eq!(
+      inner.colors[1],
+      Some(Rgb {
+        r: 0x12,
+        g: 0x34,
+        b: 0x56
+      })
+    );
 
     feed(&mut inner, b"\x1b]4;1;?\x1b\\");
     match block_on(event_rx.next()) {
       Some(terminal_kernel::event::Event::ColorRequest(index, formatter)) => {
         assert_eq!(index, 1);
         assert_eq!(
-          formatter(Rgb { r: 0x12, g: 0x34, b: 0x56 }),
+          formatter(Rgb {
+            r: 0x12,
+            g: 0x34,
+            b: 0x56
+          }),
           "\x1b]4;1;rgb:1212/3434/5656\x1b\\",
         );
       }

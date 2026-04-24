@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use gpui::{Context, Focusable, Window};
+use kazeterm_ui_tree::action::UIAction;
 use terminal::TerminalView;
 
 use super::main_window::MainWindow;
@@ -77,6 +78,23 @@ fn resolve_tab_launch(
   )
 }
 
+fn build_add_tab_action(
+  config: &::config::Config,
+  window_id: String,
+  profile_name: Option<&str>,
+  working_directory: Option<String>,
+) -> UIAction {
+  let (shell_path, shell_args, _, _, working_directory) =
+    resolve_tab_launch(config, profile_name, working_directory);
+  UIAction::AddTab {
+    window_id,
+    shell_path,
+    shell_args,
+    profile: profile_name.map(str::to_string),
+    working_directory: working_directory.map(|path| path.to_string_lossy().into_owned()),
+  }
+}
+
 pub(crate) fn tab_index_for_shortcut(total_tabs: usize, shortcut_number: usize) -> Option<usize> {
   match shortcut_number {
     1..=8 => {
@@ -89,6 +107,47 @@ pub(crate) fn tab_index_for_shortcut(total_tabs: usize, shortcut_number: usize) 
 }
 
 impl MainWindow {
+  pub(crate) fn build_add_tab_ui_action(
+    window_id: String,
+    profile_name: Option<&str>,
+    working_directory: Option<String>,
+    cx: &Context<Self>,
+  ) -> UIAction {
+    build_add_tab_action(
+      cx.global::<::config::Config>(),
+      window_id,
+      profile_name,
+      working_directory,
+    )
+  }
+
+  pub(crate) fn build_close_tab_ui_action(
+    &mut self,
+    tab_index: usize,
+    cx: &mut Context<Self>,
+  ) -> Option<UIAction> {
+    let window_id = self.sync_ui_tree_and_window_id(cx)?;
+    let item = self.items.iter().find(|item| item.index == tab_index)?;
+
+    let close_action = UIAction::CloseTab {
+      window_id: window_id.clone(),
+      tab_id: item.ui_tree_id.clone(),
+    };
+
+    Some(
+      if self.items.len() == 1 && !cx.global::<::config::Config>().tab.close_on_last {
+        UIAction::Batch {
+          actions: vec![
+            close_action,
+            Self::build_add_tab_ui_action(window_id, None, None, cx),
+          ],
+        }
+      } else {
+        close_action
+      },
+    )
+  }
+
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.insert_new_tab_with_profile(None, None, window, cx);
   }
@@ -118,6 +177,15 @@ impl MainWindow {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) {
+    if !self.reconciling_ui_tree {
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      let action = Self::build_add_tab_ui_action(window_id, profile_name, working_directory, cx);
+      self.dispatch_default_ui_action(action, "add tab", window, cx);
+      return;
+    }
+
     let this = self;
     let index = this
       .tab_index
@@ -147,6 +215,7 @@ impl MainWindow {
     let split_container = SplitContainer::new(terminal.clone());
 
     let item = TabItem {
+      ui_tree_id: this.ui_tree.alloc_id("tab"),
       index,
       title: tab_title,
       custom_title: None,
@@ -301,6 +370,13 @@ impl MainWindow {
   }
 
   pub fn remove_tab_by(&mut self, tab_index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree {
+      if let Some(action) = self.build_close_tab_ui_action(tab_index, cx) {
+        self.dispatch_default_ui_action(action, "close tab", window, cx);
+      }
+      return;
+    }
+
     // Find the position of the tab to remove
     let removed_pos = self.items.iter().position(|item| item.index == tab_index);
 
@@ -313,7 +389,7 @@ impl MainWindow {
         if config.tab.close_on_last {
           window.remove_window();
           cx.quit();
-        } else {
+        } else if !self.reconciling_ui_tree {
           self.insert_new_tab(window, cx);
         }
         return;
@@ -375,6 +451,25 @@ impl MainWindow {
   }
 
   pub(crate) fn set_active_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+    if !self.reconciling_ui_tree {
+      if ix >= self.items.len() {
+        return;
+      }
+      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+        return;
+      };
+      self.dispatch_default_ui_action(
+        UIAction::ActivateTab {
+          window_id,
+          tab_index: ix,
+        },
+        "activate tab",
+        window,
+        cx,
+      );
+      return;
+    }
+
     // Save current tab's search state before switching
     if let Some(old_ix) = self.active_tab_ix {
       if old_ix < self.items.len() {

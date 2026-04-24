@@ -34,6 +34,7 @@ mod components;
 mod config;
 mod config_watcher;
 pub mod event_system;
+pub mod reconciler;
 
 #[cfg(test)]
 mod test_support;

@@ -200,12 +200,9 @@ mod tests {
     let received_clone = received.clone();
     cx.update(|cx| {
       let dialog = window.root(cx).unwrap();
-      cx.subscribe(
-        &dialog,
-        move |_entity, event: &TabRenameEvent, _cx| {
-          received_clone.borrow_mut().push(event.clone());
-        },
-      )
+      cx.subscribe(&dialog, move |_entity, event: &TabRenameEvent, _cx| {
+        received_clone.borrow_mut().push(event.clone());
+      })
       .detach();
     });
     received

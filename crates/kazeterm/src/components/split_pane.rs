@@ -1077,12 +1077,16 @@ impl SplitContainer {
     &mut self,
     direction: PaneFocusDirection,
   ) -> Option<Entity<TerminalView>> {
+    let target_id = self.pane_in_direction(direction)?;
+    self.active_pane_id = Some(target_id);
+    self.root.find_terminal(target_id)
+  }
+
+  pub fn pane_in_direction(&self, direction: PaneFocusDirection) -> Option<PaneId> {
     let active_id = self.active_pane_id?;
     let (visible_root, _) = self.visible_root_with_path();
     let bounds = visible_root.pane_bounds();
-    let target_id = find_directional_pane(&bounds, active_id, direction)?;
-    self.active_pane_id = Some(target_id);
-    self.root.find_terminal(target_id)
+    find_directional_pane(&bounds, active_id, direction)
   }
 
   pub fn all_terminals(&self) -> Vec<(PaneId, Entity<TerminalView>)> {

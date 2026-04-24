@@ -361,6 +361,8 @@ pub(super) fn build_new_tab_menu(
 
   menu = menu.separator();
   let view_import = view.clone();
+  let view_dump_ui_tree = view.clone();
+  let view_load_ui_tree = view.clone();
   menu = menu.item(
     PopupMenuItem::element(|_window, _cx| {
       h_flex()
@@ -381,6 +383,52 @@ pub(super) fn build_new_tab_menu(
     .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
       view_import.update(cx, |this, cx| {
         this.show_import_alacritty_dialog(window, cx);
+      });
+    }),
+  );
+  menu = menu.item(
+    PopupMenuItem::element(|_window, _cx| {
+      h_flex()
+        .gap_2()
+        .items_center()
+        .child(
+          div()
+            .w(px(16.0))
+            .h(px(16.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(Icon::new(IconName::ArrowDown).size_4()),
+        )
+        .child("Dump UI Tree JSON")
+        .into_any_element()
+    })
+    .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+      view_dump_ui_tree.update(cx, |this, cx| {
+        this.prompt_dump_ui_tree_path(window, cx);
+      });
+    }),
+  );
+  menu = menu.item(
+    PopupMenuItem::element(|_window, _cx| {
+      h_flex()
+        .gap_2()
+        .items_center()
+        .child(
+          div()
+            .w(px(16.0))
+            .h(px(16.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(Icon::new(IconName::ArrowUp).size_4()),
+        )
+        .child("Load UI Tree JSON")
+        .into_any_element()
+    })
+    .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+      view_load_ui_tree.update(cx, |this, cx| {
+        this.prompt_load_ui_tree_path(window, cx);
       });
     }),
   );

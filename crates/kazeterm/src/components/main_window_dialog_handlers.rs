@@ -1,4 +1,6 @@
-use gpui::{AppContext, Context, Entity, Window};
+use std::path::{Path, PathBuf};
+
+use gpui::{AppContext, Context, Entity, PathPromptOptions, Window};
 
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
@@ -6,6 +8,9 @@ use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEv
 use crate::components::import_alacritty_dialog::{ImportAlacrittyDialog, ImportAlacrittyEvent};
 use crate::components::shell_error_dialog::{ShellErrorCloseEvent, ShellErrorDialog};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
+
+const UI_TREE_JSON_FILENAME: &str = "kazeterm-ui-tree.json";
+const UI_TREE_JSON_LOAD_PROMPT: &str = "Load UI Tree JSON";
 
 impl MainWindow {
   /// Show rename dialog for a tab
@@ -87,8 +92,8 @@ impl MainWindow {
     match event {
       CloseConfirmEvent::SaveAndClose => {
         // Save workspace state before closing
-        let state = self.capture_workspace_state(cx);
-        state.save();
+        self.sync_ui_tree(cx);
+        self.ui_tree.save_workspace();
         // User confirmed, close the window and quit the app
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
@@ -168,6 +173,69 @@ impl MainWindow {
     cx.notify();
   }
 
+  pub fn prompt_dump_ui_tree_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if self.ui_tree_json_prompt_pending {
+      return;
+    }
+
+    self.ui_tree_json_prompt_pending = true;
+
+    let directory = Self::ui_tree_json_prompt_directory();
+    let prompt = cx.prompt_for_new_path(&directory, Some(UI_TREE_JSON_FILENAME));
+    let this = cx.weak_entity();
+
+    window
+      .spawn(cx, async move |cx| {
+        let result = match prompt.await {
+          Ok(result) => result.map_err(|err| format!("Failed to open UI tree save dialog: {err}")),
+          Err(err) => Err(format!("UI tree save dialog did not return a path: {err}")),
+        };
+
+        let _ = this.update_in(cx, |this, window, cx| {
+          this.handle_dump_ui_tree_prompt_result(result, window, cx);
+        });
+      })
+      .detach();
+  }
+
+  pub fn prompt_load_ui_tree_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if self.ui_tree_json_prompt_pending {
+      return;
+    }
+
+    self.ui_tree_json_prompt_pending = true;
+
+    let prompt = cx.prompt_for_paths(PathPromptOptions {
+      files: true,
+      directories: false,
+      multiple: false,
+      prompt: Some(UI_TREE_JSON_LOAD_PROMPT.into()),
+    });
+    let this = cx.weak_entity();
+
+    window
+      .spawn(cx, async move |cx| {
+        let result = match prompt.await {
+          Ok(Ok(Some(paths))) => Ok(paths.into_iter().next()),
+          Ok(Ok(None)) => Ok(None),
+          Ok(Err(err)) => Err(format!("Failed to open UI tree file picker: {err}")),
+          Err(err) => Err(format!("UI tree file picker did not return a path: {err}")),
+        };
+
+        let _ = this.update_in(cx, |this, window, cx| {
+          this.handle_load_ui_tree_prompt_result(result, window, cx);
+        });
+      })
+      .detach();
+  }
+
+  fn ui_tree_json_prompt_directory() -> PathBuf {
+    ::config::Config::get_config_file_path()
+      .and_then(|path| path.parent().map(Path::to_path_buf))
+      .filter(|path| !path.as_os_str().is_empty())
+      .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir()))
+  }
+
   pub(crate) fn on_import_alacritty_event(
     &mut self,
     _dialog: &Entity<ImportAlacrittyDialog>,
@@ -223,6 +291,55 @@ impl MainWindow {
     self._import_alacritty_subscription = None;
     self.refocus_active_terminal(window, cx);
     cx.notify();
+  }
+
+  fn handle_dump_ui_tree_prompt_result(
+    &mut self,
+    result: Result<Option<PathBuf>, String>,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    self.ui_tree_json_prompt_pending = false;
+
+    let result =
+      result.and_then(|path| path.map_or(Ok(()), |path| self.dump_ui_tree_to_path(&path, cx)));
+
+    self.finish_ui_tree_json_prompt(result, window, cx);
+  }
+
+  fn handle_load_ui_tree_prompt_result(
+    &mut self,
+    result: Result<Option<PathBuf>, String>,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    self.ui_tree_json_prompt_pending = false;
+
+    let result = result.and_then(|path| {
+      path.map_or(Ok(()), |path| {
+        self.load_ui_tree_from_path(&path, window, cx)
+      })
+    });
+
+    self.finish_ui_tree_json_prompt(result, window, cx);
+  }
+
+  fn finish_ui_tree_json_prompt(
+    &mut self,
+    result: Result<(), String>,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    match result {
+      Ok(()) => {
+        self.refocus_active_terminal(window, cx);
+        cx.notify();
+      }
+      Err(err) => {
+        tracing::error!("UI tree JSON operation failed: {err}");
+        self.show_shell_error_dialog(err, window, cx);
+      }
+    }
   }
 
   /// Helper to refocus the active terminal after closing dialogs

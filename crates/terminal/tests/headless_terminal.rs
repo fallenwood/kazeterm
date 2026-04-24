@@ -9,12 +9,12 @@
 //! The snapshot helpers here form the foundation for future visual-regression
 //! tests (see `snapshot_grid.rs`).
 
+use terminal::TerminalBounds;
 use terminal_kernel::event::VoidListener;
 use terminal_kernel::grid::Dimensions;
 use terminal_kernel::index::{Column, Line, Point as AlacPoint};
 use terminal_kernel::term::{Config, Term};
 use terminal_kernel::vte::ansi::Processor;
-use terminal::TerminalBounds;
 
 fn make_term(cols: usize, lines: usize) -> Term<VoidListener> {
   struct Dims {
@@ -63,7 +63,10 @@ fn plain_text_lands_in_the_grid() {
   let lines = grid_to_lines(&term);
   assert_eq!(lines[0], "hello, world");
   for line in &lines[1..] {
-    assert!(line.is_empty(), "unexpected content on blank line: {line:?}");
+    assert!(
+      line.is_empty(),
+      "unexpected content on blank line: {line:?}"
+    );
   }
 }
 

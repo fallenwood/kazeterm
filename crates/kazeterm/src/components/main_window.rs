@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicUsize;
 
 use gpui::*;
 use gpui_component::Size;
+use kazeterm_ui_tree::action::UIAction;
 
 use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
@@ -10,7 +11,7 @@ use crate::components::search_bar::SearchBar;
 use crate::components::shell_error_dialog::ShellErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
-use crate::components::workspace_state::WorkspaceState;
+use crate::reconciler::UITreeStore;
 
 pub(crate) use super::main_window_tab_item::TabItem;
 
@@ -73,6 +74,8 @@ pub struct MainWindow {
   /// Import Alacritty config dialog state
   pub(crate) import_alacritty_dialog: Option<Entity<ImportAlacrittyDialog>>,
   pub(crate) _import_alacritty_subscription: Option<gpui::Subscription>,
+  /// Whether a UITree JSON file picker is currently active.
+  pub(crate) ui_tree_json_prompt_pending: bool,
   /// Shell error dialog state
   pub(crate) shell_error_dialog: Option<Entity<ShellErrorDialog>>,
   pub(crate) _shell_error_subscription: Option<gpui::Subscription>,
@@ -82,6 +85,10 @@ pub struct MainWindow {
   pub(crate) tab_bar_visible: bool,
   /// Subscription for system appearance changes (used by ThemeMode::System)
   pub(crate) _appearance_subscription: gpui::Subscription,
+  /// Data-driven UI tree store for serialization, diffing, and external API.
+  pub(crate) ui_tree: UITreeStore,
+  /// Guards against re-dispatching while tree diffs are being reconciled.
+  pub(crate) reconciling_ui_tree: bool,
 }
 
 impl MainWindow {
@@ -169,25 +176,119 @@ impl MainWindow {
       _about_dialog_subscription: None,
       import_alacritty_dialog: None,
       _import_alacritty_subscription: None,
+      ui_tree_json_prompt_pending: false,
       shell_error_dialog: None,
       _shell_error_subscription: None,
       last_notification_time: None,
       tab_bar_visible: true,
       _appearance_subscription: appearance_subscription,
+      ui_tree: UITreeStore::new(),
+      reconciling_ui_tree: false,
     };
 
     // Try to restore previous workspace
     let config = cx.global::<::config::Config>();
     if config.window.restore_workspace {
-      if let Some(state) = WorkspaceState::load() {
-        main_window.restore_workspace(state, window, cx);
-        WorkspaceState::delete();
+      if let Some(tree) = UITreeStore::load_workspace() {
+        main_window.reconciling_ui_tree = true;
+        main_window.restore_from_ui_tree(&tree, window, cx);
+        main_window.reconciling_ui_tree = false;
+        main_window.ui_tree = UITreeStore::from_tree(tree);
+        UITreeStore::delete_workspace();
         return main_window;
       }
     }
 
     main_window.insert_new_tab(window, cx);
     main_window
+  }
+
+  /// Capture the current GPUI state into the UI tree.
+  /// Call this before snapshotting or after external changes to sync state.
+  pub fn sync_ui_tree(&mut self, cx: &mut Context<Self>) {
+    let mut tree_store = std::mem::replace(&mut self.ui_tree, UITreeStore::new());
+    tree_store.capture_from_main_window(self, cx);
+    self.ui_tree = tree_store;
+  }
+
+  /// Dump the current UI tree as a JSON string.
+  pub fn snapshot_ui_tree(&mut self, cx: &mut Context<Self>) -> Result<String, serde_json::Error> {
+    self.sync_ui_tree(cx);
+    self.ui_tree.to_json()
+  }
+
+  /// Dump the current UI tree as a `serde_json::Value`.
+  pub fn snapshot_ui_tree_value(
+    &mut self,
+    cx: &mut Context<Self>,
+  ) -> Result<serde_json::Value, serde_json::Error> {
+    self.sync_ui_tree(cx);
+    self.ui_tree.to_json_value()
+  }
+
+  pub(crate) fn dump_ui_tree_to_path(
+    &mut self,
+    path: &std::path::Path,
+    cx: &mut Context<Self>,
+  ) -> Result<(), String> {
+    let json = self
+      .snapshot_ui_tree(cx)
+      .map_err(|err| format!("Failed to serialize UI tree: {err}"))?;
+
+    if let Some(parent) = path.parent()
+      && !parent.as_os_str().is_empty()
+    {
+      std::fs::create_dir_all(parent)
+        .map_err(|err| format!("Failed to create directory '{}': {err}", parent.display()))?;
+    }
+
+    std::fs::write(path, json).map_err(|err| {
+      format!(
+        "Failed to write UI tree JSON to '{}': {err}",
+        path.display()
+      )
+    })?;
+    tracing::info!("Dumped UI tree JSON to {}", path.display());
+    Ok(())
+  }
+
+  pub(crate) fn sync_ui_tree_and_window_id(&mut self, cx: &mut Context<Self>) -> Option<String> {
+    self.sync_ui_tree(cx);
+    self.ui_tree.window_id().map(ToOwned::to_owned)
+  }
+
+  pub(crate) fn dispatch_default_ui_action(
+    &mut self,
+    action: UIAction,
+    action_name: &str,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    if let Err(err) = self.dispatch_ui_action(action, window, cx) {
+      tracing::error!("Failed to {action_name} via UITree: {err}");
+    }
+  }
+
+  /// Apply a `UIAction` through the tree, producing diffs and reconciling
+  /// them back into the live GPUI state.
+  pub fn dispatch_ui_action(
+    &mut self,
+    action: kazeterm_ui_tree::action::UIAction,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) -> Result<(), anyhow::Error> {
+    if self.ui_tree.window_id().is_none() {
+      self.sync_ui_tree(cx);
+    }
+    let mut tree_store = std::mem::replace(&mut self.ui_tree, UITreeStore::new());
+    let result = tree_store.dispatch(action, self, window, cx);
+    self.ui_tree = tree_store;
+    result
+  }
+
+  /// Load a full UI tree from JSON into the store.
+  pub fn load_ui_tree_json(&mut self, json: &str) -> Result<(), serde_json::Error> {
+    self.ui_tree.load_json(json)
   }
 }
 

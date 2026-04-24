@@ -13,8 +13,7 @@ use terminal_kernel::{
 use themeing::ActiveTheme as _;
 
 use crate::{
-  background_region::BackgroundRegion,
-  indexed_cell::IndexedCell,
+  background_region::BackgroundRegion, indexed_cell::IndexedCell,
   mappings::colors::resolve_terminal_color,
 };
 
@@ -108,15 +107,15 @@ impl TerminalElement {
         {
           if !is_blank(&cell) {
             let cell_style = Self::cell_style(
-                &cell,
-                fg,
-                bg,
-                theme,
-                text_style,
-                hyperlink,
-                minimum_contrast,
-                color_table,
-              );
+              &cell,
+              fg,
+              bg,
+              theme,
+              text_style,
+              hyperlink,
+              minimum_contrast,
+              color_table,
+            );
 
             let cell_point = AlacPoint::new(alac_line, cell.point.column.0 as i32);
 

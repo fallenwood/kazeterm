@@ -9,13 +9,15 @@ use std::thread;
 use std::time::Duration;
 
 use parking_lot::Mutex;
-use terminal_kernel::{ANSI_COLOR_COUNT, BACKGROUND_COLOR_INDEX, CURSOR_COLOR_INDEX, FOREGROUND_COLOR_INDEX};
 use terminal_kernel::event::{OnResize, WindowSize};
 use terminal_kernel::index::{Column, Line, Point as AlacPoint};
 use terminal_kernel::term::TermMode;
 use terminal_kernel::term::cell::{Cell, Flags as CellFlags};
 use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite};
 use terminal_kernel::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor, Rgb};
+use terminal_kernel::{
+  ANSI_COLOR_COUNT, BACKGROUND_COLOR_INDEX, CURSOR_COLOR_INDEX, FOREGROUND_COLOR_INDEX,
+};
 
 use libghostty_vt::render::CursorVisualStyle;
 use libghostty_vt::screen::CellWide;
@@ -800,10 +802,22 @@ mod tests {
         b: 0x66,
       }))
       .expect("set background");
-    sync_to_inner(&terminal, &mut render_state, &state, &mut prev_scrollback_count);
+    sync_to_inner(
+      &terminal,
+      &mut render_state,
+      &state,
+      &mut prev_scrollback_count,
+    );
 
     let state = state.lock();
-    assert_eq!(state.colors[1], Some(Rgb { r: 0x12, g: 0x34, b: 0x56 }));
+    assert_eq!(
+      state.colors[1],
+      Some(Rgb {
+        r: 0x12,
+        g: 0x34,
+        b: 0x56
+      })
+    );
     assert_eq!(
       state.colors[FOREGROUND_COLOR_INDEX],
       Some(Rgb {

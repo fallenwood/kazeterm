@@ -87,6 +87,12 @@ pub enum AppEvent {
 
   /// Custom event with arbitrary data (for extensions).
   Custom { name: String, data: String },
+
+  /// Dispatch a UIAction (JSON string) through the data-driven UI tree.
+  DispatchUIAction { action_json: String },
+
+  /// Request a snapshot of the UI tree (response is logged/sent back).
+  SnapshotUITree,
 }
 
 impl AppEvent {
@@ -121,6 +127,8 @@ impl AppEvent {
       AppEvent::Quit => "Quit",
       AppEvent::SendTextToTerminal { .. } => "SendTextToTerminal",
       AppEvent::Custom { .. } => "Custom",
+      AppEvent::DispatchUIAction { .. } => "DispatchUIAction",
+      AppEvent::SnapshotUITree => "SnapshotUITree",
     }
   }
 }

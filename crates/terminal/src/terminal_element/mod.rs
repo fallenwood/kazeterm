@@ -4,7 +4,9 @@ use gpui::{
   Entity, FocusHandle, Hsla, InteractiveElement, IntoElement, Pixels, Point, ShapedLine,
   StatefulInteractiveElement, TextStyle, point,
 };
-use terminal_kernel::{ANSI_COLOR_COUNT, grid::Dimensions, index::Point as AlacPoint, term::TermMode, vte::ansi::Rgb};
+use terminal_kernel::{
+  ANSI_COLOR_COUNT, grid::Dimensions, index::Point as AlacPoint, term::TermMode, vte::ansi::Rgb,
+};
 
 use crate::{cursor_layout::CursorLayout, minimap::MinimapState, scrollbar::ScrollbarState};
 

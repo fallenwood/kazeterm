@@ -47,21 +47,13 @@ fn render(cols: usize, lines: usize, bytes: &[u8]) -> String {
 
 #[test]
 fn snapshot_shell_like_prompt() {
-  let frame = render(
-    40,
-    4,
-    b"user@host:~$ echo hello\r\nhello\r\nuser@host:~$ ",
-  );
+  let frame = render(40, 4, b"user@host:~$ echo hello\r\nhello\r\nuser@host:~$ ");
   insta::assert_snapshot!(frame);
 }
 
 #[test]
 fn snapshot_ls_output() {
-  let frame = render(
-    30,
-    6,
-    b"$ ls\r\nCargo.toml  README.md  src\r\n$ ",
-  );
+  let frame = render(30, 6, b"$ ls\r\nCargo.toml  README.md  src\r\n$ ");
   insta::assert_snapshot!(frame);
 }
 
