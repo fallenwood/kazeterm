@@ -9,13 +9,14 @@
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gpui::TestAppContext;
-use kazeterm_ui_tree::node::UITree;
+use gpui::{TestAppContext, WindowHandle};
+use kazeterm_ui_tree::node::{OverlayNode, UITree};
 
 use crate::components::MainWindow;
 use crate::components::terminal_window::{
   clear_terminal_session_factory_for_testing, set_terminal_session_factory_for_testing,
 };
+use crate::event_system::{AppEvent, EventSourceConfig, build_default_event_bus};
 use terminal::test_support::fake_terminal_session;
 
 /// Global serializer: e2e tests install a process-global factory, so only
@@ -55,6 +56,15 @@ fn temp_ui_tree_json_path(name: &str) -> std::path::PathBuf {
     .expect("system time should be after unix epoch")
     .as_nanos();
   std::env::temp_dir().join(format!("kazeterm-{name}-{unique}.json"))
+}
+
+fn dispatch_app_event(window: &WindowHandle<MainWindow>, event: AppEvent, cx: &mut TestAppContext) {
+  window
+    .update(cx, move |root: &mut MainWindow, window, cx| {
+      let bus = build_default_event_bus(EventSourceConfig::None);
+      assert_eq!(bus.dispatch(root, event, window, cx), 1);
+    })
+    .expect("event dispatch should succeed");
 }
 
 #[gpui::test]
@@ -310,5 +320,68 @@ fn load_ui_tree_from_file_replaces_existing_window_state(cx: &mut TestAppContext
   });
 
   let _ = std::fs::remove_file(&dump_path);
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn event_bus_show_about_dialog_updates_ui_tree_overlay(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  dispatch_app_event(&window, AppEvent::ShowAboutDialog, cx);
+  cx.run_until_parked();
+
+  let view = window.root(cx).unwrap();
+  view.read_with(cx, |mw, _| {
+    assert!(mw.about_dialog.is_some());
+    assert_eq!(
+      mw.ui_tree.tree().windows[0].overlay.as_ref(),
+      Some(&OverlayNode::AboutDialog),
+    );
+  });
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn event_bus_focus_pane_left_updates_ui_tree_focus(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.split_pane_vertical(window, cx);
+    })
+    .expect("split_pane_vertical should succeed");
+  cx.run_until_parked();
+
+  let view = window.root(cx).unwrap();
+  let expected_left_pane_id = view.read_with(cx, |mw, _| {
+    let tab = &mw.ui_tree.tree().windows[0].tabs[0];
+    let pane_ids = tab.pane_tree.terminal_ids();
+    assert_eq!(pane_ids.len(), 2);
+    assert_eq!(tab.pane_tree.focused_pane_id(), Some(pane_ids[1]));
+    pane_ids[0].to_string()
+  });
+
+  dispatch_app_event(&window, AppEvent::FocusPaneLeft, cx);
+  cx.run_until_parked();
+
+  view.read_with(cx, |mw, _| {
+    let tab = &mw.ui_tree.tree().windows[0].tabs[0];
+    assert_eq!(
+      tab.pane_tree.focused_pane_id(),
+      Some(expected_left_pane_id.as_str())
+    );
+  });
+
   clear_terminal_session_factory_for_testing();
 }
