@@ -77,19 +77,19 @@ fn default_tab_navigation_bindings() {
 #[test]
 fn default_split_and_pane_bindings() {
   let kb = KeybindingConfig::default();
-  // Non-mac defaults: Alt+Shift+-, Alt+Shift+=, Ctrl+Shift+W, Ctrl+Shift+], [, X, H
+  // Non-mac defaults: Alt+Shift+-, Alt+Shift+=, Ctrl+Shift+W, Ctrl+Shift+], [, X, Enter
   assert_matches(&kb.split_horizontal, false, true, true, "-");
   assert_matches(&kb.split_vertical, false, true, true, "=");
   #[cfg(target_os = "macos")]
   {
-    assert_matches_platform(&kb.toggle_hidden_panes, false, true, false, "h");
+    assert_matches_platform(&kb.toggle_hidden_panes, false, true, false, "enter");
   }
   #[cfg(not(target_os = "macos"))]
   {
     assert_matches(&kb.close_pane, true, true, false, "w");
     assert_matches(&kb.focus_next_pane, true, true, false, "]");
     assert_matches(&kb.focus_previous_pane, true, true, false, "[");
-    assert_matches(&kb.toggle_hidden_panes, true, true, false, "h");
+    assert_matches(&kb.toggle_hidden_panes, true, true, false, "enter");
   }
   assert_matches(&kb.swap_split_panes, true, true, false, "x");
 }
@@ -117,10 +117,10 @@ fn matches_main_window_shortcut_covers_defaults() {
   #[cfg(not(target_os = "macos"))]
   {
     assert!(kb.matches_main_window_shortcut(true, true, false, false, "f")); // toggle_search
-    assert!(kb.matches_main_window_shortcut(true, true, false, false, "h")); // toggle_hidden_panes
+    assert!(kb.matches_main_window_shortcut(true, true, false, false, "enter")); // toggle_hidden_panes
   }
   #[cfg(target_os = "macos")]
-  assert!(kb.matches_main_window_shortcut(false, true, false, true, "h")); // toggle_hidden_panes
+  assert!(kb.matches_main_window_shortcut(false, true, false, true, "enter")); // toggle_hidden_panes
   assert!(!kb.matches_main_window_shortcut(true, true, true, false, "q"));
 }
 
