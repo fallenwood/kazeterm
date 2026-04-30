@@ -3,7 +3,7 @@ use kazeterm_ui_tree::action::UIAction;
 
 use super::main_window::MainWindow;
 use super::main_window_tab_management::get_working_directory_pathbuf;
-use crate::components::split_pane::{PaneFocusDirection, SplitDirection};
+use crate::components::split_pane::{PaneFocusDirection, PaneId, SplitDirection};
 
 impl MainWindow {
   /// Update `active_pane_id` to match the terminal pane that currently has
@@ -151,6 +151,74 @@ impl MainWindow {
 
     // Focus the new terminal
     Self::focus_terminal(window, &new_terminal, cx);
+    cx.notify();
+  }
+
+  pub(crate) fn move_tab_into_split(
+    &mut self,
+    from_ix: usize,
+    target_pane_id: PaneId,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let Some(target_tab_ix) = self.active_tab_ix else {
+      return;
+    };
+
+    if from_ix >= self.items.len() || from_ix == target_tab_ix {
+      return;
+    }
+
+    let target_pane_exists = self.items.get(target_tab_ix).is_some_and(|item| {
+      item
+        .split_container
+        .root
+        .find_terminal(target_pane_id)
+        .is_some()
+    });
+    if !target_pane_exists {
+      return;
+    }
+
+    let dragged_item = self.items.remove(from_ix);
+    let target_tab_ix = if from_ix < target_tab_ix {
+      target_tab_ix - 1
+    } else {
+      target_tab_ix
+    };
+
+    let dragged_subscription = dragged_item._subscription;
+    let dragged_split_container = dragged_item.split_container;
+    std::mem::forget(dragged_subscription);
+
+    self.active_tab_ix = Some(target_tab_ix);
+
+    let new_active_terminal = self.items.get_mut(target_tab_ix).and_then(|item| {
+      item.split_container.set_active_pane(target_pane_id);
+      item
+        .split_container
+        .split_active_pane_with_container(SplitDirection::Vertical, dragged_split_container)?;
+      item.split_container.get_active_terminal()
+    });
+
+    let Some(new_active_terminal) = new_active_terminal else {
+      return;
+    };
+
+    let search_visible = self.search_visible;
+    let terminal_for_search = new_active_terminal.clone();
+    self.search_bar.update(cx, |search_bar, cx| {
+      search_bar.set_terminal_view(terminal_for_search);
+      if search_visible {
+        search_bar.focus(window, cx);
+      }
+    });
+
+    if !search_visible {
+      Self::focus_terminal(window, &new_active_terminal, cx);
+    }
+
+    self.sync_ui_tree(cx);
     cx.notify();
   }
 

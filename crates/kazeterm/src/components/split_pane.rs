@@ -4,6 +4,7 @@ use gpui_component::{h_flex, menu::ContextMenuExt, v_flex};
 use terminal::TerminalView;
 use themeing::SettingsStore;
 
+use super::dragged_tab::DraggedTab;
 use super::main_window::MainWindow;
 use super::search_bar::SearchBar;
 use super::split_pane_context_menu::build_terminal_context_menu;
@@ -280,6 +281,22 @@ impl SplitPane {
     new_terminal: Entity<TerminalView>,
     next_id: PaneId,
   ) -> bool {
+    self.split_with_pane(
+      pane_id,
+      direction,
+      SplitPane::Terminal {
+        id: next_id,
+        terminal: new_terminal,
+      },
+    )
+  }
+
+  pub fn split_with_pane(
+    &mut self,
+    pane_id: PaneId,
+    direction: SplitDirection,
+    new_pane: SplitPane,
+  ) -> bool {
     match self {
       SplitPane::Terminal { id, terminal } if *id == pane_id => {
         let old_terminal = terminal.clone();
@@ -290,19 +307,26 @@ impl SplitPane {
             id: old_id,
             terminal: old_terminal,
           }),
-          second: Box::new(SplitPane::Terminal {
-            id: next_id,
-            terminal: new_terminal,
-          }),
+          second: Box::new(new_pane),
           ratio: 0.5,
         };
         true
       }
       SplitPane::Split { first, second, .. } => {
-        first.split(pane_id, direction, new_terminal.clone(), next_id)
-          || second.split(pane_id, direction, new_terminal, next_id)
+        first.split_with_pane(pane_id, direction, new_pane.clone())
+          || second.split_with_pane(pane_id, direction, new_pane)
       }
       _ => false,
+    }
+  }
+
+  fn offset_pane_ids(&mut self, offset: usize) {
+    match self {
+      SplitPane::Terminal { id, .. } => id.0 += offset,
+      SplitPane::Split { first, second, .. } => {
+        first.offset_pane_ids(offset);
+        second.offset_pane_ids(offset);
+      }
     }
   }
 
@@ -611,6 +635,22 @@ impl SplitPane {
         };
 
         let show_search = is_active && search_bar.is_some();
+        let drop_border_color = colors.border_selected;
+        let drop_fill = colors.border_selected.opacity(0.08);
+        let pane_id_for_drop = *id;
+
+        let drop_target = div()
+          .absolute()
+          .inset_0()
+          .drag_over::<DraggedTab>(move |style, _dragged, _window, _cx| {
+            style
+              .border_2()
+              .border_color(drop_border_color)
+              .bg(drop_fill)
+          })
+          .on_drop(cx.listener(move |this, dragged: &DraggedTab, window, cx| {
+            this.move_tab_into_split(dragged.from_ix, pane_id_for_drop, window, cx);
+          }));
 
         let base = if has_splits {
           div()
@@ -622,6 +662,7 @@ impl SplitPane {
             .border_color(border_color)
             .child(terminal.clone())
             .when(show_search, |this| this.child(search_bar.clone().unwrap()))
+            .child(drop_target)
         } else {
           div()
             .id(pane_id)
@@ -629,6 +670,7 @@ impl SplitPane {
             .size_full()
             .child(terminal.clone())
             .when(show_search, |this| this.child(search_bar.unwrap()))
+            .child(drop_target)
         };
 
         if right_click_context_menu {
@@ -858,6 +900,17 @@ impl SplitContainer {
     }
   }
 
+  fn offset_pane_ids(&mut self, offset: usize) {
+    self.root.offset_pane_ids(offset);
+    self.active_pane_id = self.active_pane_id.map(|id| PaneId(id.0 + offset));
+    if let Some(hidden_panes) = self.hidden_panes.as_mut() {
+      for pane_id in &mut hidden_panes.visible_pane_ids {
+        pane_id.0 += offset;
+      }
+    }
+    self.next_pane_id += offset;
+  }
+
   fn sync_hidden_panes_after_tree_change(&mut self) {
     let total_panes = self.root.count_panes();
     let fallback_active_pane_id = self
@@ -958,6 +1011,45 @@ impl SplitContainer {
       self.active_pane_id = Some(new_id);
       self.sync_hidden_panes_after_tree_change();
       return Some(new_id);
+    }
+
+    None
+  }
+
+  pub fn split_active_pane_with_container(
+    &mut self,
+    direction: SplitDirection,
+    mut other: SplitContainer,
+  ) -> Option<PaneId> {
+    let active_id = self.active_pane_id?;
+    other.ensure_active_pane_visible();
+
+    let offset = self.next_pane_id;
+    other.offset_pane_ids(offset);
+
+    let new_active_id = other.active_pane_id?;
+    let visible_new_panes = other
+      .visible_terminals()
+      .into_iter()
+      .map(|(pane_id, _)| pane_id)
+      .collect::<Vec<_>>();
+    let other_next_pane_id = other.next_pane_id;
+    let other_root = other.root;
+
+    if self.root.split_with_pane(active_id, direction, other_root) {
+      self.next_pane_id = self.next_pane_id.max(other_next_pane_id);
+
+      if let Some(hidden_panes) = self.hidden_panes.as_mut()
+        && hidden_panes.contains(active_id)
+      {
+        for pane_id in visible_new_panes {
+          hidden_panes.insert_visible(pane_id);
+        }
+      }
+
+      self.active_pane_id = Some(new_active_id);
+      self.sync_hidden_panes_after_tree_change();
+      return Some(new_active_id);
     }
 
     None

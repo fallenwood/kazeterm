@@ -385,3 +385,69 @@ fn event_bus_focus_pane_left_updates_ui_tree_focus(cx: &mut TestAppContext) {
 
   clear_terminal_session_factory_for_testing();
 }
+
+#[gpui::test]
+fn moving_tab_into_terminal_split_reuses_existing_sessions(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  let calls = install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.insert_new_tab(window, cx);
+      root.split_pane_horizontal(window, cx);
+    })
+    .expect("source tab setup should succeed");
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.set_active_tab(0, window, cx);
+    })
+    .expect("activating the target tab should succeed");
+  cx.run_until_parked();
+
+  let call_count_before_merge = calls.lock().unwrap().programs.len();
+  let target_pane_id = window
+    .update(cx, |root: &mut MainWindow, _window, _cx| {
+      root.items[0]
+        .split_container
+        .all_terminals()
+        .first()
+        .map(|(pane_id, _)| *pane_id)
+        .expect("target tab should have a terminal pane")
+    })
+    .expect("reading the target pane id should succeed");
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.move_tab_into_split(1, target_pane_id, window, cx);
+    })
+    .expect("moving the tab into a split should succeed");
+  cx.run_until_parked();
+
+  let call_count_after_merge = calls.lock().unwrap().programs.len();
+  assert_eq!(
+    call_count_after_merge, call_count_before_merge,
+    "expected tab-to-split move to reuse the dragged tab terminals instead of creating new ones",
+  );
+
+  let view = window.root(cx).unwrap();
+  view.read_with(cx, |mw, _| {
+    assert_eq!(mw.items.len(), 1);
+    assert_eq!(mw.active_tab_ix, Some(0));
+    assert_eq!(mw.items[0].split_container.all_terminals().len(), 3);
+    assert_eq!(mw.ui_tree.tree().windows[0].tabs.len(), 1);
+    assert_eq!(
+      mw.ui_tree.tree().windows[0].tabs[0]
+        .pane_tree
+        .terminal_count(),
+      3,
+    );
+  });
+
+  clear_terminal_session_factory_for_testing();
+}

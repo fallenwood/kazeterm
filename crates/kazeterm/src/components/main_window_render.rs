@@ -997,18 +997,8 @@ impl Render for MainWindow {
 
                           TerminalTab::new()
                             .selected(is_selected)
-                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                              // Select this tab
-                              view_for_click.update(cx, |this, cx| {
-                                this.set_active_tab(tab_ix, window, cx);
-                              });
-                              // Clear bell when clicking on tab
-                              for (_, terminal) in &all_terminals {
-                                terminal.update(cx, |terminal_view, cx| {
-                                  terminal_view.clear_bell(cx);
-                                });
-                              }
-                              // Prevent TitleBar from starting window drag when clicking on tabs
+                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                              // Prevent TitleBar from starting window drag when pressing on tabs
                               cx.stop_propagation();
                             })
                             .child(
@@ -1018,6 +1008,17 @@ impl Render for MainWindow {
                                   tab_ix as u64,
                                 ))
                                 .group("tab-item")
+                                .on_click(move |_: &ClickEvent, window, cx| {
+                                  view_for_click.update(cx, |this, cx| {
+                                    this.set_active_tab(tab_ix, window, cx);
+                                  });
+                                  for (_, terminal) in &all_terminals {
+                                    terminal.update(cx, |terminal_view, cx| {
+                                      terminal_view.clear_bell(cx);
+                                    });
+                                  }
+                                  cx.stop_propagation();
+                                })
                                 .child(
                                   div()
                                     .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
@@ -1383,15 +1384,7 @@ impl Render for MainWindow {
                               TerminalTab::new()
                                 .selected(is_selected)
                                 .fill_height(false)
-                                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                                  view_for_click.update(cx, |this, cx| {
-                                    this.set_active_tab(tab_ix, window, cx);
-                                  });
-                                  for (_, terminal) in &all_terminals {
-                                    terminal.update(cx, |terminal_view, cx| {
-                                      terminal_view.clear_bell(cx);
-                                    });
-                                  }
+                                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                   cx.stop_propagation();
                                 })
                                 .child(
@@ -1401,6 +1394,17 @@ impl Render for MainWindow {
                                       tab_ix as u64,
                                     ))
                                     .group("tab-item")
+                                    .on_click(move |_: &ClickEvent, window, cx| {
+                                      view_for_click.update(cx, |this, cx| {
+                                        this.set_active_tab(tab_ix, window, cx);
+                                      });
+                                      for (_, terminal) in &all_terminals {
+                                        terminal.update(cx, |terminal_view, cx| {
+                                          terminal_view.clear_bell(cx);
+                                        });
+                                      }
+                                      cx.stop_propagation();
+                                    })
                                     .w_full()
                                     .child(
                                       div()
