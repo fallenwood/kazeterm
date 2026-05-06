@@ -38,6 +38,7 @@ pub const KITTY_KEYBOARD_REPORT_EVENT_TYPES: u32 = 0b10;
 pub const KITTY_KEYBOARD_REPORT_ALTERNATE_KEYS: u32 = 0b100;
 pub const KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES: u32 = 0b1000;
 pub const KITTY_KEYBOARD_REPORT_ASSOCIATED_TEXT: u32 = 0b10000;
+pub const WINDOWS_CONPTY_WIN32_INPUT_MODE: u32 = 1 << 30;
 
 const MAX_KITTY_KEYBOARD_STACK_DEPTH: usize = 16;
 
@@ -81,11 +82,20 @@ struct KeyboardModeTracker {
   main: KeyboardModeState,
   alternate: KeyboardModeState,
   alternate_screen: bool,
+  win32_input_mode: bool,
 }
 
 impl KeyboardModeTracker {
   fn current_flags(&self) -> u32 {
     self.active_state().flags
+  }
+
+  fn input_flags(&self) -> u32 {
+    let mut flags = self.current_flags();
+    if self.win32_input_mode {
+      flags |= WINDOWS_CONPTY_WIN32_INPUT_MODE;
+    }
+    flags
   }
 
   fn active_state(&self) -> &KeyboardModeState {
@@ -136,7 +146,8 @@ impl KeyboardModeTracker {
     for param in params.split(|byte| *byte == b';') {
       if param == b"47" || param == b"1047" || param == b"1049" {
         self.alternate_screen = enabled;
-        break;
+      } else if param == b"9001" {
+        self.win32_input_mode = enabled;
       }
     }
   }
@@ -364,7 +375,7 @@ mod unix {
     fn sync_keyboard_flags(&self) {
       self
         .keyboard_flags
-        .store(self.keyboard_mode.current_flags(), Ordering::Relaxed);
+        .store(self.keyboard_mode.input_flags(), Ordering::Relaxed);
     }
 
     /// Handle a completed CSI sequence. Intercepts Device Attributes (DA),
@@ -373,11 +384,12 @@ mod unix {
     /// sequence was consumed.
     fn handle_csi_final(&mut self, final_byte: u8) -> bool {
       if matches!(final_byte, b'h' | b'l') {
+        let consume_conpty_win32_mode = self.csi_buf == b"?9001";
         self
           .keyboard_mode
           .observe_private_mode(&self.csi_buf, final_byte == b'h');
         self.sync_keyboard_flags();
-        return false;
+        return consume_conpty_win32_mode;
       }
 
       match final_byte {
@@ -945,7 +957,7 @@ mod windows {
     fn sync_keyboard_flags(&self) {
       self
         .keyboard_flags
-        .store(self.keyboard_mode.current_flags(), Ordering::Relaxed);
+        .store(self.keyboard_mode.input_flags(), Ordering::Relaxed);
     }
 
     /// Handle a completed CSI sequence. Intercepts Device Attributes (DA),
@@ -954,11 +966,12 @@ mod windows {
     /// the sequence was consumed.
     fn handle_csi_final(&mut self, final_byte: u8) -> bool {
       if matches!(final_byte, b'h' | b'l') {
+        let consume_conpty_win32_mode = self.csi_buf == b"?9001";
         self
           .keyboard_mode
           .observe_private_mode(&self.csi_buf, final_byte == b'h');
         self.sync_keyboard_flags();
-        return false;
+        return consume_conpty_win32_mode;
       }
 
       match final_byte {
@@ -1265,7 +1278,7 @@ pub use windows::WindowsDsrFilter;
 mod tests {
   use super::{
     KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES, KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES,
-    KeyboardModeTracker, KeyboardProtocolAction,
+    KeyboardModeTracker, KeyboardProtocolAction, WINDOWS_CONPTY_WIN32_INPUT_MODE,
   };
 
   #[test]
@@ -1324,5 +1337,16 @@ mod tests {
       tracker.current_flags(),
       KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES
     );
+  }
+
+  #[test]
+  fn conpty_win32_input_mode_sets_and_clears_flag() {
+    let mut tracker = KeyboardModeTracker::default();
+
+    tracker.observe_private_mode(b"?9001", true);
+    assert_eq!(tracker.input_flags(), WINDOWS_CONPTY_WIN32_INPUT_MODE);
+
+    tracker.observe_private_mode(b"?9001", false);
+    assert_eq!(tracker.input_flags(), 0);
   }
 }
