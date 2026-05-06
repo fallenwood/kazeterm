@@ -45,14 +45,11 @@ impl Terminal {
 
   pub fn try_keystroke(&mut self, keystroke: &Keystroke, alt_is_meta: bool) -> bool {
     let keyboard_protocol_flags = self.keyboard_protocol_flags.load(Ordering::Relaxed);
-    let report_all_keys_as_escape_codes = keyboard_protocol_flags
-      & crate::kitty_graphics::pty_filter::KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES
-      != 0;
     let input = crate::mappings::keys::to_input_bytes(
       keystroke,
       &self.last_content.mode,
       alt_is_meta,
-      report_all_keys_as_escape_codes,
+      keyboard_protocol_flags,
     );
     if let Some(input) = input {
       self.input(input);

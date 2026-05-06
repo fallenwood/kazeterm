@@ -3,6 +3,27 @@ use std::borrow::Cow;
 use gpui::Keystroke;
 use terminal_kernel::term::TermMode;
 
+use crate::kitty_graphics::pty_filter::{
+  KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES, KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+  WINDOWS_CONPTY_WIN32_INPUT_MODE,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+  MAPVK_VK_TO_VSC, MapVirtualKeyW, VK_BACK, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_HOME,
+  VK_INSERT, VK_LEFT, VK_NEXT, VK_OEM_1, VK_OEM_2, VK_OEM_3, VK_OEM_4, VK_OEM_5, VK_OEM_6,
+  VK_OEM_7, VK_OEM_COMMA, VK_OEM_MINUS, VK_OEM_PERIOD, VK_OEM_PLUS, VK_PRIOR, VK_RETURN, VK_RIGHT,
+  VK_SPACE, VK_TAB, VK_UP,
+};
+
+#[cfg(target_os = "windows")]
+const WIN32_LEFT_ALT_PRESSED: u32 = 0x0002;
+#[cfg(target_os = "windows")]
+const WIN32_LEFT_CTRL_PRESSED: u32 = 0x0008;
+#[cfg(target_os = "windows")]
+const WIN32_SHIFT_PRESSED: u32 = 0x0010;
+#[cfg(target_os = "windows")]
+const WIN32_ENHANCED_KEY: u32 = 0x0100;
+
 pub enum KnownKeys {
   Tab,
   ShiftTab,
@@ -78,28 +99,325 @@ fn kitty_c0_key_code(key: &str) -> Option<u32> {
   }
 }
 
-fn to_kitty_c0_escape(key: &str, keystroke: &Keystroke) -> Option<Cow<'static, str>> {
-  let code = kitty_c0_key_code(key)?;
-  let modifier_code = modifier_code(keystroke);
+fn kitty_disambiguate_escape_codes(keyboard_protocol_flags: u32) -> bool {
+  keyboard_protocol_flags & KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES != 0
+}
 
-  Some(Cow::Owned(if modifier_code == 1 {
+fn kitty_report_all_keys_as_escape_codes(keyboard_protocol_flags: u32) -> bool {
+  keyboard_protocol_flags & KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES != 0
+}
+
+fn windows_conpty_win32_input_mode_enabled(keyboard_protocol_flags: u32) -> bool {
+  keyboard_protocol_flags & WINDOWS_CONPTY_WIN32_INPUT_MODE != 0
+}
+
+fn single_char(text: &str) -> Option<char> {
+  let mut chars = text.chars();
+  let ch = chars.next()?;
+  chars.next().is_none().then_some(ch)
+}
+
+/// Recover the base (unshifted) key for symbols GPUI reports on Windows with
+/// `shift = false`, like Shift+1 arriving as `key = "!"`.
+fn unshifted_symbol_key(key: &str) -> Option<&'static str> {
+  match key {
+    "!" => Some("1"),
+    "@" => Some("2"),
+    "#" => Some("3"),
+    "$" => Some("4"),
+    "%" => Some("5"),
+    "^" => Some("6"),
+    "&" => Some("7"),
+    "*" => Some("8"),
+    "(" => Some("9"),
+    ")" => Some("0"),
+    "~" => Some("`"),
+    "_" => Some("-"),
+    "+" => Some("="),
+    "{" => Some("["),
+    "}" => Some("]"),
+    "|" => Some("\\"),
+    ":" => Some(";"),
+    "\"" => Some("'"),
+    "<" => Some(","),
+    ">" => Some("."),
+    "?" => Some("/"),
+    _ => None,
+  }
+}
+
+fn kitty_modifier_code(keystroke: &Keystroke, inferred_shift: bool) -> u32 {
+  let mut modifier_code = 0;
+  if keystroke.modifiers.shift || inferred_shift {
+    modifier_code |= 1;
+  }
+  if keystroke.modifiers.alt {
+    modifier_code |= 1 << 1;
+  }
+  if keystroke.modifiers.control {
+    modifier_code |= 1 << 2;
+  }
+  modifier_code + 1
+}
+
+fn kitty_escape(code: u32, modifier_code: u32) -> Cow<'static, str> {
+  Cow::Owned(if modifier_code == 1 {
     format!("\x1b[{code}u")
   } else {
     format!("\x1b[{code};{modifier_code}u")
-  }))
+  })
+}
+
+fn to_kitty_c0_escape(
+  key: &str,
+  keystroke: &Keystroke,
+  keyboard_protocol_flags: u32,
+) -> Option<Cow<'static, str>> {
+  let code = kitty_c0_key_code(key)?;
+  let should_encode = if kitty_report_all_keys_as_escape_codes(keyboard_protocol_flags) {
+    true
+  } else if kitty_disambiguate_escape_codes(keyboard_protocol_flags) {
+    match key {
+      // Plain Escape must be disambiguated from the start of CSI/SS3/etc.
+      "escape" => true,
+      _ => AlacModifiers::new(keystroke).any(),
+    }
+  } else {
+    false
+  };
+
+  should_encode.then(|| kitty_escape(code, kitty_modifier_code(keystroke, false)))
+}
+
+fn kitty_text_key_code(key: &str) -> Option<(u32, bool)> {
+  if key == "space" {
+    return Some((32, false));
+  }
+
+  let (normalized, inferred_shift) = if let Some(base_key) = unshifted_symbol_key(key) {
+    (Cow::Borrowed(base_key), true)
+  } else if key.chars().count() == 1 {
+    (
+      Cow::Owned(key.chars().flat_map(char::to_lowercase).collect::<String>()),
+      false,
+    )
+  } else {
+    return None;
+  };
+
+  let mut chars = normalized.chars();
+  let key_char = chars.next()?;
+  if chars.next().is_some() {
+    return None;
+  }
+
+  Some((u32::from(key_char), inferred_shift))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_named_virtual_key_code(key: &str) -> Option<(u16, bool)> {
+  match key {
+    "space" => Some((VK_SPACE.0, false)),
+    "backspace" | "back" => Some((VK_BACK.0, false)),
+    "escape" => Some((VK_ESCAPE.0, false)),
+    "enter" => Some((VK_RETURN.0, false)),
+    "tab" => Some((VK_TAB.0, false)),
+    "left" => Some((VK_LEFT.0, true)),
+    "right" => Some((VK_RIGHT.0, true)),
+    "up" => Some((VK_UP.0, true)),
+    "down" => Some((VK_DOWN.0, true)),
+    "home" => Some((VK_HOME.0, true)),
+    "end" => Some((VK_END.0, true)),
+    "pageup" => Some((VK_PRIOR.0, true)),
+    "pagedown" => Some((VK_NEXT.0, true)),
+    "insert" => Some((VK_INSERT.0, true)),
+    "delete" => Some((VK_DELETE.0, true)),
+    _ => {
+      let function_number = key.strip_prefix('f')?.parse::<u16>().ok()?;
+      (1..=24)
+        .contains(&function_number)
+        .then_some((VK_F1.0 + function_number - 1, false))
+    }
+  }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_printable_virtual_key_code(key: &str) -> Option<u16> {
+  let ch = single_char(key)?;
+  match ch.to_ascii_lowercase() {
+    'a'..='z' => Some(ch.to_ascii_uppercase() as u16),
+    '0'..='9' => Some(ch as u16),
+    '`' => Some(VK_OEM_3.0),
+    '-' => Some(VK_OEM_MINUS.0),
+    '=' => Some(VK_OEM_PLUS.0),
+    '[' => Some(VK_OEM_4.0),
+    ']' => Some(VK_OEM_6.0),
+    '\\' => Some(VK_OEM_5.0),
+    ';' => Some(VK_OEM_1.0),
+    '\'' => Some(VK_OEM_7.0),
+    ',' => Some(VK_OEM_COMMA.0),
+    '.' => Some(VK_OEM_PERIOD.0),
+    '/' => Some(VK_OEM_2.0),
+    _ => None,
+  }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_virtual_key_code(key: &str) -> Option<(u16, bool)> {
+  windows_named_virtual_key_code(key)
+    .or_else(|| windows_printable_virtual_key_code(key).map(|virtual_key| (virtual_key, false)))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_scan_code(virtual_key: u16) -> u16 {
+  unsafe { MapVirtualKeyW(u32::from(virtual_key), MAPVK_VK_TO_VSC) as u16 }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_control_char(raw_key: &str) -> Option<char> {
+  match raw_key {
+    "space" => Some('\0'),
+    "@" => Some('\0'),
+    "[" => Some('\x1b'),
+    "\\" => Some('\x1c'),
+    "]" => Some('\x1d'),
+    "^" => Some('\x1e'),
+    "_" => Some('\x1f'),
+    "?" => Some('\x7f'),
+    _ => {
+      let ch = single_char(raw_key)?.to_ascii_lowercase();
+      if ch.is_ascii_lowercase() {
+        Some(char::from((ch as u8 - b'a') + 1))
+      } else {
+        None
+      }
+    }
+  }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_typed_char(keystroke: &Keystroke, effective_shift: bool) -> Option<char> {
+  if let Some(key_char) = keystroke.key_char.as_deref().and_then(single_char) {
+    return Some(key_char);
+  }
+
+  match keystroke.key.as_str() {
+    "space" => Some(' '),
+    "backspace" | "back" => Some('\x08'),
+    "tab" => Some('\t'),
+    "enter" => Some('\r'),
+    _ => {
+      let ch = single_char(&keystroke.key)?;
+      if effective_shift && ch.is_ascii_lowercase() {
+        Some(ch.to_ascii_uppercase())
+      } else {
+        Some(ch)
+      }
+    }
+  }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_control_state(keystroke: &Keystroke, inferred_shift: bool, enhanced: bool) -> u32 {
+  let mut state = 0;
+  if keystroke.modifiers.shift || inferred_shift {
+    state |= WIN32_SHIFT_PRESSED;
+  }
+  if keystroke.modifiers.control {
+    state |= WIN32_LEFT_CTRL_PRESSED;
+  }
+  if keystroke.modifiers.alt {
+    state |= WIN32_LEFT_ALT_PRESSED;
+  }
+  if enhanced {
+    state |= WIN32_ENHANCED_KEY;
+  }
+  state
+}
+
+#[cfg(target_os = "windows")]
+fn windows_unicode_char(keystroke: &Keystroke, effective_shift: bool) -> u16 {
+  if keystroke.modifiers.control
+    && !keystroke.modifiers.alt
+    && !keystroke.modifiers.platform
+    && let Some(ch) = windows_control_char(&keystroke.key)
+  {
+    return ch as u16;
+  }
+
+  windows_typed_char(keystroke, effective_shift)
+    .map(|ch| ch as u16)
+    .unwrap_or(0)
+}
+
+#[cfg(target_os = "windows")]
+fn to_windows_conpty_input_escape(
+  keystroke: &Keystroke,
+  keyboard_protocol_flags: u32,
+) -> Option<Cow<'static, str>> {
+  if !windows_conpty_win32_input_mode_enabled(keyboard_protocol_flags) {
+    return None;
+  }
+
+  let key = normalized_key_name(&keystroke.key);
+  let (base_key, inferred_shift) = if let Some(base_key) = unshifted_symbol_key(key.as_ref()) {
+    (Cow::Borrowed(base_key), true)
+  } else {
+    (key, false)
+  };
+  let (virtual_key, enhanced) = windows_virtual_key_code(base_key.as_ref())?;
+  let scan_code = windows_scan_code(virtual_key);
+  let effective_shift = keystroke.modifiers.shift || inferred_shift;
+  let unicode_char = windows_unicode_char(keystroke, effective_shift);
+  let control_state = windows_control_state(keystroke, inferred_shift, enhanced);
+
+  Some(Cow::Owned(format!(
+    "\x1b[{virtual_key};{scan_code};{unicode_char};1;{control_state};1_"
+  )))
+}
+
+fn to_kitty_text_escape(
+  key: &str,
+  keystroke: &Keystroke,
+  keyboard_protocol_flags: u32,
+) -> Option<Cow<'static, str>> {
+  let report_all = kitty_report_all_keys_as_escape_codes(keyboard_protocol_flags);
+  let disambiguate = kitty_disambiguate_escape_codes(keyboard_protocol_flags);
+  if !report_all && !disambiguate {
+    return None;
+  }
+
+  let has_non_shift_modifiers =
+    keystroke.modifiers.control || keystroke.modifiers.alt || keystroke.modifiers.platform;
+  if !report_all && !has_non_shift_modifiers {
+    return None;
+  }
+
+  let (code, inferred_shift) = kitty_text_key_code(key)?;
+  Some(kitty_escape(
+    code,
+    kitty_modifier_code(keystroke, inferred_shift),
+  ))
 }
 pub fn to_esc_str(
   keystroke: &Keystroke,
   mode: &TermMode,
   alt_is_meta: bool,
-  report_all_keys_as_escape_codes: bool,
+  keyboard_protocol_flags: u32,
 ) -> Option<Cow<'static, str>> {
   let modifiers = AlacModifiers::new(keystroke);
   let key = normalized_key_name(&keystroke.key);
 
-  if report_all_keys_as_escape_codes
-    && let Some(escape) = to_kitty_c0_escape(key.as_ref(), keystroke)
-  {
+  #[cfg(target_os = "windows")]
+  if let Some(escape) = to_windows_conpty_input_escape(keystroke, keyboard_protocol_flags) {
+    return Some(escape);
+  }
+
+  if let Some(escape) = to_kitty_c0_escape(key.as_ref(), keystroke, keyboard_protocol_flags) {
+    return Some(escape);
+  }
+
+  if let Some(escape) = to_kitty_text_escape(key.as_ref(), keystroke, keyboard_protocol_flags) {
     return Some(escape);
   }
 
@@ -316,14 +634,9 @@ pub fn to_input_bytes(
   keystroke: &Keystroke,
   mode: &TermMode,
   alt_is_meta: bool,
-  report_all_keys_as_escape_codes: bool,
+  keyboard_protocol_flags: u32,
 ) -> Option<Cow<'static, [u8]>> {
-  if let Some(escape) = to_esc_str(
-    keystroke,
-    mode,
-    alt_is_meta,
-    report_all_keys_as_escape_codes,
-  ) {
+  if let Some(escape) = to_esc_str(keystroke, mode, alt_is_meta, keyboard_protocol_flags) {
     return Some(match escape {
       Cow::Borrowed(escape) => Cow::Borrowed(escape.as_bytes()),
       Cow::Owned(escape) => Cow::Owned(escape.into_bytes()),
@@ -372,6 +685,11 @@ mod tests {
   use gpui::{Keystroke, Modifiers};
   use terminal_kernel::term::TermMode;
 
+  use crate::kitty_graphics::pty_filter::{
+    KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES, KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+    WINDOWS_CONPTY_WIN32_INPUT_MODE,
+  };
+
   fn keystroke(key: &str, modifiers: Modifiers) -> Keystroke {
     Keystroke {
       modifiers,
@@ -393,7 +711,7 @@ mod tests {
       ),
       &TermMode::empty(),
       true,
-      false,
+      0,
     );
 
     assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
@@ -412,7 +730,7 @@ mod tests {
       ),
       &TermMode::empty(),
       true,
-      false,
+      0,
     );
 
     assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
@@ -431,7 +749,7 @@ mod tests {
       ),
       &TermMode::empty(),
       true,
-      true,
+      KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES,
     );
 
     assert_eq!(escape.as_deref(), Some("\x1b[127;6u"));
@@ -449,10 +767,130 @@ mod tests {
       ),
       &TermMode::empty(),
       true,
-      false,
+      0,
     );
 
     assert_eq!(escape.as_deref(), Some("\x08"));
+  }
+
+  #[test]
+  fn shift_enter_uses_kitty_sequence_when_disambiguate_mode_is_enabled() {
+    let escape = to_esc_str(
+      &keystroke(
+        "enter",
+        Modifiers {
+          shift: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+      KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[13;2u"));
+  }
+
+  #[test]
+  fn ctrl_j_uses_kitty_sequence_when_disambiguate_mode_is_enabled() {
+    let escape = to_esc_str(
+      &keystroke(
+        "j",
+        Modifiers {
+          control: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+      KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[106;5u"));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn shift_enter_uses_conpty_win32_input_mode_when_enabled() {
+    let escape = to_esc_str(
+      &keystroke(
+        "enter",
+        Modifiers {
+          shift: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+      WINDOWS_CONPTY_WIN32_INPUT_MODE,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[13;28;13;1;16;1_"));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn ctrl_j_uses_conpty_win32_input_mode_when_enabled() {
+    let escape = to_esc_str(
+      &keystroke(
+        "j",
+        Modifiers {
+          control: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+      WINDOWS_CONPTY_WIN32_INPUT_MODE,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[74;36;10;1;8;1_"));
+  }
+
+  #[test]
+  fn plain_escape_is_disambiguated_in_kitty_mode() {
+    let escape = to_esc_str(
+      &keystroke("escape", Modifiers::default()),
+      &TermMode::empty(),
+      true,
+      KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[27u"));
+  }
+
+  #[test]
+  fn shifted_symbol_recovers_shift_for_kitty_sequences() {
+    let escape = to_esc_str(
+      &keystroke(
+        "!",
+        Modifiers {
+          control: true,
+          ..Modifiers::default()
+        },
+      ),
+      &TermMode::empty(),
+      true,
+      KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[49;6u"));
+  }
+
+  #[test]
+  fn report_all_keys_escapes_plain_text_keys() {
+    let escape = to_esc_str(
+      &Keystroke {
+        key: "a".to_string(),
+        key_char: Some("a".to_string()),
+        modifiers: Modifiers::default(),
+      },
+      &TermMode::empty(),
+      true,
+      KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+    );
+
+    assert_eq!(escape.as_deref(), Some("\x1b[97u"));
   }
 
   #[test]
@@ -465,7 +903,7 @@ mod tests {
       },
       &TermMode::empty(),
       true,
-      false,
+      0,
     )
     .unwrap();
 
@@ -485,7 +923,7 @@ mod tests {
       },
       &TermMode::empty(),
       true,
-      false,
+      0,
     )
     .unwrap();
 
