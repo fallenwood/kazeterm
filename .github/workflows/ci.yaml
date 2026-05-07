@@ -32,6 +32,7 @@ jobs:
             ~/.cargo/git
             target
             !target/release-fast/build/libghostty-vt-sys-*
+            !target/release-fast/build/libghostty-vt-sys-*/**
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Setup
@@ -86,19 +87,21 @@ jobs:
         run: |
           mkdir ./dists
           mv target\release-fast\kazeterm.exe ./kazeterm.exe
+          $packDir = (Resolve-Path .).Path
           $ghosttyLibName = 'ghostty-vt.dll'
-          $ghosttyLibs = @(Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue | Sort-Object FullName)
-          if ($ghosttyLibs.Count -eq 0) {
-            $ghosttyLibs = @(
-              Get-ChildItem ./target/release-fast/build -Recurse -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -like '*ghostty-install*' } |
-                Sort-Object FullName
-            )
+          $ghosttyLibs = @(
+            Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue
+            Get-ChildItem ./target/release-fast/build -Recurse -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -like '*ghostty-install*' }
+          )
+          $ghosttyLib = $ghosttyLibs |
+            Sort-Object LastWriteTimeUtc, FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $ghosttyLib) {
+            throw "Missing ghostty-vt Windows runtime in target/release-fast or target/release-fast/build/**/ghostty-install/bin"
           }
-          if ($ghosttyLibs.Count -eq 0) {
-            throw "Missing libghostty-vt Linux runtime in target/release-fast or target/release-fast/build/**/ghostty-install/lib"
-          }
-          Copy-Item $ghosttyLibs[0].FullName $packDir
+          Write-Host "Using Ghostty runtime: $($ghosttyLib.FullName)"
+          Copy-Item $ghosttyLib.FullName -Destination $packDir -Force
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           7z a ./dists/kazeterm-$variant-${{ github.ref_name }}.7z ./kazeterm.exe $ghosttyLibName
 
