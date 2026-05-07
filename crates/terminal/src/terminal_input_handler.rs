@@ -59,8 +59,7 @@ impl InputHandler for TerminalInputHandler {
     cx: &mut App,
   ) {
     self.terminal_view.update(cx, |view, view_cx| {
-      view.clear_marked_text(view_cx);
-      view.commit_text(text, view_cx);
+      view.commit_ime_text(text, view_cx);
     });
   }
 
