@@ -52,6 +52,22 @@ fn config_cursor_blink_enabled(cx: &gpui::App) -> bool {
     .unwrap_or(true)
 }
 
+fn should_defer_keydown_text_input(keystroke: &gpui::Keystroke) -> bool {
+  #[cfg(target_os = "windows")]
+  {
+    return !keystroke.modifiers.control
+      && !keystroke.modifiers.alt
+      && !keystroke.modifiers.platform
+      && keystroke.key_char.is_some();
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    let _ = keystroke;
+    false
+  }
+}
+
 #[derive(Clone, Debug)]
 pub enum TerminalEvent {
   UpdateTab,
@@ -291,6 +307,10 @@ impl TerminalView {
       );
 
     if main_window_shortcut {
+      return;
+    }
+
+    if should_defer_keydown_text_input(&event.keystroke) {
       return;
     }
 
@@ -749,4 +769,64 @@ fn subscribe_for_terminal_events(
     },
   );
   vec![terminal_subscription, terminal_events_subscription]
+}
+
+#[cfg(test)]
+mod tests {
+  use super::should_defer_keydown_text_input;
+  use gpui::{Keystroke, Modifiers};
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn windows_defers_plain_text_keydown_to_char_or_ime_events() {
+    let keystroke = Keystroke {
+      modifiers: Modifiers::default(),
+      key: "a".to_string(),
+      key_char: Some("a".to_string()),
+    };
+
+    assert!(should_defer_keydown_text_input(&keystroke));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn windows_defers_shifted_text_keydown_to_char_or_ime_events() {
+    let keystroke = Keystroke {
+      modifiers: Modifiers {
+        shift: true,
+        ..Modifiers::default()
+      },
+      key: "!".to_string(),
+      key_char: Some("!".to_string()),
+    };
+
+    assert!(should_defer_keydown_text_input(&keystroke));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn windows_still_handles_modified_terminal_shortcuts_on_keydown() {
+    let keystroke = Keystroke {
+      modifiers: Modifiers {
+        control: true,
+        ..Modifiers::default()
+      },
+      key: "c".to_string(),
+      key_char: None,
+    };
+
+    assert!(!should_defer_keydown_text_input(&keystroke));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn windows_still_handles_special_keys_on_keydown() {
+    let keystroke = Keystroke {
+      modifiers: Modifiers::default(),
+      key: "enter".to_string(),
+      key_char: None,
+    };
+
+    assert!(!should_defer_keydown_text_input(&keystroke));
+  }
 }
