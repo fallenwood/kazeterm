@@ -68,26 +68,6 @@ fn should_defer_keydown_text_input(keystroke: &gpui::Keystroke) -> bool {
   }
 }
 
-fn new_ime_state(text: String, range: Option<Range<usize>>) -> ImeState {
-  ImeState {
-    marked_text: text,
-    marked_range_utf16: range,
-  }
-}
-
-fn clear_ime_state(ime_state: &mut Option<ImeState>) -> bool {
-  if ime_state.is_some() {
-    *ime_state = None;
-    true
-  } else {
-    false
-  }
-}
-
-fn committed_text_bytes(text: &str) -> Option<Vec<u8>> {
-  (!text.is_empty()).then(|| text.as_bytes().to_vec())
-}
-
 #[derive(Clone, Debug)]
 pub enum TerminalEvent {
   UpdateTab,
@@ -795,9 +775,7 @@ fn subscribe_for_terminal_events(
 
 #[cfg(test)]
 mod tests {
-  use super::{
-    clear_ime_state, committed_text_bytes, new_ime_state, should_defer_keydown_text_input,
-  };
+  use super::should_defer_keydown_text_input;
   use gpui::{Keystroke, Modifiers};
 
   #[cfg(target_os = "windows")]
@@ -852,39 +830,5 @@ mod tests {
     };
 
     assert!(!should_defer_keydown_text_input(&keystroke));
-  }
-
-  #[test]
-  fn new_ime_state_preserves_marked_text_and_range() {
-    let state = new_ime_state("ni".to_string(), Some(0..2));
-
-    assert_eq!(state.marked_text, "ni");
-    assert_eq!(state.marked_range_utf16, Some(0..2));
-  }
-
-  #[test]
-  fn clear_ime_state_removes_existing_composition() {
-    let mut ime_state = Some(new_ime_state("ni".to_string(), Some(0..2)));
-
-    assert!(clear_ime_state(&mut ime_state));
-    assert!(ime_state.is_none());
-  }
-
-  #[test]
-  fn clear_ime_state_is_a_no_op_when_nothing_is_marked() {
-    let mut ime_state = None;
-
-    assert!(!clear_ime_state(&mut ime_state));
-    assert!(ime_state.is_none());
-  }
-
-  #[test]
-  fn committed_text_bytes_preserve_utf8_for_ime_commits() {
-    assert_eq!(committed_text_bytes("你"), Some("你".as_bytes().to_vec()));
-  }
-
-  #[test]
-  fn committed_text_bytes_skip_empty_commits() {
-    assert_eq!(committed_text_bytes(""), None);
   }
 }
