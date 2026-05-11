@@ -11,23 +11,19 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-latest, macos-26-intel]
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4
 
       - name: Set rust vesrion
         run: rustup override set 1.95.0
 
       - name: Setup Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        uses: mlugg/setup-zig@v2
         with:
           version: "0.15.2"
 
       - name: Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -71,7 +67,7 @@ jobs:
           cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.info
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v4
         if: runner.os == 'Linux' && runner.arch == 'X64'
         with:
           name: coverage-lcov
