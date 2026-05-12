@@ -60,6 +60,27 @@ Enable the bottom-right shortcut inspector with:
 key_debug_mode = true
 ```
 
+### Auto update
+
+Kazeterm can check GitHub releases and apply matching packages for the current
+platform:
+
+```toml
+[auto_update]
+# Supported values: "never", "once_a_day", "always"
+check = "once_a_day"
+# Optional; omit when no proxy is needed.
+proxy = "http://127.0.0.1:7890"
+```
+
+Local/dev builds always skip auto-update checks. CI-packaged pinned builds such
+as `0.1.0` ignore the `wip` release and update only to the latest pinned tag.
+CI-packaged `wip` builds track the `wip` release by commit hash or release
+timestamp. Updates are staged in the system temp directory; Kazeterm saves the
+workspace, swaps the executable on restart, and restores the saved workspace.
+Updater state, including the daily-check timestamp and one-shot restore flag, is
+kept in the same `kazeterm.toml` under `[auto_update]`.
+
 ## How to Build
 
 ### Environment Setup

@@ -3301,6 +3301,7 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "rust-embed",
+ "semver",
  "serde",
  "serde_json",
  "smol",

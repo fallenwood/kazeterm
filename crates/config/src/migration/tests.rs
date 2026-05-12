@@ -385,6 +385,10 @@ fn migrated_config_deserializes_to_config_struct() {
   assert_eq!(config.tab.label_max_width, 200.0);
   assert!(!config.terminal.hide_mouse_when_typing);
   assert_eq!(config.terminal.kernel, crate::TerminalKernel::Alacritty);
+  assert_eq!(config.auto_update.check, crate::AutoUpdatePolicy::Never);
+  assert_eq!(config.auto_update.proxy, None);
+  assert_eq!(config.auto_update.last_check_unix_secs, None);
+  assert!(!config.auto_update.restore_workspace_once);
 }
 
 #[test]
@@ -848,6 +852,41 @@ copy = "ctrl-shift-c"
     .as_str()
     .unwrap(),
     "toggle_hidden_panes"
+  );
+  assert_eq!(
+    config.get("version").unwrap().as_str().unwrap(),
+    CURRENT_CONFIG_VERSION
+  );
+}
+
+#[test]
+fn migrate_20260422_1_adds_auto_update_config() {
+  let mut config: Value = toml::from_str(
+    r#"
+version = "20260422.1"
+
+[terminal]
+scrollback_lines = 10000
+"#,
+  )
+  .unwrap();
+
+  let migrated = apply_migrations(&mut config);
+  assert!(migrated);
+
+  assert_eq!(
+    get_nested(&config, "auto_update", "check")
+      .unwrap()
+      .as_str()
+      .unwrap(),
+    "never"
+  );
+  assert_eq!(
+    get_nested(&config, "auto_update", "restore_workspace_once")
+      .unwrap()
+      .as_bool()
+      .unwrap(),
+    false
   );
   assert_eq!(
     config.get("version").unwrap().as_str().unwrap(),

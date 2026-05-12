@@ -71,6 +71,7 @@ pub struct MainWindow {
   /// About dialog state
   pub(crate) about_dialog: Option<Entity<AboutDialog>>,
   pub(crate) _about_dialog_subscription: Option<gpui::Subscription>,
+  pub(crate) _about_dialog_event_subscription: Option<gpui::Subscription>,
   /// Import Alacritty config dialog state
   pub(crate) import_alacritty_dialog: Option<Entity<ImportAlacrittyDialog>>,
   pub(crate) _import_alacritty_subscription: Option<gpui::Subscription>,
@@ -174,6 +175,7 @@ impl MainWindow {
       _close_confirm_subscription: None,
       about_dialog: None,
       _about_dialog_subscription: None,
+      _about_dialog_event_subscription: None,
       import_alacritty_dialog: None,
       _import_alacritty_subscription: None,
       ui_tree_json_prompt_pending: false,
@@ -188,7 +190,8 @@ impl MainWindow {
 
     // Try to restore previous workspace
     let config = cx.global::<::config::Config>();
-    if config.window.restore_workspace {
+    let restore_workspace_once = crate::auto_update::take_restore_workspace_once();
+    if config.window.restore_workspace || restore_workspace_once {
       if let Some(tree) = UITreeStore::load_workspace() {
         main_window.reconciling_ui_tree = true;
         main_window.restore_from_ui_tree(&tree, window, cx);

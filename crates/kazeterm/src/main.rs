@@ -29,6 +29,7 @@ use ::config::Config;
 
 mod app_icon;
 mod assets;
+mod auto_update;
 mod build_info;
 mod components;
 mod config;
@@ -215,6 +216,11 @@ fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
           event_config_clone,
           cx,
         );
+      });
+
+      let main_window_weak = view.downgrade();
+      cx.defer(move |cx| {
+        crate::auto_update::start_auto_update(main_window_weak, window_handle, cx);
       });
 
       cx.new(|cx| gpui_component::Root::new(view, window, cx))
