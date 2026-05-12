@@ -57,6 +57,7 @@ notify = "8.2.0"
 notify-debouncer-mini = "0.7"
 notify-rust = "4"
 which = "8.0.2"
+semver = "1.0"
 
 [workspace.dependencies.windows]
 version = "0.62.2"

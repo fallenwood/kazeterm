@@ -155,9 +155,9 @@ impl Config {
 #[cfg(test)]
 mod tests {
   use crate::{
-    AppearanceConfig, CURRENT_CONFIG_VERSION, ColorsConfig, Config, CursorConfig, FontConfig,
-    KeybindingConfig, NotificationConfig, PaneConfig, Profile, TabConfig, TerminalConfig,
-    ThemeMode, WindowConfig,
+    AppearanceConfig, AutoUpdateConfig, CURRENT_CONFIG_VERSION, ColorsConfig, Config, CursorConfig,
+    FontConfig, KeybindingConfig, NotificationConfig, PaneConfig, Profile, TabConfig,
+    TerminalConfig, ThemeMode, WindowConfig,
   };
 
   #[test]
@@ -215,6 +215,7 @@ mod tests {
       },
       cursor: CursorConfig::default(),
       notification: NotificationConfig::default(),
+      auto_update: AutoUpdateConfig::default(),
       profiles: profiles.clone(),
       keybindings: KeybindingConfig::default(),
       container_profiles: vec![],

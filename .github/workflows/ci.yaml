@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: [ master ]
+    tags: [ "*" ]
+
+env:
+  KAZETERM_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'wip' }}
 
 jobs:
   build-release:
@@ -103,7 +107,8 @@ jobs:
           Write-Host "Using Ghostty runtime: $($ghosttyLib.FullName)"
           Copy-Item $ghosttyLib.FullName -Destination $packDir -Force
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
-          7z a ./dists/kazeterm-$variant-${{ github.ref_name }}.7z ./kazeterm.exe $ghosttyLibName
+          7z a ./dists/kazeterm-$variant-$env:KAZETERM_RELEASE_TAG.7z ./kazeterm.exe $ghosttyLibName
+          Compress-Archive -Path ./kazeterm.exe, $ghosttyLibName -DestinationPath ./dists/kazeterm-$variant-$env:KAZETERM_RELEASE_TAG.zip -Force
 
       - name: Pack
         if: runner.os == 'Linux'
@@ -128,7 +133,7 @@ jobs:
           }
           Write-Host "Using Ghostty runtime: $($ghosttyLib.FullName)"
           Copy-Item $ghosttyLib.FullName -Destination $packDir -Force
-          tar --zstd -cf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.zstd -C $packDir .
+          tar --zstd -cf ./dists/kazeterm-$variant-$env:KAZETERM_RELEASE_TAG.tar.zstd -C $packDir .
 
       - name: Install cargo-bundle
         if: runner.os == 'macOS'
@@ -164,13 +169,13 @@ jobs:
           $frameworksDir = Join-Path (Resolve-Path ./target/release-fast/bundle/osx/Kazeterm.app).Path "Contents/Frameworks"
           New-Item -ItemType Directory -Force -Path $frameworksDir | Out-Null
           Copy-Item $ghosttyLib.FullName -Destination $frameworksDir -Force
-          tar -czf ./dists/kazeterm-$variant-${{ github.ref_name }}.tar.gz -C $binPackDir .
-          tar -czf ./dists/kazeterm-$variant-${{ github.ref_name }}-dmg.tar.gz -C ./target/release-fast/bundle/osx Kazeterm.app
+          tar -czf ./dists/kazeterm-$variant-$env:KAZETERM_RELEASE_TAG.tar.gz -C $binPackDir .
+          tar -czf ./dists/kazeterm-$variant-$env:KAZETERM_RELEASE_TAG-dmg.tar.gz -C ./target/release-fast/bundle/osx Kazeterm.app
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: wip
-          prerelease: true
+          tag_name: ${{ env.KAZETERM_RELEASE_TAG }}
+          prerelease: ${{ env.KAZETERM_RELEASE_TAG == 'wip' }}
           files: |
             ./dists/*

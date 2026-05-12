@@ -188,7 +188,8 @@ impl MainWindow {
 
     // Try to restore previous workspace
     let config = cx.global::<::config::Config>();
-    if config.window.restore_workspace {
+    let restore_workspace_once = crate::auto_update::take_restore_workspace_once();
+    if config.window.restore_workspace || restore_workspace_once {
       if let Some(tree) = UITreeStore::load_workspace() {
         main_window.reconciling_ui_tree = true;
         main_window.restore_from_ui_tree(&tree, window, cx);

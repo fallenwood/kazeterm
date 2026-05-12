@@ -52,6 +52,7 @@ impl Render for AboutDialog {
 
     let short_hash = crate::build_info::short_commit_hash();
     let version = crate::build_info::app_version();
+    let build_source = crate::build_info::build_source();
     let license = Self::get_license();
     let author = Self::get_author();
     let repo = Self::get_repo();
@@ -114,6 +115,7 @@ impl Render for AboutDialog {
                   .text_sm()
                   .child(self.info_row("Theme", &theme_display, theme))
                   .child(self.info_row("Version", version, theme))
+                  .child(self.info_row("Build", build_source, theme))
                   .child(self.info_row("Commit", short_hash, theme))
                   .child(self.info_row("License", license, theme))
                   .child(self.info_row("Author", author, theme))

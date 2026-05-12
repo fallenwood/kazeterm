@@ -454,6 +454,39 @@ impl Default for NotificationConfig {
   }
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoUpdatePolicy {
+  Always,
+  #[default]
+  Never,
+  OnceADay,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct AutoUpdateConfig {
+  /// How often Kazeterm checks GitHub releases and applies available updates.
+  pub check: AutoUpdatePolicy,
+  /// Optional HTTP(S) proxy URL used only by the auto updater.
+  pub proxy: Option<String>,
+  /// Last successful update check timestamp. Managed by Kazeterm.
+  pub last_check_unix_secs: Option<i64>,
+  /// Restore the saved workspace once after an update restart. Managed by Kazeterm.
+  pub restore_workspace_once: bool,
+}
+
+impl Default for AutoUpdateConfig {
+  fn default() -> Self {
+    Self {
+      check: AutoUpdatePolicy::Never,
+      proxy: None,
+      last_check_unix_secs: None,
+      restore_workspace_once: false,
+    }
+  }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
@@ -472,6 +505,7 @@ pub struct Config {
   pub terminal: TerminalConfig,
   pub cursor: CursorConfig,
   pub notification: NotificationConfig,
+  pub auto_update: AutoUpdateConfig,
   #[serde(default)]
   pub profiles: Vec<Profile>,
   /// Custom keyboard shortcuts
@@ -494,6 +528,7 @@ impl Default for Config {
       terminal: TerminalConfig::default(),
       cursor: CursorConfig::default(),
       notification: NotificationConfig::default(),
+      auto_update: AutoUpdateConfig::default(),
       profiles: profiles::default_profiles(),
       keybindings: KeybindingConfig::default(),
       container_profiles: profiles::detect_container_profiles(),
@@ -730,6 +765,88 @@ impl Config {
     }
 
     unreachable!("unbounded collision search should always find a free backup filename")
+  }
+
+  fn update_auto_update_table(
+    update: impl FnOnce(&mut toml::map::Map<String, toml::Value>),
+  ) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Self::get_config_file_path_impl();
+    if !path.exists() {
+      Self::create_default_config(&path)?;
+    }
+
+    let (_, mut raw) = Self::read_raw_config_with_content(&path)?;
+    migration::apply_migrations(&mut raw);
+
+    let Some(root) = raw.as_table_mut() else {
+      return Err(std::io::Error::other("config root must be a TOML table").into());
+    };
+
+    let auto_update = root
+      .entry("auto_update".to_string())
+      .or_insert_with(|| toml::Value::Table(Default::default()));
+    let toml::Value::Table(auto_update) = auto_update else {
+      return Err(std::io::Error::other("[auto_update] must be a TOML table").into());
+    };
+
+    update(auto_update);
+    Self::save_raw_to_path(&path, &raw)?;
+    Ok(())
+  }
+
+  pub fn set_auto_update_last_check_unix_secs(
+    value: i64,
+  ) -> Result<(), Box<dyn std::error::Error>> {
+    Self::update_auto_update_table(|auto_update| {
+      auto_update.insert(
+        "last_check_unix_secs".to_string(),
+        toml::Value::Integer(value),
+      );
+    })
+  }
+
+  pub fn set_auto_update_restore_workspace_once(
+    value: bool,
+  ) -> Result<(), Box<dyn std::error::Error>> {
+    Self::update_auto_update_table(|auto_update| {
+      auto_update.insert(
+        "restore_workspace_once".to_string(),
+        toml::Value::Boolean(value),
+      );
+    })
+  }
+
+  pub fn take_auto_update_restore_workspace_once() -> Result<bool, Box<dyn std::error::Error>> {
+    let path = Self::get_config_file_path_impl();
+    if !path.exists() {
+      return Ok(false);
+    }
+
+    let (_, mut raw) = Self::read_raw_config_with_content(&path)?;
+    migration::apply_migrations(&mut raw);
+
+    let Some(root) = raw.as_table_mut() else {
+      return Err(std::io::Error::other("config root must be a TOML table").into());
+    };
+
+    let Some(toml::Value::Table(auto_update)) = root.get_mut("auto_update") else {
+      return Ok(false);
+    };
+
+    let restore_workspace_once = auto_update
+      .get("restore_workspace_once")
+      .and_then(toml::Value::as_bool)
+      .unwrap_or(false);
+
+    if restore_workspace_once {
+      auto_update.insert(
+        "restore_workspace_once".to_string(),
+        toml::Value::Boolean(false),
+      );
+      Self::save_raw_to_path(&path, &raw)?;
+    }
+
+    Ok(restore_workspace_once)
   }
 
   fn extract_imports(raw: &toml::Value) -> Vec<String> {
