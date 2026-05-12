@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use gpui::{AppContext, Context, Entity, PathPromptOptions, Window};
 
 use super::main_window::MainWindow;
-use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent};
+use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent, AboutDialogEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
 use crate::components::import_alacritty_dialog::{ImportAlacrittyDialog, ImportAlacrittyEvent};
 use crate::components::shell_error_dialog::{ShellErrorCloseEvent, ShellErrorDialog};
@@ -133,9 +133,11 @@ impl MainWindow {
 
     let dialog = cx.new(|cx| AboutDialog::new(window, cx));
     let subscription = cx.subscribe_in(&dialog, window, Self::on_about_dialog_event);
+    let event_subscription = cx.subscribe_in(&dialog, window, Self::on_about_dialog_action_event);
 
     self.about_dialog = Some(dialog);
     self._about_dialog_subscription = Some(subscription);
+    self._about_dialog_event_subscription = Some(event_subscription);
     cx.notify();
   }
 
@@ -149,10 +151,68 @@ impl MainWindow {
     // Close the dialog
     self.about_dialog = None;
     self._about_dialog_subscription = None;
+    self._about_dialog_event_subscription = None;
 
     // Refocus the terminal
     self.refocus_active_terminal(window, cx);
     cx.notify();
+  }
+
+  pub(crate) fn on_about_dialog_action_event(
+    &mut self,
+    dialog: &Entity<AboutDialog>,
+    event: &AboutDialogEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    match event {
+      AboutDialogEvent::CheckForUpdates => {
+        let dialog = dialog.clone();
+        let window_handle = window.window_handle();
+        let auto_update = cx.global::<::config::Config>().auto_update.clone();
+
+        cx.spawn(async move |this, cx| {
+          let result =
+            smol::unblock(move || crate::auto_update::prepare_manual_update(auto_update)).await;
+
+          match result {
+            Ok(Some(prepared_update)) => {
+              let _ = dialog.update(cx, |dialog, cx| {
+                dialog.finish_update_check("Installing update...".to_string(), false, cx);
+              });
+
+              if let Err(error) =
+                crate::auto_update::apply_prepared_update(this, window_handle, prepared_update, cx)
+                  .await
+              {
+                let _ = dialog.update(cx, |dialog, cx| {
+                  dialog.finish_update_check(format!("Failed to apply update: {error}"), true, cx);
+                });
+              }
+            }
+            Ok(None) => {
+              let _ = dialog.update(cx, |dialog, cx| {
+                dialog.finish_update_check(
+                  "Kazeterm is already up to date.".to_string(),
+                  false,
+                  cx,
+                );
+              });
+            }
+            Err(error) => {
+              let _ = dialog.update(cx, |dialog, cx| {
+                dialog.finish_update_check(
+                  format!("Failed to check for updates: {error}"),
+                  true,
+                  cx,
+                );
+              });
+            }
+          }
+        })
+        .detach();
+      }
+    }
   }
 
   /// Show import Alacritty config dialog

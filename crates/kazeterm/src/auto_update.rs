@@ -18,6 +18,39 @@ const ONE_DAY_SECS: i64 = 24 * 60 * 60;
 
 static AUTO_UPDATE_STARTED: AtomicBool = AtomicBool::new(false);
 
+#[derive(Clone, Copy, Debug)]
+enum UpdateTrigger {
+  Automatic,
+  Manual,
+}
+
+impl UpdateTrigger {
+  fn respects_schedule(self) -> bool {
+    matches!(self, Self::Automatic)
+  }
+
+  fn no_update_message(self) -> &'static str {
+    match self {
+      Self::Automatic => "Kazeterm is already up to date",
+      Self::Manual => "Manual update check: already up to date",
+    }
+  }
+
+  fn check_failure_message(self) -> &'static str {
+    match self {
+      Self::Automatic => "Auto update check failed",
+      Self::Manual => "Manual update check failed",
+    }
+  }
+
+  fn apply_failure_message(self) -> &'static str {
+    match self {
+      Self::Automatic => "Failed to apply auto update",
+      Self::Manual => "Failed to apply manual update",
+    }
+  }
+}
+
 pub(crate) fn start_auto_update(
   main_window: WeakEntity<MainWindow>,
   window_handle: AnyWindowHandle,
@@ -37,27 +70,52 @@ pub(crate) fn start_auto_update(
     return;
   }
 
+  run_update_check(
+    UpdateTrigger::Automatic,
+    auto_update,
+    main_window,
+    window_handle,
+    cx,
+  );
+}
+
+/// Prepare a manual update check result, bypassing the time guard and local build check.
+pub(crate) fn prepare_manual_update(
+  auto_update: ::config::AutoUpdateConfig,
+) -> anyhow::Result<Option<PreparedUpdate>> {
+  check_and_prepare_update(auto_update, CurrentBuild::current(), UpdateTrigger::Manual)
+}
+
+fn run_update_check(
+  trigger: UpdateTrigger,
+  auto_update: ::config::AutoUpdateConfig,
+  main_window: WeakEntity<MainWindow>,
+  window_handle: AnyWindowHandle,
+  cx: &mut App,
+) {
   let current = CurrentBuild::current();
   cx.spawn(async move |cx: &mut AsyncApp| {
-    let result = smol::unblock(move || check_and_prepare_update(auto_update, current)).await;
+    let result =
+      smol::unblock(move || check_and_prepare_update(auto_update, current, trigger)).await;
+
     match result {
       Ok(Some(prepared_update)) => {
         if let Err(error) =
-          save_workspace_and_restart(main_window, window_handle, prepared_update, cx).await
+          apply_prepared_update(main_window, window_handle, prepared_update, cx).await
         {
-          tracing::error!("Failed to apply auto update: {error:#}");
+          tracing::error!("{}: {error:#}", trigger.apply_failure_message());
         }
       }
       Ok(None) => {}
       Err(error) => {
-        tracing::error!("Auto update check failed: {error:#}");
+        tracing::error!("{}: {error:#}", trigger.check_failure_message());
       }
     }
   })
   .detach();
 }
 
-async fn save_workspace_and_restart(
+pub(crate) async fn apply_prepared_update(
   main_window: WeakEntity<MainWindow>,
   window_handle: AnyWindowHandle,
   prepared_update: PreparedUpdate,
@@ -83,20 +141,34 @@ async fn save_workspace_and_restart(
 fn check_and_prepare_update(
   auto_update: ::config::AutoUpdateConfig,
   current: CurrentBuild,
+  trigger: UpdateTrigger,
 ) -> anyhow::Result<Option<PreparedUpdate>> {
   let now = now_unix_timestamp();
-  if !should_check(auto_update.check, auto_update.last_check_unix_secs, now) {
+  if trigger.respects_schedule()
+    && !should_check(auto_update.check, auto_update.last_check_unix_secs, now)
+  {
     return Ok(None);
   }
 
   let http_client = HttpClient::new(&auto_update, &current);
   let releases = fetch_releases(&http_client)?;
-  if let Err(error) = ::config::Config::set_auto_update_last_check_unix_secs(now) {
+  if trigger.respects_schedule()
+    && let Err(error) = ::config::Config::set_auto_update_last_check_unix_secs(now)
+  {
     tracing::warn!("Failed to save auto update check timestamp: {error}");
   }
 
-  let Some(release) = select_update_release(&current, &releases) else {
-    tracing::info!("Kazeterm is already up to date");
+  prepare_update_from_releases(&http_client, &current, &releases, trigger)
+}
+
+fn prepare_update_from_releases(
+  http_client: &HttpClient,
+  current: &CurrentBuild,
+  releases: &[GitHubRelease],
+  trigger: UpdateTrigger,
+) -> anyhow::Result<Option<PreparedUpdate>> {
+  let Some(release) = select_update_release(current, releases) else {
+    tracing::info!("{}", trigger.no_update_message());
     return Ok(None);
   };
 
@@ -114,7 +186,7 @@ fn check_and_prepare_update(
     asset.name
   );
 
-  prepare_update_package(&http_client, &release, &asset)
+  prepare_update_package(http_client, &release, &asset)
 }
 
 #[derive(Debug, Clone)]
@@ -352,7 +424,7 @@ struct GitHubAsset {
 }
 
 #[derive(Debug)]
-struct PreparedUpdate {
+pub(crate) struct PreparedUpdate {
   release_tag: String,
   temp_dir: PathBuf,
   package_dir: PathBuf,
