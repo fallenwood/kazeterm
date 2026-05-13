@@ -172,6 +172,14 @@ fn prepare_update_from_releases(
     return Ok(None);
   };
 
+  if current.is_wip()
+    && is_wip_tag(&release.tag_name)
+    && !release_is_newer_than_current_wip(http_client, &release, current)?
+  {
+    tracing::info!("{}", trigger.no_update_message());
+    return Ok(None);
+  }
+
   let Some(asset) = select_asset_for_target(&release, &current.target_triple) else {
     bail!(
       "release '{}' has no asset for target '{}'",
@@ -416,6 +424,11 @@ struct GitHubRelease {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+struct GitHubCommitRef {
+  sha: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct GitHubAsset {
   name: String,
   browser_download_url: String,
@@ -493,10 +506,10 @@ fn select_update_release(
   releases: &[GitHubRelease],
 ) -> Option<GitHubRelease> {
   if current.is_wip() {
-    let release = releases
+    return releases
       .iter()
-      .find(|release| !release.draft && is_wip_tag(&release.tag_name))?;
-    return release_is_newer_than_current_wip(release, current).then(|| release.clone());
+      .find(|release| !release.draft && is_wip_tag(&release.tag_name))
+      .cloned();
   }
 
   let current_version =
@@ -510,11 +523,69 @@ fn select_update_release(
   (latest_version > current_version).then(|| latest_release.clone())
 }
 
-fn release_is_newer_than_current_wip(release: &GitHubRelease, current: &CurrentBuild) -> bool {
-  if remote_commit_differs(&release.target_commitish, &current.commit_hash) {
-    return true;
+fn release_is_newer_than_current_wip(
+  http_client: &HttpClient,
+  release: &GitHubRelease,
+  current: &CurrentBuild,
+) -> anyhow::Result<bool> {
+  let resolved_remote_commit = if current.commit_hash == "unknown" {
+    None
+  } else {
+    resolve_commitish_to_commit_sha(http_client, &release.target_commitish)?
+  };
+
+  Ok(wip_release_is_newer(
+    release,
+    current,
+    resolved_remote_commit.as_deref(),
+  ))
+}
+
+fn wip_release_is_newer(
+  release: &GitHubRelease,
+  current: &CurrentBuild,
+  resolved_remote_commit: Option<&str>,
+) -> bool {
+  if let Some(remote_commit) = resolved_remote_commit
+    && current.commit_hash != "unknown"
+  {
+    return remote_commit_differs(remote_commit, &current.commit_hash);
   }
 
+  release_has_newer_timestamp(release, current)
+}
+
+fn resolve_commitish_to_commit_sha(
+  http_client: &HttpClient,
+  commitish: &str,
+) -> anyhow::Result<Option<String>> {
+  let commitish = commitish.trim();
+  if commitish.is_empty() {
+    return Ok(None);
+  }
+
+  if looks_like_commit(commitish) {
+    return Ok(Some(commitish.to_string()));
+  }
+
+  let endpoint = format!(
+    "https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/commits/{}",
+    urlencoding::encode(commitish)
+  );
+  let response = http_client.get_bytes(
+    &endpoint,
+    &[
+      ("Accept", "application/vnd.github+json"),
+      ("X-GitHub-Api-Version", "2022-11-28"),
+    ],
+  )?;
+  let commit: GitHubCommitRef = serde_json::from_slice(&response)
+    .with_context(|| format!("failed to parse GitHub commit '{commitish}'"))?;
+  let sha = commit.sha.trim();
+  Ok((!sha.is_empty()).then(|| sha.to_string()))
+}
+
+fn release_has_newer_timestamp(release: &GitHubRelease, current: &CurrentBuild) -> bool {
   match (
     release_latest_timestamp(release),
     current.build_unix_timestamp,
@@ -1120,26 +1191,35 @@ last_check_unix_secs = 42
 
   #[test]
   fn wip_build_updates_when_remote_commit_differs() {
-    let releases = vec![release(
-      "wip",
-      "2222222222222222222222222222222222222222",
-      "2026-05-12T00:00:00Z",
-    )];
+    let current = current("wip");
+    let release = release("wip", "master", "2026-05-12T00:00:00Z");
 
-    let selected = select_update_release(&current("wip"), &releases).unwrap();
+    assert!(wip_release_is_newer(
+      &release,
+      &current,
+      Some("2222222222222222222222222222222222222222"),
+    ));
+  }
 
-    assert_eq!(selected.tag_name, "wip");
+  #[test]
+  fn wip_build_does_not_update_when_resolved_remote_commit_matches_current() {
+    let current = current("wip");
+    let release = release("wip", "master", "2026-05-12T00:00:00Z");
+
+    assert!(!wip_release_is_newer(
+      &release,
+      &current,
+      Some(current.commit_hash.as_str()),
+    ));
   }
 
   #[test]
   fn wip_build_updates_when_remote_release_is_newer_than_build() {
     let mut current = current("wip");
     current.commit_hash = "unknown".to_string();
-    let releases = vec![release("wip", "master", "2026-05-12T00:00:00Z")];
+    let release = release("wip", "master", "2026-05-12T00:00:00Z");
 
-    let selected = select_update_release(&current, &releases).unwrap();
-
-    assert_eq!(selected.tag_name, "wip");
+    assert!(wip_release_is_newer(&release, &current, None));
   }
 
   #[test]

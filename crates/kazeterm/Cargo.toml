@@ -34,6 +34,7 @@ tracing-subscriber.workspace = true
 notify.workspace = true
 notify-debouncer-mini.workspace = true
 semver.workspace = true
+urlencoding.workspace = true
 terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty" }
 
 [dev-dependencies]
