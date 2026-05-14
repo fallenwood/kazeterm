@@ -8,6 +8,7 @@ use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEv
 use crate::components::import_alacritty_dialog::{ImportAlacrittyDialog, ImportAlacrittyEvent};
 use crate::components::shell_error_dialog::{ShellErrorCloseEvent, ShellErrorDialog};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
+use crate::components::update_confirm_dialog::{UpdateConfirmDialog, UpdateConfirmEvent};
 
 const UI_TREE_JSON_FILENAME: &str = "kazeterm-ui-tree.json";
 const UI_TREE_JSON_LOAD_PROMPT: &str = "Load UI Tree JSON";
@@ -177,16 +178,25 @@ impl MainWindow {
 
           match result {
             Ok(Some(prepared_update)) => {
+              let release_tag = prepared_update.release_tag().to_string();
               let _ = dialog.update(cx, |dialog, cx| {
-                dialog.finish_update_check("Installing update...".to_string(), false, cx);
+                dialog.finish_update_check(
+                  format!("Kazeterm {release_tag} is available. Waiting for confirmation."),
+                  false,
+                  cx,
+                );
               });
 
               if let Err(error) =
-                crate::auto_update::apply_prepared_update(this, window_handle, prepared_update, cx)
+                crate::auto_update::prompt_prepared_update(this, window_handle, prepared_update, cx)
                   .await
               {
                 let _ = dialog.update(cx, |dialog, cx| {
-                  dialog.finish_update_check(format!("Failed to apply update: {error}"), true, cx);
+                  dialog.finish_update_check(
+                    format!("Failed to show update prompt: {error}"),
+                    true,
+                    cx,
+                  );
                 });
               }
             }
@@ -211,6 +221,87 @@ impl MainWindow {
           }
         })
         .detach();
+      }
+    }
+  }
+
+  pub(crate) fn show_update_confirm_dialog(
+    &mut self,
+    prepared_update: crate::auto_update::PreparedUpdate,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let release_tag = prepared_update.release_tag().to_string();
+    if self.update_confirm_dialog.is_some() {
+      tracing::warn!("Discarding update '{release_tag}' because an update prompt is already open");
+      if let Err(error) = prepared_update.discard() {
+        tracing::warn!("Failed to discard duplicate update '{release_tag}': {error}");
+      }
+      return;
+    }
+
+    let dialog = cx.new(|cx| UpdateConfirmDialog::new(release_tag, window, cx));
+    let subscription = cx.subscribe_in(&dialog, window, Self::on_update_confirm_event);
+
+    self.pending_update = Some(prepared_update);
+    self.update_confirm_dialog = Some(dialog);
+    self._update_confirm_subscription = Some(subscription);
+    cx.notify();
+  }
+
+  pub(crate) fn on_update_confirm_event(
+    &mut self,
+    _dialog: &Entity<UpdateConfirmDialog>,
+    event: &UpdateConfirmEvent,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    self.update_confirm_dialog = None;
+    self._update_confirm_subscription = None;
+
+    match event {
+      UpdateConfirmEvent::Confirm => {
+        let Some(prepared_update) = self.pending_update.take() else {
+          tracing::warn!("Update was confirmed but no prepared update was pending");
+          self.refocus_active_terminal(window, cx);
+          cx.notify();
+          return;
+        };
+        let release_tag = prepared_update.release_tag().to_string();
+
+        if let Some(about_dialog) = &self.about_dialog {
+          about_dialog.update(cx, |dialog, cx| {
+            dialog.finish_update_check(format!("Installing update {release_tag}..."), false, cx);
+          });
+        }
+
+        if let Err(error) =
+          crate::auto_update::apply_prepared_update_in_context(self, prepared_update, cx)
+        {
+          tracing::error!("Failed to apply confirmed update '{release_tag}': {error:#}");
+          if let Some(about_dialog) = &self.about_dialog {
+            about_dialog.update(cx, |dialog, cx| {
+              dialog.finish_update_check(format!("Failed to apply update: {error}"), true, cx);
+            });
+          }
+          self.refocus_active_terminal(window, cx);
+          cx.notify();
+        }
+      }
+      UpdateConfirmEvent::Cancel => {
+        if let Some(prepared_update) = self.pending_update.take() {
+          let release_tag = prepared_update.release_tag().to_string();
+          if let Err(error) = prepared_update.discard() {
+            tracing::warn!("Failed to discard canceled update '{release_tag}': {error}");
+          }
+          if let Some(about_dialog) = &self.about_dialog {
+            about_dialog.update(cx, |dialog, cx| {
+              dialog.finish_update_check(format!("Update {release_tag} canceled."), false, cx);
+            });
+          }
+        }
+        self.refocus_active_terminal(window, cx);
+        cx.notify();
       }
     }
   }

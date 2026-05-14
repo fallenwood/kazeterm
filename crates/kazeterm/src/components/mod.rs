@@ -23,6 +23,7 @@ mod tab_rename_dialog;
 mod tab_switcher;
 mod terminal_tab_bar;
 pub(crate) mod terminal_window;
+mod update_confirm_dialog;
 pub(crate) mod workspace_state;
 
 pub use main_window::MainWindow;

@@ -1331,6 +1331,13 @@ impl Render for MainWindow {
             } else {
               this
             }
+          })
+          .when(self.update_confirm_dialog.is_some(), |this| {
+            if let Some(update_confirm_dialog) = &self.update_confirm_dialog {
+              this.child(update_confirm_dialog.clone())
+            } else {
+              this
+            }
           });
 
         if vertical_tabs {
