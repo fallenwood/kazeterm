@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as AnyhowContext, anyhow, bail};
-use gpui::{AnyWindowHandle, App, AppContext, AsyncApp, WeakEntity};
+use gpui::{AnyWindowHandle, App, AppContext, AsyncApp, Context as GpuiContext, WeakEntity};
 use semver::Version;
 use serde::Deserialize;
 
@@ -40,13 +40,6 @@ impl UpdateTrigger {
     match self {
       Self::Automatic => "Auto update check failed",
       Self::Manual => "Manual update check failed",
-    }
-  }
-
-  fn apply_failure_message(self) -> &'static str {
-    match self {
-      Self::Automatic => "Failed to apply auto update",
-      Self::Manual => "Failed to apply manual update",
     }
   }
 }
@@ -101,9 +94,9 @@ fn run_update_check(
     match result {
       Ok(Some(prepared_update)) => {
         if let Err(error) =
-          apply_prepared_update(main_window, window_handle, prepared_update, cx).await
+          prompt_prepared_update(main_window, window_handle, prepared_update, cx).await
         {
-          tracing::error!("{}: {error:#}", trigger.apply_failure_message());
+          tracing::error!("Failed to show auto update prompt: {error:#}");
         }
       }
       Ok(None) => {}
@@ -115,26 +108,41 @@ fn run_update_check(
   .detach();
 }
 
-pub(crate) async fn apply_prepared_update(
+pub(crate) async fn prompt_prepared_update(
   main_window: WeakEntity<MainWindow>,
   window_handle: AnyWindowHandle,
   prepared_update: PreparedUpdate,
   cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
-  let main_window = main_window
-    .upgrade()
-    .ok_or_else(|| anyhow!("main window was closed before the update could be applied"))?;
+  let main_window = match main_window.upgrade() {
+    Some(main_window) => main_window,
+    None => {
+      let release_tag = prepared_update.release_tag().to_string();
+      if let Err(error) = prepared_update.discard() {
+        tracing::warn!("Failed to discard update '{release_tag}' after window closed: {error}");
+      }
+      bail!("main window was closed before update '{release_tag}' could be confirmed");
+    }
+  };
 
-  cx.update_window(window_handle, |_root_view, _window, cx| {
+  cx.update_window(window_handle, |_root_view, window, cx| {
     main_window.update(cx, |main_window, cx| {
-      main_window.sync_ui_tree(cx);
-      main_window.ui_tree.save_workspace();
+      main_window.show_update_confirm_dialog(prepared_update, window, cx);
     });
   })?;
+  Ok(())
+}
 
+pub(crate) fn apply_prepared_update_in_context(
+  main_window: &mut MainWindow,
+  prepared_update: PreparedUpdate,
+  cx: &mut GpuiContext<MainWindow>,
+) -> anyhow::Result<()> {
+  main_window.sync_ui_tree(cx);
+  main_window.ui_tree.save_workspace();
   request_restore_workspace_once()?;
   launch_update_helper(&prepared_update)?;
-  cx.update(|cx| cx.quit())?;
+  cx.quit();
   Ok(())
 }
 
@@ -442,6 +450,24 @@ pub(crate) struct PreparedUpdate {
   temp_dir: PathBuf,
   package_dir: PathBuf,
   current_exe: PathBuf,
+}
+
+impl PreparedUpdate {
+  pub(crate) fn release_tag(&self) -> &str {
+    &self.release_tag
+  }
+
+  pub(crate) fn discard(self) -> anyhow::Result<()> {
+    if self.temp_dir.exists() {
+      fs::remove_dir_all(&self.temp_dir).with_context(|| {
+        format!(
+          "failed to remove prepared update directory {}",
+          self.temp_dir.display()
+        )
+      })?;
+    }
+    Ok(())
+  }
 }
 
 pub(crate) fn request_restore_workspace_once() -> anyhow::Result<()> {

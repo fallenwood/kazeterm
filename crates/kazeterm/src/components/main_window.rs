@@ -11,6 +11,7 @@ use crate::components::search_bar::SearchBar;
 use crate::components::shell_error_dialog::ShellErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
+use crate::components::update_confirm_dialog::UpdateConfirmDialog;
 use crate::reconciler::UITreeStore;
 
 pub(crate) use super::main_window_tab_item::TabItem;
@@ -75,6 +76,10 @@ pub struct MainWindow {
   /// Import Alacritty config dialog state
   pub(crate) import_alacritty_dialog: Option<Entity<ImportAlacrittyDialog>>,
   pub(crate) _import_alacritty_subscription: Option<gpui::Subscription>,
+  /// Update confirmation dialog state
+  pub(crate) update_confirm_dialog: Option<Entity<UpdateConfirmDialog>>,
+  pub(crate) _update_confirm_subscription: Option<gpui::Subscription>,
+  pub(crate) pending_update: Option<crate::auto_update::PreparedUpdate>,
   /// Whether a UITree JSON file picker is currently active.
   pub(crate) ui_tree_json_prompt_pending: bool,
   /// Shell error dialog state
@@ -178,6 +183,9 @@ impl MainWindow {
       _about_dialog_event_subscription: None,
       import_alacritty_dialog: None,
       _import_alacritty_subscription: None,
+      update_confirm_dialog: None,
+      _update_confirm_subscription: None,
+      pending_update: None,
       ui_tree_json_prompt_pending: false,
       shell_error_dialog: None,
       _shell_error_subscription: None,
