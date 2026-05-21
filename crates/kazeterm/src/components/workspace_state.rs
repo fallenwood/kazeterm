@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use gpui::{Context, Window, px};
+use gpui::{Context, Entity, Window, px};
 use kazeterm_ui_tree::node::{PaneNode, TabNode, UITree};
 use serde::Deserialize;
+use terminal::TerminalView;
 
 use super::main_window::MainWindow;
 use super::main_window_tab_item::TabItem;
@@ -223,11 +224,18 @@ impl MainWindow {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) -> Result<(), String> {
-    let (split_container, first_sub) =
-      Self::build_split_container_from_tab_node(tab, &self.tab_index, window, cx)?;
     let Some(ix) = self.items.iter().position(|item| item.ui_tree_id == tab_id) else {
       return Err(format!("Tab '{tab_id}' not found"));
     };
+    let existing_terminals = self.items[ix].split_container.all_terminals();
+    let (split_container, new_subscriptions) =
+      Self::build_split_container_from_tab_node_reusing_existing_panes(
+        tab,
+        &self.tab_index,
+        &existing_terminals,
+        window,
+        cx,
+      )?;
 
     let was_active = self.active_tab_ix == Some(ix);
     let shell_name = Self::shell_name_for_tab(tab);
@@ -245,8 +253,11 @@ impl MainWindow {
       item.shell_args = tab.shell.args.clone();
       item._shell_name = shell_name;
       item.split_container = split_container;
-      item._subscription = first_sub;
       item.search_bar_state = Self::search_bar_state_from_node(&tab.search);
+    }
+
+    for sub in new_subscriptions {
+      std::mem::forget(sub);
     }
 
     if was_active {
@@ -302,6 +313,31 @@ impl MainWindow {
     Ok((split_container, first_sub))
   }
 
+  fn build_split_container_from_tab_node_reusing_existing_panes(
+    tab: &TabNode,
+    tab_index_counter: &std::sync::atomic::AtomicUsize,
+    existing_terminals: &[(PaneId, Entity<TerminalView>)],
+    window: &mut Window,
+    cx: &mut Context<MainWindow>,
+  ) -> Result<(SplitContainer, Vec<gpui::Subscription>), String> {
+    let mut next_pane_id: usize = 0;
+    let (root_pane, subscriptions) = Self::build_split_pane_from_node_reusing_existing_panes(
+      &tab.pane_tree,
+      &tab.shell.path,
+      &tab.shell.args,
+      &mut next_pane_id,
+      tab_index_counter,
+      existing_terminals,
+      window,
+      cx,
+    )?;
+    let active_pane_id =
+      Self::active_pane_id_from_node(&tab.pane_tree).or_else(|| Self::first_pane_id(&root_pane));
+    let split_container =
+      SplitContainer::from_restored_root(root_pane, active_pane_id, next_pane_id);
+    Ok((split_container, subscriptions))
+  }
+
   fn take_primary_subscription(
     subscriptions: Vec<gpui::Subscription>,
   ) -> Result<gpui::Subscription, String> {
@@ -313,6 +349,87 @@ impl MainWindow {
       std::mem::forget(sub);
     }
     Ok(first_sub)
+  }
+
+  fn build_split_pane_from_node_reusing_existing_panes(
+    pane: &PaneNode,
+    tab_shell: &str,
+    tab_shell_args: &[String],
+    next_pane_id: &mut usize,
+    tab_index_counter: &std::sync::atomic::AtomicUsize,
+    existing_terminals: &[(PaneId, Entity<TerminalView>)],
+    window: &mut Window,
+    cx: &mut Context<MainWindow>,
+  ) -> Result<(SplitPane, Vec<gpui::Subscription>), String> {
+    match pane {
+      PaneNode::Terminal {
+        id,
+        working_directory,
+        ..
+      } => {
+        let pane_id = Self::parse_pane_id(id).unwrap_or(PaneId(*next_pane_id));
+        *next_pane_id = (*next_pane_id).max(pane_id.0 + 1);
+
+        if let Some((_, terminal)) = existing_terminals
+          .iter()
+          .find(|(existing_pane_id, _)| *existing_pane_id == pane_id)
+        {
+          return Ok((SplitPane::new_terminal(pane_id, terminal.clone()), vec![]));
+        }
+
+        let index = tab_index_counter.fetch_add(1, Ordering::SeqCst);
+        let wd = get_working_directory_pathbuf(working_directory.clone());
+        let terminal = crate::components::terminal_window::new_terminal_window_with_shell(
+          window,
+          index,
+          tab_shell,
+          tab_shell_args.to_vec(),
+          wd,
+          cx,
+        )?;
+        let sub = cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event);
+        Ok((SplitPane::new_terminal(pane_id, terminal), vec![sub]))
+      }
+      PaneNode::Split {
+        direction,
+        first,
+        second,
+        ratio,
+      } => {
+        let (first_pane, mut subs) = Self::build_split_pane_from_node_reusing_existing_panes(
+          first,
+          tab_shell,
+          tab_shell_args,
+          next_pane_id,
+          tab_index_counter,
+          existing_terminals,
+          window,
+          cx,
+        )?;
+        let (second_pane, subs2) = Self::build_split_pane_from_node_reusing_existing_panes(
+          second,
+          tab_shell,
+          tab_shell_args,
+          next_pane_id,
+          tab_index_counter,
+          existing_terminals,
+          window,
+          cx,
+        )?;
+        subs.extend(subs2);
+        let dir = match direction {
+          kazeterm_ui_tree::node::SplitDirection::Horizontal => SplitDirection::Horizontal,
+          kazeterm_ui_tree::node::SplitDirection::Vertical => SplitDirection::Vertical,
+        };
+        let pane = SplitPane::Split {
+          direction: dir,
+          first: Box::new(first_pane),
+          second: Box::new(second_pane),
+          ratio: *ratio,
+        };
+        Ok((pane, subs))
+      }
+    }
   }
 
   fn build_split_pane_from_node(
