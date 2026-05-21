@@ -129,6 +129,58 @@ fn insert_new_tab_increments_item_count(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn split_pane_reuses_existing_terminal_session(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  let calls = install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  let initial_call_count = calls.lock().unwrap().programs.len();
+  let existing_terminal_index = window
+    .update(cx, |root: &mut MainWindow, _window, cx| {
+      root.items[0].split_container.all_terminals()[0]
+        .1
+        .read(cx)
+        .index
+    })
+    .expect("reading initial terminal index should succeed");
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.split_pane_horizontal(window, cx);
+    })
+    .expect("split_pane_horizontal should succeed");
+  cx.run_until_parked();
+
+  let final_call_count = calls.lock().unwrap().programs.len();
+  assert_eq!(
+    final_call_count,
+    initial_call_count + 1,
+    "expected splitting to spawn only the new pane and keep the existing terminal session",
+  );
+
+  let terminal_indices = window
+    .update(cx, |root: &mut MainWindow, _window, cx| {
+      root.items[0]
+        .split_container
+        .all_terminals()
+        .into_iter()
+        .map(|(_, terminal)| terminal.read(cx).index)
+        .collect::<Vec<_>>()
+    })
+    .expect("reading split terminal indexes should succeed");
+  assert_eq!(terminal_indices.len(), 2);
+  assert!(
+    terminal_indices.contains(&existing_terminal_index),
+    "expected the original terminal entity to remain in the split tree",
+  );
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
 fn split_panes_can_hide_split_again_and_restore(cx: &mut TestAppContext) {
   let _guard = test_lock();
   crate::test_support::init_test_app(cx);
