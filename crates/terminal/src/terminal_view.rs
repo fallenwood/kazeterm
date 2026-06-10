@@ -1,4 +1,7 @@
-use std::{ops::Range, time::Duration};
+use std::{
+  ops::Range,
+  time::{Duration, Instant},
+};
 
 use crate::mappings::keys::KnownKeys;
 use crate::{TerminalBounds, hover_target::HoverTarget, ime_state::ImeState};
@@ -31,6 +34,7 @@ use super::terminal_element::TerminalElement;
 
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(750);
 const DEFAULT_TAB_TITLE_CHANGE_DELAY: Duration = Duration::from_millis(200);
+const ENTER_TEXT_COMMIT_SUPPRESSION: Duration = Duration::from_millis(250);
 
 /// Returns the cursor blink interval from config, or the default constant.
 fn cursor_blink_interval(cx: &gpui::App) -> Duration {
@@ -58,6 +62,7 @@ fn should_defer_keydown_text_input(keystroke: &gpui::Keystroke) -> bool {
     return !keystroke.modifiers.control
       && !keystroke.modifiers.alt
       && !keystroke.modifiers.platform
+      && !is_enter_keystroke(keystroke)
       && keystroke.key_char.is_some();
   }
 
@@ -65,6 +70,47 @@ fn should_defer_keydown_text_input(keystroke: &gpui::Keystroke) -> bool {
   {
     let _ = keystroke;
     false
+  }
+}
+
+fn is_enter_key_name(key: &str) -> bool {
+  matches!(
+    key.to_ascii_lowercase().as_str(),
+    "\r" | "\n" | "enter" | "return" | "numpadenter" | "numpad_enter" | "kp_enter"
+  )
+}
+
+fn is_enter_text_commit(text: &str) -> bool {
+  matches!(text, "\r" | "\n" | "\r\n")
+}
+
+fn is_enter_keystroke(keystroke: &gpui::Keystroke) -> bool {
+  is_enter_key_name(&keystroke.key)
+    || keystroke
+      .key_char
+      .as_deref()
+      .is_some_and(is_enter_text_commit)
+}
+
+fn should_suppress_enter_text_commit(
+  suppress_until: &mut Option<Instant>,
+  text: &str,
+  now: Instant,
+) -> bool {
+  if !is_enter_text_commit(text) {
+    return false;
+  }
+
+  match *suppress_until {
+    Some(until) if now <= until => {
+      *suppress_until = None;
+      true
+    }
+    Some(_) => {
+      *suppress_until = None;
+      false
+    }
+    None => false,
   }
 }
 
@@ -133,6 +179,7 @@ pub struct TerminalView {
   momentum_scroll_task: Task<()>,
   /// Task for touch long-press detection
   long_press_task: Task<()>,
+  suppress_enter_text_commit_until: Option<Instant>,
 }
 
 impl EventEmitter<TerminalEvent> for TerminalView {}
@@ -226,6 +273,7 @@ impl TerminalView {
       pending_tab_title_update: Task::ready(()),
       momentum_scroll_task: Task::ready(()),
       long_press_task: Task::ready(()),
+      suppress_enter_text_commit_until: None,
     }
   }
 
@@ -267,6 +315,14 @@ impl TerminalView {
 
   /// Commits (sends) the given text to the PTY. Called by InputHandler::replace_text_in_range.
   pub(crate) fn commit_text(&mut self, text: &str, cx: &mut Context<Self>) {
+    if should_suppress_enter_text_commit(
+      &mut self.suppress_enter_text_commit_until,
+      text,
+      Instant::now(),
+    ) {
+      return;
+    }
+
     if let Some(bytes) = committed_text_bytes(text) {
       self.terminal.update(cx, |term, _| {
         term.input(bytes);
@@ -314,9 +370,22 @@ impl TerminalView {
     handled
   }
 
+  fn arm_enter_text_commit_suppression(&mut self, keystroke: &gpui::Keystroke) {
+    if is_enter_keystroke(keystroke) {
+      self.suppress_enter_text_commit_until = Some(Instant::now() + ENTER_TEXT_COMMIT_SUPPRESSION);
+    }
+  }
+
   fn key_down(&mut self, event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-    let modifiers = event.keystroke.modifiers;
-    let key = &event.keystroke.key;
+    let mut keystroke = event.keystroke.clone();
+    let window_modifiers = window.modifiers();
+    keystroke.modifiers.control |= window_modifiers.control;
+    keystroke.modifiers.shift |= window_modifiers.shift;
+    keystroke.modifiers.alt |= window_modifiers.alt;
+    keystroke.modifiers.platform |= window_modifiers.platform;
+
+    let modifiers = keystroke.modifiers;
+    let key = &keystroke.key;
     let main_window_shortcut = cx
       .global::<config::Config>()
       .keybindings
@@ -332,11 +401,12 @@ impl TerminalView {
       return;
     }
 
-    if should_defer_keydown_text_input(&event.keystroke) {
+    if should_defer_keydown_text_input(&keystroke) {
       return;
     }
 
-    if self.handle_unbound_keystroke(&event.keystroke, window, cx) {
+    if self.handle_unbound_keystroke(&keystroke, window, cx) {
+      self.arm_enter_text_commit_suppression(&keystroke);
       cx.stop_propagation();
     }
   }
@@ -797,8 +867,10 @@ fn subscribe_for_terminal_events(
 mod tests {
   use super::{
     clear_ime_state, committed_text_bytes, new_ime_state, should_defer_keydown_text_input,
+    should_suppress_enter_text_commit,
   };
   use gpui::{Keystroke, Modifiers};
+  use std::time::{Duration, Instant};
 
   #[cfg(target_os = "windows")]
   #[test]
@@ -852,6 +924,90 @@ mod tests {
     };
 
     assert!(!should_defer_keydown_text_input(&keystroke));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn windows_still_handles_enter_when_key_char_is_reported() {
+    let keystroke = Keystroke {
+      modifiers: Modifiers {
+        shift: true,
+        ..Modifiers::default()
+      },
+      key: "enter".to_string(),
+      key_char: Some("\r".to_string()),
+    };
+
+    assert!(!should_defer_keydown_text_input(&keystroke));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn windows_still_handles_return_alias_when_key_char_is_reported() {
+    let keystroke = Keystroke {
+      modifiers: Modifiers {
+        shift: true,
+        ..Modifiers::default()
+      },
+      key: "Return".to_string(),
+      key_char: Some("\r".to_string()),
+    };
+
+    assert!(!should_defer_keydown_text_input(&keystroke));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn windows_still_handles_enter_when_key_is_reported_as_cr() {
+    let keystroke = Keystroke {
+      modifiers: Modifiers {
+        shift: true,
+        ..Modifiers::default()
+      },
+      key: "\r".to_string(),
+      key_char: Some("\r".to_string()),
+    };
+
+    assert!(!should_defer_keydown_text_input(&keystroke));
+  }
+
+  #[test]
+  fn suppress_enter_text_commit_suppresses_only_pending_enter_text() {
+    let now = Instant::now();
+    let mut suppress_until = Some(now + Duration::from_millis(250));
+
+    assert!(should_suppress_enter_text_commit(
+      &mut suppress_until,
+      "\r",
+      now
+    ));
+    assert!(suppress_until.is_none());
+  }
+
+  #[test]
+  fn suppress_enter_text_commit_does_not_suppress_regular_text() {
+    let now = Instant::now();
+    let mut suppress_until = Some(now + Duration::from_millis(250));
+
+    assert!(!should_suppress_enter_text_commit(
+      &mut suppress_until,
+      "a",
+      now
+    ));
+    assert!(suppress_until.is_some());
+  }
+
+  #[test]
+  fn suppress_enter_text_commit_expires() {
+    let now = Instant::now();
+    let mut suppress_until = Some(now - Duration::from_millis(1));
+
+    assert!(!should_suppress_enter_text_commit(
+      &mut suppress_until,
+      "\r",
+      now
+    ));
+    assert!(suppress_until.is_none());
   }
 
   #[test]
