@@ -943,6 +943,164 @@ mod tests {
     assert_eq!(escape.as_deref(), Some("\x1b[106;5u"));
   }
 
+  /// When both Win32 input mode (shell) and kitty flags (child) are active,
+  /// verify that common key combinations still produce correct sequences.
+  #[cfg(target_os = "windows")]
+  mod win32_plus_kitty_interaction {
+    use super::*;
+
+    const BOTH_FLAGS: u32 =
+      WINDOWS_CONPTY_WIN32_INPUT_MODE | KITTY_KEYBOARD_DISAMBIGUATE_ESCAPE_CODES;
+
+    #[test]
+    fn plain_enter_sends_cr() {
+      let escape = to_esc_str(
+        &keystroke("enter", Modifiers::default()),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x0d"));
+    }
+
+    #[test]
+    fn shift_enter_sends_kitty_csi_u() {
+      let escape = to_esc_str(
+        &keystroke(
+          "enter",
+          Modifiers {
+            shift: true,
+            ..Modifiers::default()
+          },
+        ),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x1b[13;2u"));
+    }
+
+    #[test]
+    fn ctrl_c_sends_kitty_csi_u() {
+      let escape = to_esc_str(
+        &keystroke(
+          "c",
+          Modifiers {
+            control: true,
+            ..Modifiers::default()
+          },
+        ),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x1b[99;5u"));
+    }
+
+    #[test]
+    fn escape_is_disambiguated() {
+      let escape = to_esc_str(
+        &keystroke("escape", Modifiers::default()),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x1b[27u"));
+    }
+
+    #[test]
+    fn tab_sends_legacy() {
+      let escape = to_esc_str(
+        &keystroke("tab", Modifiers::default()),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x09"));
+    }
+
+    #[test]
+    fn backspace_sends_legacy() {
+      let escape = to_esc_str(
+        &keystroke("backspace", Modifiers::default()),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x7f"));
+    }
+
+    #[test]
+    fn up_arrow_sends_legacy() {
+      let escape = to_esc_str(
+        &keystroke("up", Modifiers::default()),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x1b[A"));
+    }
+
+    #[test]
+    fn shift_up_sends_modified_arrow() {
+      let escape = to_esc_str(
+        &keystroke(
+          "up",
+          Modifiers {
+            shift: true,
+            ..Modifiers::default()
+          },
+        ),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x1b[1;2A"));
+    }
+
+    #[test]
+    fn f1_sends_legacy() {
+      let escape = to_esc_str(
+        &keystroke("f1", Modifiers::default()),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      assert_eq!(escape.as_deref(), Some("\x1bOP"));
+    }
+
+    #[test]
+    fn ctrl_shift_f1_sends_modified() {
+      let escape = to_esc_str(
+        &keystroke(
+          "f1",
+          Modifiers {
+            control: true,
+            shift: true,
+            ..Modifiers::default()
+          },
+        ),
+        &TermMode::empty(),
+        true,
+        BOTH_FLAGS,
+      );
+      // modifier_code: shift(1) + ctrl(4) + 1 = 6
+      assert_eq!(escape.as_deref(), Some("\x1b[1;6P"));
+    }
+
+    #[test]
+    fn win32_only_still_uses_underscore_format() {
+      // When ONLY Win32 is set (no kitty), Win32 format must still be used.
+      let escape = to_esc_str(
+        &keystroke("enter", Modifiers::default()),
+        &TermMode::empty(),
+        true,
+        WINDOWS_CONPTY_WIN32_INPUT_MODE,
+      );
+      assert_eq!(escape.as_deref(), Some("\x1b[13;28;13;1;0;1_"));
+    }
+  }
+
   #[test]
   fn plain_escape_is_disambiguated_in_kitty_mode() {
     let escape = to_esc_str(
