@@ -63,6 +63,11 @@ pub enum UIAction {
     /// `None` resets to auto-generated title.
     title: Option<String>,
   },
+  SetTabPinned {
+    window_id: String,
+    tab_id: String,
+    pinned: bool,
+  },
 
   // ── Pane management ──
   SplitPane {

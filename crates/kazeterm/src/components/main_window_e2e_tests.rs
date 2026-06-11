@@ -503,3 +503,173 @@ fn moving_tab_into_terminal_split_reuses_existing_sessions(cx: &mut TestAppConte
 
   clear_terminal_session_factory_for_testing();
 }
+
+#[gpui::test]
+fn pinned_tabs_are_ignored_by_close_tabs_to_right(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.insert_new_tab(window, cx);
+      root.insert_new_tab(window, cx);
+      root.insert_new_tab(window, cx);
+    })
+    .expect("creating additional tabs should succeed");
+  cx.run_until_parked();
+
+  let (keep_tab_index, pinned_tab_index) = window
+    .update(cx, |root: &mut MainWindow, _window, _cx| {
+      (root.items[0].index, root.items[2].index)
+    })
+    .expect("reading tab indexes should succeed");
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.set_tab_pinned(pinned_tab_index, true, window, cx);
+    })
+    .expect("pinning a tab should succeed");
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, _window, cx| {
+      root.close_tabs_to_right(0, cx);
+      root.sync_ui_tree(cx);
+    })
+    .expect("closing tabs to the right should succeed");
+  cx.run_until_parked();
+
+  let view = window.root(cx).unwrap();
+  view.read_with(cx, |mw, _| {
+    assert_eq!(mw.items.len(), 2);
+    assert_eq!(mw.active_tab_ix, Some(0));
+    assert_eq!(mw.items[0].index, keep_tab_index);
+    assert_eq!(mw.items[1].index, pinned_tab_index);
+    assert!(mw.items[1].pinned);
+    assert_eq!(mw.ui_tree.tree().windows[0].tabs.len(), 2);
+    assert!(mw.ui_tree.tree().windows[0].tabs[1].pinned);
+  });
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn pinned_tabs_are_ignored_by_close_other_tabs(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.insert_new_tab(window, cx);
+      root.insert_new_tab(window, cx);
+      root.insert_new_tab(window, cx);
+    })
+    .expect("creating additional tabs should succeed");
+  cx.run_until_parked();
+
+  let (pinned_tab_index, keep_tab_index) = window
+    .update(cx, |root: &mut MainWindow, _window, _cx| {
+      (root.items[0].index, root.items[2].index)
+    })
+    .expect("reading tab indexes should succeed");
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.set_tab_pinned(pinned_tab_index, true, window, cx);
+    })
+    .expect("pinning a tab should succeed");
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, _window, cx| {
+      root.close_other_tabs(keep_tab_index, cx);
+      root.sync_ui_tree(cx);
+    })
+    .expect("closing other tabs should succeed");
+  cx.run_until_parked();
+
+  let view = window.root(cx).unwrap();
+  view.read_with(cx, |mw, _| {
+    assert_eq!(mw.items.len(), 2);
+    assert_eq!(mw.active_tab_ix, Some(1));
+    assert_eq!(mw.items[0].index, pinned_tab_index);
+    assert!(mw.items[0].pinned);
+    assert_eq!(mw.items[1].index, keep_tab_index);
+    assert!(!mw.items[1].pinned);
+    assert_eq!(mw.ui_tree.tree().windows[0].tabs.len(), 2);
+    assert!(mw.ui_tree.tree().windows[0].tabs[0].pinned);
+  });
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn pinned_tabs_round_trip_through_ui_tree_snapshots(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.insert_new_tab(window, cx);
+    })
+    .expect("creating an additional tab should succeed");
+  cx.run_until_parked();
+
+  let pinned_tab_index = window
+    .update(cx, |root: &mut MainWindow, _window, _cx| {
+      root.items[0].index
+    })
+    .expect("reading the pinned tab index should succeed");
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.set_tab_pinned(pinned_tab_index, true, window, cx);
+    })
+    .expect("pinning a tab should succeed");
+  cx.run_until_parked();
+
+  let snapshot = window
+    .update(cx, |root: &mut MainWindow, _window, cx| {
+      root
+        .snapshot_ui_tree(cx)
+        .expect("snapshot should serialize successfully")
+    })
+    .expect("snapshot should succeed");
+
+  assert!(
+    snapshot.contains("\"pinned\": true"),
+    "expected pinned tabs to be serialized into the UI tree snapshot"
+  );
+
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root
+        .load_ui_tree_from_str(&snapshot, window, cx)
+        .expect("snapshot should restore successfully");
+    })
+    .expect("loading a UI tree snapshot should succeed");
+  cx.run_until_parked();
+
+  let view = window.root(cx).unwrap();
+  view.read_with(cx, |mw, _| {
+    assert_eq!(mw.items.len(), 2);
+    assert_eq!(mw.active_tab_ix, Some(1));
+    assert!(mw.items[0].pinned);
+    assert!(!mw.items[1].pinned);
+    assert!(mw.ui_tree.tree().windows[0].tabs[0].pinned);
+  });
+
+  clear_terminal_session_factory_for_testing();
+}

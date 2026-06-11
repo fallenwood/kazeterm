@@ -14,9 +14,11 @@ pub(super) fn build_tab_context_menu(
   view: Entity<MainWindow>,
   tab_index: usize,
   tab_ix: usize,
+  is_pinned: bool,
   is_first: bool,
   is_last: bool,
-  total_tabs: usize,
+  can_close_other_tabs: bool,
+  can_close_tabs_to_right: bool,
   move_prev_label: &'static str,
   move_prev_icon: IconName,
   move_next_label: &'static str,
@@ -26,6 +28,7 @@ pub(super) fn build_tab_context_menu(
 ) -> PopupMenu {
   let view_rename = view.clone();
   let view_duplicate = view.clone();
+  let view_toggle_pin = view.clone();
   let view_split_h = view.clone();
   let view_split_v = view.clone();
   let view_close_pane = view.clone();
@@ -43,6 +46,7 @@ pub(super) fn build_tab_context_menu(
   } else {
     "Hide Other Panes"
   };
+  let pin_tab_label = if is_pinned { "Unpin Tab" } else { "Pin Tab" };
 
   menu
     .item(
@@ -60,6 +64,15 @@ pub(super) fn build_tab_context_menu(
         .on_click(move |_, window, cx| {
           view_duplicate.update(cx, |this, cx| {
             this.duplicate_tab(tab_index, window, cx);
+          });
+        }),
+    )
+    .item(
+      PopupMenuItem::new(pin_tab_label)
+        .icon(Icon::empty().path("icons/pin.svg"))
+        .on_click(move |_, window, cx| {
+          view_toggle_pin.update(cx, |this, cx| {
+            this.set_tab_pinned(tab_index, !is_pinned, window, cx);
           });
         }),
     )
@@ -157,7 +170,7 @@ pub(super) fn build_tab_context_menu(
     .item(
       PopupMenuItem::new("Close Other Tabs")
         .icon(IconName::Close)
-        .disabled(total_tabs <= 1)
+        .disabled(!can_close_other_tabs)
         .on_click(move |_, _window, cx| {
           view_close_others.update(cx, |this, cx| {
             this.close_other_tabs(tab_index, cx);
@@ -167,7 +180,7 @@ pub(super) fn build_tab_context_menu(
     .item(
       PopupMenuItem::new("Close Tabs to Right")
         .icon(IconName::Close)
-        .disabled(is_last)
+        .disabled(!can_close_tabs_to_right)
         .on_click(move |_, _window, cx| {
           view_close_right.update(cx, |this, cx| {
             this.close_tabs_to_right(tab_ix, cx);
