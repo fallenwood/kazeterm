@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+fn is_false(value: &bool) -> bool {
+  !*value
+}
+
 /// The root of the entire UI state. Serializable as JSON.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UITree {
@@ -174,6 +178,8 @@ pub struct TabNode {
   pub id: String,
   /// User-set custom title. `None` means use auto-generated title.
   pub custom_title: Option<String>,
+  #[serde(default, skip_serializing_if = "is_false")]
+  pub pinned: bool,
   pub shell: ShellConfig,
   pub pane_tree: PaneNode,
   /// Per-tab search state (query, flags, visibility).
@@ -420,6 +426,7 @@ mod tests {
         tabs: vec![TabNode {
           id: "tab-1".into(),
           custom_title: Some("My Tab".into()),
+          pinned: true,
           shell: ShellConfig {
             path: "pwsh.exe".into(),
             args: vec![],

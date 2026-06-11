@@ -204,6 +204,7 @@ impl MainWindow {
       index,
       title,
       custom_title: tab.custom_title.clone(),
+      pinned: tab.pinned,
       shell_path: tab.shell.path.clone(),
       shell_args: tab.shell.args.clone(),
       _shell_name: shell_name,
@@ -249,6 +250,7 @@ impl MainWindow {
       item.ui_tree_id = tab.id.clone();
       item.title = title;
       item.custom_title = tab.custom_title.clone();
+      item.pinned = tab.pinned;
       item.shell_path = tab.shell.path.clone();
       item.shell_args = tab.shell.args.clone();
       item._shell_name = shell_name;
@@ -598,6 +600,7 @@ fn convert_legacy_to_ui_tree(legacy: &LegacyWorkspaceState) -> UITree {
     tabs.push(TabNode {
       id: tab_id,
       custom_title: tab.custom_title.clone(),
+      pinned: false,
       shell: kazeterm_ui_tree::node::ShellConfig {
         path: tab.shell_path.clone(),
         args: tab.shell_args.clone(),

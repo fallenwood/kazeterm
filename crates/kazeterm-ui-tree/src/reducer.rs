@@ -83,6 +83,7 @@ impl UITree {
         let tab = TabNode {
           id: tab_id,
           custom_title: None,
+          pinned: false,
           shell: ShellConfig {
             path: shell_path,
             args: shell_args,
@@ -201,6 +202,21 @@ impl UITree {
           .tab_mut(&tab_id)
           .ok_or_else(|| anyhow::anyhow!("Tab '{}' not found", tab_id))?;
         tab.custom_title = title;
+        Ok(())
+      }
+
+      UIAction::SetTabPinned {
+        window_id,
+        tab_id,
+        pinned,
+      } => {
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window '{}' not found", window_id))?;
+        let (_, tab) = win
+          .tab_mut(&tab_id)
+          .ok_or_else(|| anyhow::anyhow!("Tab '{}' not found", tab_id))?;
+        tab.pinned = pinned;
         Ok(())
       }
 
@@ -877,6 +893,41 @@ mod tests {
       })
       .unwrap();
     assert!(tree.window(&win_id).unwrap().tabs[0].custom_title.is_none());
+  }
+
+  #[test]
+  fn test_set_tab_pinned() {
+    let (mut tree, win_id) = setup_tree_with_window();
+
+    tree
+      .apply(UIAction::AddTab {
+        window_id: win_id.clone(),
+        shell_path: "bash".into(),
+        shell_args: vec![],
+        profile: None,
+        working_directory: None,
+      })
+      .unwrap();
+
+    let tab_id = tree.window(&win_id).unwrap().tabs[0].id.clone();
+
+    tree
+      .apply(UIAction::SetTabPinned {
+        window_id: win_id.clone(),
+        tab_id: tab_id.clone(),
+        pinned: true,
+      })
+      .unwrap();
+    assert!(tree.window(&win_id).unwrap().tabs[0].pinned);
+
+    tree
+      .apply(UIAction::SetTabPinned {
+        window_id: win_id.clone(),
+        tab_id,
+        pinned: false,
+      })
+      .unwrap();
+    assert!(!tree.window(&win_id).unwrap().tabs[0].pinned);
   }
 
   #[test]

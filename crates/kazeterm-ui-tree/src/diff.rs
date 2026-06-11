@@ -44,6 +44,11 @@ pub enum TreeDiff {
     tab_id: String,
     custom_title: Option<String>,
   },
+  TabPinnedChanged {
+    window_id: String,
+    tab_id: String,
+    pinned: bool,
+  },
 
   // ── Pane level ──
   PaneTreeChanged {
@@ -267,6 +272,14 @@ fn diff_tabs(win_id: &str, old_tabs: &[TabNode], new_tabs: &[TabNode], diffs: &m
             window_id: win_id.to_string(),
             tab_id: new_tab.id.clone(),
             custom_title: new_tab.custom_title.clone(),
+          });
+        }
+
+        if old_tab.pinned != new_tab.pinned {
+          diffs.push(TreeDiff::TabPinnedChanged {
+            window_id: win_id.to_string(),
+            tab_id: new_tab.id.clone(),
+            pinned: new_tab.pinned,
           });
         }
 
@@ -494,6 +507,49 @@ mod tests {
         .iter()
         .any(|d| matches!(d, TreeDiff::SearchQueryChanged { .. }))
     );
+  }
+
+  #[test]
+  fn test_diff_tab_pinned_change() {
+    let mut old = UITree::new();
+    old
+      .apply(UIAction::AddWindow {
+        width: None,
+        height: None,
+      })
+      .unwrap();
+    let win_id = old.windows[0].id.clone();
+    old
+      .apply(UIAction::AddTab {
+        window_id: win_id.clone(),
+        shell_path: "bash".into(),
+        shell_args: vec![],
+        profile: None,
+        working_directory: None,
+      })
+      .unwrap();
+
+    let tab_id = old.windows[0].tabs[0].id.clone();
+    let mut new = old.clone();
+    new
+      .apply(UIAction::SetTabPinned {
+        window_id: win_id.clone(),
+        tab_id: tab_id.clone(),
+        pinned: true,
+      })
+      .unwrap();
+
+    let diffs = diff_trees(&old, &new);
+    assert!(diffs.iter().any(|diff| {
+      matches!(
+        diff,
+        TreeDiff::TabPinnedChanged {
+          window_id,
+          tab_id: changed_tab_id,
+          pinned: true,
+        } if window_id == &win_id && changed_tab_id == &tab_id
+      )
+    }));
   }
 
   #[test]

@@ -148,6 +148,22 @@ impl MainWindow {
     )
   }
 
+  pub(crate) fn build_set_tab_pinned_ui_action(
+    &mut self,
+    tab_index: usize,
+    pinned: bool,
+    cx: &mut Context<Self>,
+  ) -> Option<UIAction> {
+    let window_id = self.sync_ui_tree_and_window_id(cx)?;
+    let item = self.items.iter().find(|item| item.index == tab_index)?;
+
+    Some(UIAction::SetTabPinned {
+      window_id,
+      tab_id: item.ui_tree_id.clone(),
+      pinned,
+    })
+  }
+
   pub fn insert_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     self.insert_new_tab_with_profile(None, None, window, cx);
   }
@@ -219,6 +235,7 @@ impl MainWindow {
       index,
       title: tab_title,
       custom_title: None,
+      pinned: false,
       shell_path: shell_program,
       shell_args,
       _shell_name: shell_name,
@@ -435,17 +452,70 @@ impl MainWindow {
     }
   }
 
+  pub(crate) fn set_tab_pinned(
+    &mut self,
+    tab_index: usize,
+    pinned: bool,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let Some(currently_pinned) = self
+      .items
+      .iter()
+      .find(|item| item.index == tab_index)
+      .map(|item| item.pinned)
+    else {
+      return;
+    };
+
+    if currently_pinned == pinned {
+      return;
+    }
+
+    if !self.reconciling_ui_tree {
+      if let Some(action) = self.build_set_tab_pinned_ui_action(tab_index, pinned, cx) {
+        self.dispatch_default_ui_action(
+          action,
+          if pinned { "pin tab" } else { "unpin tab" },
+          window,
+          cx,
+        );
+      }
+      return;
+    }
+
+    if let Some(item) = self.items.iter_mut().find(|item| item.index == tab_index) {
+      item.pinned = pinned;
+      cx.notify();
+    }
+  }
+
   pub(crate) fn close_other_tabs(&mut self, keep_tab_index: usize, cx: &mut Context<Self>) {
-    self.items.retain(|tab| tab.index == keep_tab_index);
-    self.active_tab_ix = Some(0);
+    if self.items.len() <= 1 {
+      return;
+    }
+
+    self.items = std::mem::take(&mut self.items)
+      .into_iter()
+      .filter(|tab| tab.index == keep_tab_index || tab.pinned)
+      .collect();
+    self.active_tab_ix = self
+      .items
+      .iter()
+      .position(|tab| tab.index == keep_tab_index)
+      .or_else(|| (!self.items.is_empty()).then_some(0));
     cx.notify();
   }
 
   pub(crate) fn close_tabs_to_right(&mut self, tab_ix: usize, cx: &mut Context<Self>) {
     let right_ix = tab_ix + 1;
     if right_ix < self.items.len() {
-      self.items.truncate(right_ix);
-      self.active_tab_ix = Some(tab_ix);
+      self.items = std::mem::take(&mut self.items)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(ix, item)| (ix <= tab_ix || item.pinned).then_some(item))
+        .collect();
+      self.active_tab_ix = Some(tab_ix.min(self.items.len().saturating_sub(1)));
       cx.notify();
     }
   }

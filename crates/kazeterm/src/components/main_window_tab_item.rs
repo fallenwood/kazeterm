@@ -8,6 +8,7 @@ pub struct TabItem {
   pub(crate) title: String,
   /// Custom title set by the user. When Some, auto-title updates are ignored.
   pub(crate) custom_title: Option<String>,
+  pub(crate) pinned: bool,
   pub(crate) shell_path: String,
   pub(crate) shell_args: Vec<String>,
   pub(crate) _shell_name: String,

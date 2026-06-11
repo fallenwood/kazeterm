@@ -78,6 +78,7 @@ fn load_json_snapshot_and_verify_structure() {
   let tab1 = &win.tabs[0];
   assert_eq!(tab1.id, "tab-1");
   assert!(tab1.custom_title.is_none());
+  assert!(!tab1.pinned);
   assert_eq!(tab1.shell.path, "pwsh.exe");
   match &tab1.pane_tree {
     PaneNode::Terminal {
@@ -97,6 +98,7 @@ fn load_json_snapshot_and_verify_structure() {
   // Tab 2: split with two terminals
   let tab2 = &win.tabs[1];
   assert_eq!(tab2.custom_title.as_deref(), Some("Build"));
+  assert!(!tab2.pinned);
   assert_eq!(tab2.shell.args, vec!["-NoProfile"]);
   match &tab2.pane_tree {
     PaneNode::Split {

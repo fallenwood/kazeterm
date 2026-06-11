@@ -114,6 +114,7 @@ impl UITreeStore {
       tabs.push(TabNode {
         id: item.ui_tree_id.clone(),
         custom_title: item.custom_title.clone(),
+        pinned: item.pinned,
         shell: ShellConfig {
           path: item.shell_path.clone(),
           args: item.shell_args.clone(),
@@ -204,6 +205,18 @@ impl UITreeStore {
             item.custom_title = custom_title.clone();
           }
           cx.notify();
+        }
+
+        TreeDiff::TabPinnedChanged { tab_id, pinned, .. } => {
+          if let Some(item) = main_window
+            .items
+            .iter_mut()
+            .find(|item| item.ui_tree_id == *tab_id)
+            && item.pinned != *pinned
+          {
+            item.pinned = *pinned;
+            cx.notify();
+          }
         }
 
         TreeDiff::PaneTreeChanged {

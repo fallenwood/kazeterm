@@ -973,9 +973,17 @@ impl Render for MainWindow {
                           let tab_index = item.index;
                           let tab_title = item.display_title().to_string();
                           let total_tabs = self.items.len();
+                          let is_pinned = item.pinned;
                           let is_first = tab_ix == 0;
                           let is_last = tab_ix == total_tabs - 1;
                           let is_selected = self.active_tab_ix == Some(tab_ix);
+                          let can_close_other_tabs = self
+                            .items
+                            .iter()
+                            .enumerate()
+                            .any(|(ix, tab)| ix != tab_ix && !tab.pinned);
+                          let can_close_tabs_to_right =
+                            self.items.iter().skip(tab_ix + 1).any(|tab| !tab.pinned);
                           let has_bell = item
                             .split_container
                             .all_terminals()
@@ -1122,26 +1130,38 @@ impl Render for MainWindow {
                                               .whitespace_nowrap(),
                                           ),
                                         )
+                                        .when(is_pinned, |this| {
+                                          this.child(
+                                            div().flex_shrink_0().child(
+                                              Icon::empty()
+                                                .path("icons/pin.svg")
+                                                .small()
+                                                .text_color(accent_color),
+                                            ),
+                                          )
+                                        })
                                         // Close button - visible on hover or when selected
-                                        .child({
-                                          let close_visible = is_selected;
-                                          div()
-                                            .flex_shrink_0()
-                                            .when(!close_visible, |this| {
-                                              this
-                                                .invisible()
-                                                .group_hover("tab-item", |style| style.visible())
-                                            })
-                                            .child(
-                                              TabButton::new("close", tab_index)
-                                                .visible(true)
-                                                .on_click(cx.listener(
-                                                  |this, e: &TabButtonClickEvent, window, cx| {
-                                                    let tab_index = e.index;
-                                                    this.remove_tab_by(tab_index, window, cx);
-                                                  },
-                                                )),
-                                            )
+                                        .when(!is_pinned, |this| {
+                                          this.child({
+                                            let close_visible = is_selected;
+                                            div()
+                                              .flex_shrink_0()
+                                              .when(!close_visible, |this| {
+                                                this
+                                                  .invisible()
+                                                  .group_hover("tab-item", |style| style.visible())
+                                              })
+                                              .child(
+                                                TabButton::new("close", tab_index)
+                                                  .visible(true)
+                                                  .on_click(cx.listener(
+                                                    |this, e: &TabButtonClickEvent, window, cx| {
+                                                      let tab_index = e.index;
+                                                      this.remove_tab_by(tab_index, window, cx);
+                                                    },
+                                                  )),
+                                              )
+                                          })
                                         })
                                         .on_mouse_down(MouseButton::Right, |_, _, cx| {
                                           cx.stop_propagation();
@@ -1154,9 +1174,11 @@ impl Render for MainWindow {
                                                 view.clone(),
                                                 tab_index,
                                                 tab_ix,
+                                                is_pinned,
                                                 is_first,
                                                 is_last,
-                                                total_tabs,
+                                                can_close_other_tabs,
+                                                can_close_tabs_to_right,
                                                 "Move Left",
                                                 IconName::ArrowLeft,
                                                 "Move Right",
@@ -1367,9 +1389,17 @@ impl Render for MainWindow {
                               let tab_index = item.index;
                               let tab_title = item.display_title().to_string();
                               let total_tabs = self.items.len();
+                              let is_pinned = item.pinned;
                               let is_first = tab_ix == 0;
                               let is_last = tab_ix == total_tabs - 1;
                               let is_selected = self.active_tab_ix == Some(tab_ix);
+                              let can_close_other_tabs = self
+                                .items
+                                .iter()
+                                .enumerate()
+                                .any(|(ix, tab)| ix != tab_ix && !tab.pinned);
+                              let can_close_tabs_to_right =
+                                self.items.iter().skip(tab_ix + 1).any(|tab| !tab.pinned);
                               let has_bell = item
                                 .split_container
                                 .all_terminals()
@@ -1504,24 +1534,36 @@ impl Render for MainWindow {
                                                   .whitespace_nowrap(),
                                               ),
                                             )
-                                            .child({
-                                              let close_visible = is_selected;
-                                              div()
-                                                .flex_shrink_0()
-                                                .when(!close_visible, |this| {
-                                                  this
-                                                    .invisible()
-                                                    .group_hover("tab-item", |style| style.visible())
-                                                })
-                                                .child(
-                                                  TabButton::new("close-vertical", tab_index)
-                                                    .visible(true)
-                                                    .on_click(cx.listener(
-                                                      |this, e: &TabButtonClickEvent, window, cx| {
-                                                        this.remove_tab_by(e.index, window, cx);
-                                                      },
-                                                    )),
-                                                )
+                                            .when(is_pinned, |this| {
+                                              this.child(
+                                                div().flex_shrink_0().child(
+                                                  Icon::empty()
+                                                    .path("icons/pin.svg")
+                                                    .small()
+                                                    .text_color(accent_color),
+                                                ),
+                                              )
+                                            })
+                                            .when(!is_pinned, |this| {
+                                              this.child({
+                                                let close_visible = is_selected;
+                                                div()
+                                                  .flex_shrink_0()
+                                                  .when(!close_visible, |this| {
+                                                    this
+                                                      .invisible()
+                                                      .group_hover("tab-item", |style| style.visible())
+                                                  })
+                                                  .child(
+                                                    TabButton::new("close-vertical", tab_index)
+                                                      .visible(true)
+                                                      .on_click(cx.listener(
+                                                        |this, e: &TabButtonClickEvent, window, cx| {
+                                                          this.remove_tab_by(e.index, window, cx);
+                                                        },
+                                                      )),
+                                                  )
+                                              })
                                             })
                                             .on_mouse_down(MouseButton::Right, |_, _, cx| {
                                               cx.stop_propagation();
@@ -1534,9 +1576,11 @@ impl Render for MainWindow {
                                                   view.clone(),
                                                   tab_index,
                                                   tab_ix,
+                                                  is_pinned,
                                                   is_first,
                                                   is_last,
-                                                  total_tabs,
+                                                  can_close_other_tabs,
+                                                  can_close_tabs_to_right,
                                                   "Move Up",
                                                   IconName::ArrowUp,
                                                   "Move Down",
