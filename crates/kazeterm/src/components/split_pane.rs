@@ -649,7 +649,7 @@ impl SplitPane {
               .bg(drop_fill)
           })
           .on_drop(cx.listener(move |this, dragged: &DraggedTab, window, cx| {
-            this.move_tab_into_split(dragged.from_ix, pane_id_for_drop, window, cx);
+            this.drop_tab_into_split(dragged, pane_id_for_drop, window, cx);
           }));
 
         let base = if has_splits {

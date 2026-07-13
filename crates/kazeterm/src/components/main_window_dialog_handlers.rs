@@ -95,18 +95,15 @@ impl MainWindow {
         // Save workspace state before closing
         self.sync_ui_tree(cx);
         self.ui_tree.save_workspace();
-        // User confirmed, close the window and quit the app
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
-        window.remove_window();
-        cx.quit();
+        crate::window_manager::close_window(window, cx);
       }
       CloseConfirmEvent::Close => {
         // Close without saving workspace state
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;
-        window.remove_window();
-        cx.quit();
+        crate::window_manager::close_window(window, cx);
       }
       CloseConfirmEvent::Cancel => {
         // User cancelled, just close the dialog

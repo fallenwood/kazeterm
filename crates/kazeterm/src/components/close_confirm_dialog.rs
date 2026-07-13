@@ -26,9 +26,9 @@ impl CloseConfirmContent {
 
   const fn description(self) -> &'static str {
     if self.restore_workspace {
-      "Do you want to save the workspace before closing? Saved workspaces will be restored on next launch."
+      "Do you want to save this window's workspace before closing it? Saved workspaces will be restored on next launch."
     } else {
-      "Are you sure to close the application?"
+      "Are you sure you want to close this window?"
     }
   }
 
@@ -178,7 +178,7 @@ impl Render for CloseConfirmDialog {
                 div()
                   .text_base()
                   .font_weight(FontWeight::SEMIBOLD)
-                  .child("Close Application?"),
+                  .child("Close Window?"),
               )
               .child(
                 div()
@@ -203,7 +203,7 @@ mod tests {
 
     assert_eq!(
       content.description(),
-      "Do you want to save the workspace before closing? Saved workspaces will be restored on next launch."
+      "Do you want to save this window's workspace before closing it? Saved workspaces will be restored on next launch."
     );
     assert_eq!(content.primary_action(), CloseConfirmEvent::SaveAndClose);
     assert_eq!(content.primary_button_label(), "Save & Close");
@@ -215,7 +215,7 @@ mod tests {
 
     assert_eq!(
       content.description(),
-      "Are you sure to close the application?"
+      "Are you sure you want to close this window?"
     );
     assert!(!content.description().contains("save"));
     assert_eq!(content.primary_action(), CloseConfirmEvent::Close);

@@ -13,7 +13,7 @@ pub struct TabItem {
   pub(crate) shell_args: Vec<String>,
   pub(crate) _shell_name: String,
   pub(crate) split_container: SplitContainer,
-  pub(crate) _subscription: gpui::Subscription,
+  pub(crate) terminal_subscriptions: Vec<gpui::Subscription>,
   /// Per-tab search bar state, saved/restored on tab switch.
   pub(crate) search_bar_state: SearchBarState,
 }

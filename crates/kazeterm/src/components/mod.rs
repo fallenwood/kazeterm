@@ -11,6 +11,9 @@ mod main_window_split_pane_actions;
 mod main_window_tab_item;
 mod main_window_tab_management;
 mod main_window_tab_switcher_logic;
+mod main_window_tab_transfer;
+mod main_window_tab_transfer_tests;
+mod main_window_window_lifecycle_tests;
 mod menu_builder;
 mod notifications;
 mod search_bar;
@@ -26,5 +29,6 @@ pub(crate) mod terminal_window;
 mod update_confirm_dialog;
 pub(crate) mod workspace_state;
 
+pub(crate) use dragged_tab::DraggedTab;
 pub use main_window::MainWindow;
 pub(crate) use split_pane::{PaneFocusDirection, PaneId, SplitDirection, SplitPane};

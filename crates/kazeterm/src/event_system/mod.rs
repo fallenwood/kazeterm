@@ -152,7 +152,7 @@ pub fn build_default_event_bus(source_config: EventSourceConfig) -> EventBus<Mai
   });
 
   bus.subscribe("NewWindow", move |_mw, _event, _window, cx| {
-    crate::open_kazeterm_window(source_config_for_new_window.clone(), cx);
+    crate::window_manager::open_kazeterm_window(source_config_for_new_window.clone(), cx);
   });
 
   bus.subscribe("Quit", |_mw, _event, _window, cx| {

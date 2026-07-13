@@ -12,7 +12,10 @@ use crate::components::shell_error_dialog::ShellErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
 use crate::components::update_confirm_dialog::UpdateConfirmDialog;
+use crate::event_system::EventSourceConfig;
 use crate::reconciler::UITreeStore;
+
+use super::dragged_tab::DraggedTab;
 
 pub(crate) use super::main_window_tab_item::TabItem;
 
@@ -91,15 +94,39 @@ pub struct MainWindow {
   pub(crate) tab_bar_visible: bool,
   /// Subscription for system appearance changes (used by ThemeMode::System)
   pub(crate) _appearance_subscription: gpui::Subscription,
+  pub(crate) _window_activation_subscription: gpui::Subscription,
   /// Data-driven UI tree store for serialization, diffing, and external API.
   pub(crate) ui_tree: UITreeStore,
   /// Guards against re-dispatching while tree diffs are being reconciled.
   pub(crate) reconciling_ui_tree: bool,
+  pub(crate) event_source_config: EventSourceConfig,
+  pub(crate) active_tab_drag: Option<DraggedTab>,
 }
 
 impl MainWindow {
   pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
-    let entity = cx.new(|cx| Self::new(window, cx));
+    Self::view_with_event_source(window, EventSourceConfig::None, cx)
+  }
+
+  pub(crate) fn view_with_event_source(
+    window: &mut Window,
+    event_source_config: EventSourceConfig,
+    cx: &mut App,
+  ) -> Entity<Self> {
+    let entity = cx.new(|cx| Self::new_with_event_source(window, event_source_config, cx));
+    Self::configure_view(entity, window, cx)
+  }
+
+  pub(crate) fn empty_view_with_event_source(
+    window: &mut Window,
+    event_source_config: EventSourceConfig,
+    cx: &mut App,
+  ) -> Entity<Self> {
+    let entity = cx.new(|cx| Self::new_internal(window, event_source_config, false, cx));
+    Self::configure_view(entity, window, cx)
+  }
+
+  fn configure_view(entity: Entity<Self>, window: &mut Window, cx: &mut App) -> Entity<Self> {
     let window_handle = window.window_handle();
 
     // Register window close interception for Alt+F4 and system close button
@@ -129,7 +156,25 @@ impl MainWindow {
     entity
   }
 
+  #[cfg(test)]
   pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    Self::new_with_event_source(window, EventSourceConfig::None, cx)
+  }
+
+  pub(crate) fn new_with_event_source(
+    window: &mut Window,
+    event_source_config: EventSourceConfig,
+    cx: &mut Context<Self>,
+  ) -> Self {
+    Self::new_internal(window, event_source_config, true, cx)
+  }
+
+  fn new_internal(
+    window: &mut Window,
+    event_source_config: EventSourceConfig,
+    initialize_tabs: bool,
+    cx: &mut Context<Self>,
+  ) -> Self {
     let index = 0;
     let tab_index: AtomicUsize = AtomicUsize::new(index);
 
@@ -153,6 +198,12 @@ impl MainWindow {
         themeing::SettingsStore::init_gpui_component_theme(cx);
       }
     });
+    let window_activation_subscription =
+      cx.observe_window_activation(window, |_main_window, window, cx| {
+        if window.is_window_active() {
+          crate::window_manager::mark_window_active(window.window_handle(), cx);
+        }
+      });
 
     let mut main_window = Self {
       focus_handle: cx.focus_handle(),
@@ -192,9 +243,16 @@ impl MainWindow {
       last_notification_time: None,
       tab_bar_visible: true,
       _appearance_subscription: appearance_subscription,
+      _window_activation_subscription: window_activation_subscription,
       ui_tree: UITreeStore::new(),
       reconciling_ui_tree: false,
+      event_source_config,
+      active_tab_drag: None,
     };
+
+    if !initialize_tabs {
+      return main_window;
+    }
 
     // Try to restore previous workspace
     let config = cx.global::<::config::Config>();

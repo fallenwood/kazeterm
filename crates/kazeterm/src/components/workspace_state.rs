@@ -182,7 +182,7 @@ impl MainWindow {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) {
-    let (split_container, first_sub) =
+    let (split_container, terminal_subscriptions) =
       match Self::build_split_container_from_tab_node(tab, &self.tab_index, window, cx) {
         Ok(result) => result,
         Err(err) => {
@@ -209,7 +209,7 @@ impl MainWindow {
       shell_args: tab.shell.args.clone(),
       _shell_name: shell_name,
       split_container,
-      _subscription: first_sub,
+      terminal_subscriptions,
       search_bar_state: Self::search_bar_state_from_node(&tab.search),
     };
     self.items.push(item);
@@ -237,6 +237,8 @@ impl MainWindow {
         window,
         cx,
       )?;
+    let terminal_subscriptions = Self::subscribe_to_split_container(&split_container, window, cx);
+    drop(new_subscriptions);
 
     let was_active = self.active_tab_ix == Some(ix);
     let shell_name = Self::shell_name_for_tab(tab);
@@ -255,11 +257,8 @@ impl MainWindow {
       item.shell_args = tab.shell.args.clone();
       item._shell_name = shell_name;
       item.split_container = split_container;
+      item.terminal_subscriptions = terminal_subscriptions;
       item.search_bar_state = Self::search_bar_state_from_node(&tab.search);
-    }
-
-    for sub in new_subscriptions {
-      std::mem::forget(sub);
     }
 
     if was_active {
@@ -296,7 +295,7 @@ impl MainWindow {
     tab_index_counter: &std::sync::atomic::AtomicUsize,
     window: &mut Window,
     cx: &mut Context<MainWindow>,
-  ) -> Result<(SplitContainer, gpui::Subscription), String> {
+  ) -> Result<(SplitContainer, Vec<gpui::Subscription>), String> {
     let mut next_pane_id: usize = 0;
     let (root_pane, subscriptions) = Self::build_split_pane_from_node(
       &tab.pane_tree,
@@ -311,8 +310,7 @@ impl MainWindow {
       Self::active_pane_id_from_node(&tab.pane_tree).or_else(|| Self::first_pane_id(&root_pane));
     let split_container =
       SplitContainer::from_restored_root(root_pane, active_pane_id, next_pane_id);
-    let first_sub = Self::take_primary_subscription(subscriptions)?;
-    Ok((split_container, first_sub))
+    Ok((split_container, subscriptions))
   }
 
   fn build_split_container_from_tab_node_reusing_existing_panes(
@@ -338,19 +336,6 @@ impl MainWindow {
     let split_container =
       SplitContainer::from_restored_root(root_pane, active_pane_id, next_pane_id);
     Ok((split_container, subscriptions))
-  }
-
-  fn take_primary_subscription(
-    subscriptions: Vec<gpui::Subscription>,
-  ) -> Result<gpui::Subscription, String> {
-    let mut sub_iter = subscriptions.into_iter();
-    let first_sub = sub_iter
-      .next()
-      .ok_or_else(|| "expected at least one terminal subscription".to_string())?;
-    for sub in sub_iter {
-      std::mem::forget(sub);
-    }
-    Ok(first_sub)
   }
 
   fn build_split_pane_from_node_reusing_existing_panes(
