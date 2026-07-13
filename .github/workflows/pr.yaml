@@ -10,7 +10,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-latest, macos-26-intel]
+        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-26-intel]
     permissions:
       contents: write
     steps:
@@ -19,7 +19,7 @@ jobs:
           persist-credentials: false
 
       - name: Set rust vesrion
-        run: rustup override set 1.95.0
+        run: rustup override set 1.97.0
 
       - name: Setup Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
