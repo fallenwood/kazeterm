@@ -277,6 +277,25 @@ impl TerminalView {
     }
   }
 
+  pub fn rebind_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    let terminal = self.terminal.clone();
+    let terminal_subscriptions = subscribe_for_terminal_events(&terminal, window, cx);
+    let focus_handle = self.focus_handle.clone();
+    let focus_in = cx.on_focus_in(&focus_handle, window, |terminal_view, window, cx| {
+      terminal_view.focus_in(window, cx);
+    });
+    let focus_out = cx.on_focus_out(
+      &focus_handle,
+      window,
+      |terminal_view, _event, window, cx| {
+        terminal_view.focus_out(window, cx);
+      },
+    );
+
+    self._subscriptions = vec![focus_in, focus_out];
+    self._terminal_subscriptions = terminal_subscriptions;
+  }
+
   fn schedule_tab_title_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     let delay = tab_title_change_delay(cx);
     self.pending_tab_title_update = cx.spawn_in(window, async move |this, cx| {

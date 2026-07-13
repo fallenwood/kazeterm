@@ -240,7 +240,7 @@ impl MainWindow {
       shell_args,
       _shell_name: shell_name,
       split_container,
-      _subscription: subscription,
+      terminal_subscriptions: vec![subscription],
       search_bar_state: SearchBarState::default(),
     };
     this.items.push(item);
@@ -310,12 +310,13 @@ impl MainWindow {
     match event {
       terminal::TerminalEvent::CloseTerminal(terminal_index) => {
         // Find the tab containing this terminal
+        let terminal_entity_id = terminal_view.entity_id();
         let tab_position = this.items.iter().position(|item| {
           item
             .split_container
             .all_terminals()
             .iter()
-            .any(|(_, t)| t.read(cx).index == *terminal_index)
+            .any(|(_, terminal)| terminal.entity_id() == terminal_entity_id)
         });
 
         if let Some(tab_pos) = tab_position {
@@ -339,6 +340,7 @@ impl MainWindow {
             if let Some(terminal) = this.items[tab_pos].split_container.get_active_terminal() {
               Self::focus_terminal(window, &terminal, cx);
             }
+            this.resubscribe_tab_terminals(tab_pos, window, cx);
             cx.notify();
           }
         }
@@ -359,13 +361,13 @@ impl MainWindow {
       }
       terminal::TerminalEvent::UpdateTab => {
         // Update tab title only if no custom title is set
-        let tab_index = terminal_view.read(cx).index;
+        let terminal_entity_id = terminal_view.entity_id();
         if let Some(item) = this.items.iter_mut().find(|item| {
           item
             .split_container
             .all_terminals()
             .iter()
-            .any(|(_, t)| t.read(cx).index == tab_index)
+            .any(|(_, terminal)| terminal.entity_id() == terminal_entity_id)
         }) {
           // Skip update if user has set a custom title
           if item.custom_title.is_some() {
@@ -386,6 +388,31 @@ impl MainWindow {
     }
   }
 
+  pub(crate) fn subscribe_to_split_container(
+    split_container: &SplitContainer,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) -> Vec<gpui::Subscription> {
+    split_container
+      .all_terminals()
+      .into_iter()
+      .map(|(_, terminal)| cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event))
+      .collect()
+  }
+
+  pub(crate) fn resubscribe_tab_terminals(
+    &mut self,
+    tab_ix: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let Some(split_container) = self.items.get(tab_ix).map(|item| &item.split_container) else {
+      return;
+    };
+    let subscriptions = Self::subscribe_to_split_container(split_container, window, cx);
+    self.items[tab_ix].terminal_subscriptions = subscriptions;
+  }
+
   pub fn remove_tab_by(&mut self, tab_index: usize, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree {
       if let Some(action) = self.build_close_tab_ui_action(tab_index, cx) {
@@ -404,8 +431,7 @@ impl MainWindow {
       if self.items.is_empty() {
         let config = cx.global::<::config::Config>();
         if config.tab.close_on_last {
-          window.remove_window();
-          cx.quit();
+          crate::window_manager::close_window(window, cx);
         } else if !self.reconciling_ui_tree {
           self.insert_new_tab(window, cx);
         }
@@ -537,6 +563,19 @@ impl MainWindow {
         window,
         cx,
       );
+      return;
+    }
+
+    self.set_active_tab_direct(ix, window, cx);
+  }
+
+  pub(crate) fn set_active_tab_direct(
+    &mut self,
+    ix: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    if ix >= self.items.len() {
       return;
     }
 

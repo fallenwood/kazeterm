@@ -940,6 +940,22 @@ impl Render for MainWindow {
           cx,
         );
       }))
+      .capture_any_mouse_up(cx.listener(
+        move |this, e: &MouseUpEvent, window, cx| {
+          this.finish_tab_drag(e, window, cx);
+        },
+      ))
+      .on_mouse_up_out(
+        MouseButton::Left,
+        cx.listener(move |this, e: &MouseUpEvent, window, cx| {
+          this.finish_tab_drag(e, window, cx);
+        }),
+      )
+      .on_drop(cx.listener(
+        move |this, dragged: &DraggedTab, window, cx| {
+          this.drop_tab_at(dragged, None, window, cx);
+        },
+      ))
       .on_mouse_down(
         MouseButton::Left,
         cx.listener(move |_this, _e: &MouseDownEvent, _window, _cx| {
@@ -972,6 +988,9 @@ impl Render for MainWindow {
                           let shell_icon = ShellIcon::new(&item.shell_path);
                           let tab_index = item.index;
                           let tab_title = item.display_title().to_string();
+                          let dragged_tab = self
+                            .dragged_tab(tab_ix, window, cx)
+                            .expect("rendered tab should have a drag payload");
                           let total_tabs = self.items.len();
                           let is_pinned = item.pinned;
                           let is_first = tab_ix == 0;
@@ -1032,12 +1051,11 @@ impl Render for MainWindow {
                                     .id(ElementId::NamedInteger("tab-drag".into(), tab_ix as u64))
                                     .cursor(CursorStyle::OpenHand)
                                     .on_drag(
-                                      DraggedTab {
-                                        from_ix: tab_ix,
-                                        title: tab_title.clone(),
-                                        shell_path: item.shell_path.clone(),
-                                      },
+                                      dragged_tab,
                                       |dragged: &DraggedTab, _offset, _window, cx| {
+                                        let _ = dragged.source.update(cx, |this, _cx| {
+                                          this.start_tab_drag(dragged.clone());
+                                        });
                                         cx.new(|_cx| {
                                           DraggedTabView::new(
                                             dragged.title.clone(),
@@ -1056,25 +1074,8 @@ impl Render for MainWindow {
                                       },
                                     )
                                     .on_drop(cx.listener(
-                                      move |this, dragged: &DraggedTab, _window, cx| {
-                                        let from_ix = dragged.from_ix;
-                                        let to_ix = tab_ix;
-                                        if from_ix != to_ix {
-                                          // Remove the item from the original position and insert at new position
-                                          let item = this.items.remove(from_ix);
-                                          this.items.insert(to_ix, item);
-                                          // Update active tab index
-                                          if let Some(active) = this.active_tab_ix {
-                                            if active == from_ix {
-                                              this.active_tab_ix = Some(to_ix);
-                                            } else if from_ix < active && active <= to_ix {
-                                              this.active_tab_ix = Some(active - 1);
-                                            } else if to_ix <= active && active < from_ix {
-                                              this.active_tab_ix = Some(active + 1);
-                                            }
-                                          }
-                                          cx.notify();
-                                        }
+                                      move |this, dragged: &DraggedTab, window, cx| {
+                                        this.drop_tab_at(dragged, Some(tab_ix), window, cx);
                                       },
                                     ))
                                     .child(
@@ -1388,6 +1389,9 @@ impl Render for MainWindow {
                               let shell_icon = ShellIcon::new(&item.shell_path);
                               let tab_index = item.index;
                               let tab_title = item.display_title().to_string();
+                              let dragged_tab = self
+                                .dragged_tab(tab_ix, window, cx)
+                                .expect("rendered tab should have a drag payload");
                               let total_tabs = self.items.len();
                               let is_pinned = item.pinned;
                               let is_first = tab_ix == 0;
@@ -1449,12 +1453,11 @@ impl Render for MainWindow {
                                         .w_full()
                                         .cursor(CursorStyle::OpenHand)
                                         .on_drag(
-                                          DraggedTab {
-                                            from_ix: tab_ix,
-                                            title: tab_title.clone(),
-                                            shell_path: item.shell_path.clone(),
-                                          },
+                                          dragged_tab,
                                           |dragged: &DraggedTab, _offset, _window, cx| {
+                                            let _ = dragged.source.update(cx, |this, _cx| {
+                                              this.start_tab_drag(dragged.clone());
+                                            });
                                             cx.new(|_cx| {
                                               DraggedTabView::new(
                                                 dragged.title.clone(),
@@ -1472,23 +1475,8 @@ impl Render for MainWindow {
                                           },
                                         )
                                         .on_drop(cx.listener(
-                                          move |this, dragged: &DraggedTab, _window, cx| {
-                                            let from_ix = dragged.from_ix;
-                                            let to_ix = tab_ix;
-                                            if from_ix != to_ix {
-                                              let item = this.items.remove(from_ix);
-                                              this.items.insert(to_ix, item);
-                                              if let Some(active) = this.active_tab_ix {
-                                                if active == from_ix {
-                                                  this.active_tab_ix = Some(to_ix);
-                                                } else if from_ix < active && active <= to_ix {
-                                                  this.active_tab_ix = Some(active - 1);
-                                                } else if to_ix <= active && active < from_ix {
-                                                  this.active_tab_ix = Some(active + 1);
-                                                }
-                                              }
-                                              cx.notify();
-                                            }
+                                          move |this, dragged: &DraggedTab, window, cx| {
+                                            this.drop_tab_at(dragged, Some(tab_ix), window, cx);
                                           },
                                         ))
                                         .child(

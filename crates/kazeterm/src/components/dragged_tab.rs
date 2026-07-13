@@ -1,18 +1,56 @@
+use std::sync::{
+  Arc,
+  atomic::{AtomicBool, Ordering},
+};
+
 use gpui::*;
 use gpui_component::{h_flex, label::Label};
 use themeing::SettingsStore;
 
+use super::main_window::MainWindow;
 use super::shell_icon::ShellIcon;
 
 /// Represents a tab being dragged
 #[derive(Clone)]
 pub struct DraggedTab {
-  /// Index of the tab in the items list
-  pub from_ix: usize,
+  /// Stable identifier of the tab in its source window.
+  pub tab_index: usize,
   /// Title of the tab being dragged
   pub title: String,
   /// Shell path for the icon
   pub shell_path: String,
+  pub(crate) source: WeakEntity<MainWindow>,
+  pub(crate) source_entity_id: EntityId,
+  pub(crate) source_window: AnyWindowHandle,
+  handled: Arc<AtomicBool>,
+}
+
+impl DraggedTab {
+  pub(crate) fn new(
+    tab_index: usize,
+    title: String,
+    shell_path: String,
+    source: WeakEntity<MainWindow>,
+    source_entity_id: EntityId,
+    source_window: AnyWindowHandle,
+  ) -> Self {
+    Self {
+      tab_index,
+      title,
+      shell_path,
+      source,
+      source_entity_id,
+      source_window,
+      handled: Arc::new(AtomicBool::new(false)),
+    }
+  }
+
+  pub(crate) fn claim(&self) -> bool {
+    self
+      .handled
+      .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+      .is_ok()
+  }
 }
 
 /// Simple view to render the dragged tab appearance

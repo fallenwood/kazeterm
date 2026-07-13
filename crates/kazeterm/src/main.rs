@@ -21,10 +21,7 @@ extern crate objc;
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
-use gpui::{
-  App, AppContext, Application, KeyBinding, Point, Size, WindowAppearance,
-  WindowBackgroundAppearance, WindowOptions, actions, px,
-};
+use gpui::{App, Application, KeyBinding, WindowAppearance, actions};
 #[cfg(target_os = "macos")]
 use gpui::{Menu, MenuItem};
 use themeing::SettingsStore;
@@ -42,6 +39,7 @@ mod config;
 mod config_watcher;
 pub mod event_system;
 pub mod reconciler;
+mod window_manager;
 
 #[cfg(test)]
 mod test_support;
@@ -155,88 +153,6 @@ pub(crate) fn system_is_dark(cx: &App) -> bool {
   )
 }
 
-/// Open a new Kazeterm window using the current global config.
-fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
-  let config = cx.global::<Config>().clone();
-  let window_width = config.window.width;
-  let window_height = config.window.height;
-  let start_maximized = config.window.start_maximized;
-  let background_opacity = config.appearance.get_background_opacity();
-  let background_blur = config.appearance.background_blur;
-
-  cx.spawn(async move |cx| {
-    let window_background = if background_opacity < 1.0 {
-      if background_blur {
-        WindowBackgroundAppearance::Blurred
-      } else {
-        WindowBackgroundAppearance::Transparent
-      }
-    } else {
-      WindowBackgroundAppearance::Opaque
-    };
-
-    let restore_bounds = gpui::Bounds {
-      origin: Point {
-        x: px(100f32),
-        y: px(100f32),
-      },
-      size: Size {
-        width: px(window_width),
-        height: px(window_height),
-      },
-    };
-
-    let options = WindowOptions {
-      window_bounds: Some(if start_maximized {
-        gpui::WindowBounds::Maximized(restore_bounds)
-      } else {
-        gpui::WindowBounds::Windowed(restore_bounds)
-      }),
-      titlebar: Some(gpui::TitlebarOptions {
-        title: Some("Kazeterm".into()),
-        appears_transparent: true,
-        traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
-      }),
-      window_decorations: Some(gpui::WindowDecorations::Client),
-      window_background,
-      app_id: Some("kazeterm".into()),
-      ..Default::default()
-    };
-
-    let event_config = event_source_config;
-    cx.open_window(options, |window, cx| {
-      let view = crate::components::MainWindow::view(window, cx);
-      let window_handle = window.window_handle();
-
-      // Set X11 window icon from embedded PNG
-      #[cfg(target_os = "linux")]
-      app_icon::set_x11_window_icon(window);
-
-      // Initialize the event system with a weak reference to the main window
-      let main_window_weak = view.downgrade();
-      let event_config_clone = event_config.clone();
-      cx.defer(move |cx| {
-        crate::event_system::start_event_system(
-          main_window_weak,
-          window_handle,
-          event_config_clone,
-          cx,
-        );
-      });
-
-      let main_window_weak = view.downgrade();
-      cx.defer(move |cx| {
-        crate::auto_update::start_auto_update(main_window_weak, window_handle, cx);
-      });
-
-      cx.new(|cx| gpui_component::Root::new(view, window, cx))
-    })?;
-
-    Ok::<_, anyhow::Error>(())
-  })
-  .detach();
-}
-
 fn main() {
   // Parse command-line arguments
   let args = Args::parse();
@@ -269,7 +185,7 @@ fn main() {
     let reopen_event_config = event_source_config.clone();
     app.on_reopen(move |cx| {
       if cx.windows().is_empty() {
-        open_kazeterm_window(reopen_event_config.clone(), cx);
+        window_manager::open_kazeterm_window(reopen_event_config.clone(), cx);
       }
     });
   }
@@ -303,7 +219,7 @@ fn main() {
     {
       let event_config = event_source_config.clone();
       cx.on_action(move |_: &NewWindow, cx: &mut App| {
-        open_kazeterm_window(event_config.clone(), cx);
+        window_manager::open_kazeterm_window(event_config.clone(), cx);
       });
     }
     cx.on_action(|_: &Quit, cx: &mut App| {
@@ -386,6 +302,6 @@ fn main() {
       MenuItem::action("Quit", Quit),
     ]);
 
-    open_kazeterm_window(event_source_config.clone(), cx);
+    window_manager::open_kazeterm_window(event_source_config.clone(), cx);
   });
 }

@@ -21,7 +21,7 @@ use terminal::test_support::fake_terminal_session;
 
 /// Global serializer: e2e tests install a process-global factory, so only
 /// one may run at a time.
-fn test_lock() -> MutexGuard<'static, ()> {
+pub(super) fn test_lock() -> MutexGuard<'static, ()> {
   static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
   LOCK
     .get_or_init(|| Mutex::new(()))
@@ -31,12 +31,12 @@ fn test_lock() -> MutexGuard<'static, ()> {
 
 /// Records every call the MainWindow makes into the terminal-session factory.
 #[derive(Default)]
-struct FactoryCalls {
-  programs: Vec<String>,
+pub(super) struct FactoryCalls {
+  pub(super) programs: Vec<String>,
   args: Vec<Vec<String>>,
 }
 
-fn install_fake_factory() -> Arc<Mutex<FactoryCalls>> {
+pub(super) fn install_fake_factory() -> Arc<Mutex<FactoryCalls>> {
   let calls = Arc::new(Mutex::new(FactoryCalls::default()));
   let calls_clone = calls.clone();
   set_terminal_session_factory_for_testing(Box::new(move |program, args, _cwd, _cfg| {
