@@ -1,6 +1,6 @@
 //! Kazeterm-specific event handlers built on top of the shared event-system crate.
 
-use gpui::{AnyWindowHandle, App, Context, WeakEntity, Window};
+use gpui::{App, Context, Window};
 use kazeterm_event_system::EventBus;
 use kazeterm_ui_tree::action::UIAction;
 use kazeterm_ui_tree::node::{OverlayNode, SplitDirection as TreeSplitDirection};
@@ -576,18 +576,17 @@ fn dispatch_overlay_event(
 }
 
 /// Initialize the shared event-system runtime with Kazeterm's default handler set.
-pub fn start_event_system(
-  main_window: WeakEntity<MainWindow>,
-  window_handle: AnyWindowHandle,
-  source_config: EventSourceConfig,
-  cx: &mut App,
-) {
+pub fn start_event_system(source_config: EventSourceConfig, cx: &mut App) {
   let event_bus = build_default_event_bus(source_config.clone());
-  kazeterm_event_system::start_event_system(
-    main_window,
-    window_handle,
+  kazeterm_event_system::start_event_system_with_dispatcher(
     source_config,
-    event_bus,
+    move |event, cx| {
+      cx.update(|cx| {
+        crate::window_manager::update_active_window(cx, |main_window, window, cx| {
+          event_bus.dispatch(main_window, event, window, cx);
+        })
+      })?
+    },
     cx,
   );
 }

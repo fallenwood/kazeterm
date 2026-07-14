@@ -103,6 +103,13 @@ pub struct MainWindow {
   pub(crate) active_tab_drag: Option<DraggedTab>,
 }
 
+#[derive(Clone, Copy)]
+enum InitialWindowContent {
+  RestoreWorkspace,
+  Fresh,
+  Empty,
+}
+
 impl MainWindow {
   pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
     Self::view_with_event_source(window, EventSourceConfig::None, cx)
@@ -113,7 +120,24 @@ impl MainWindow {
     event_source_config: EventSourceConfig,
     cx: &mut App,
   ) -> Entity<Self> {
-    let entity = cx.new(|cx| Self::new_with_event_source(window, event_source_config, cx));
+    let entity = cx.new(|cx| {
+      Self::new_internal(
+        window,
+        event_source_config,
+        InitialWindowContent::RestoreWorkspace,
+        cx,
+      )
+    });
+    Self::configure_view(entity, window, cx)
+  }
+
+  pub(crate) fn fresh_view_with_event_source(
+    window: &mut Window,
+    event_source_config: EventSourceConfig,
+    cx: &mut App,
+  ) -> Entity<Self> {
+    let entity =
+      cx.new(|cx| Self::new_internal(window, event_source_config, InitialWindowContent::Fresh, cx));
     Self::configure_view(entity, window, cx)
   }
 
@@ -122,7 +146,8 @@ impl MainWindow {
     event_source_config: EventSourceConfig,
     cx: &mut App,
   ) -> Entity<Self> {
-    let entity = cx.new(|cx| Self::new_internal(window, event_source_config, false, cx));
+    let entity =
+      cx.new(|cx| Self::new_internal(window, event_source_config, InitialWindowContent::Empty, cx));
     Self::configure_view(entity, window, cx)
   }
 
@@ -158,21 +183,28 @@ impl MainWindow {
 
   #[cfg(test)]
   pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-    Self::new_with_event_source(window, EventSourceConfig::None, cx)
+    Self::new_internal(
+      window,
+      EventSourceConfig::None,
+      InitialWindowContent::RestoreWorkspace,
+      cx,
+    )
   }
 
-  pub(crate) fn new_with_event_source(
-    window: &mut Window,
-    event_source_config: EventSourceConfig,
-    cx: &mut Context<Self>,
-  ) -> Self {
-    Self::new_internal(window, event_source_config, true, cx)
+  #[cfg(test)]
+  pub(crate) fn new_fresh(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    Self::new_internal(
+      window,
+      EventSourceConfig::None,
+      InitialWindowContent::Fresh,
+      cx,
+    )
   }
 
   fn new_internal(
     window: &mut Window,
     event_source_config: EventSourceConfig,
-    initialize_tabs: bool,
+    initial_content: InitialWindowContent,
     cx: &mut Context<Self>,
   ) -> Self {
     let index = 0;
@@ -250,21 +282,22 @@ impl MainWindow {
       active_tab_drag: None,
     };
 
-    if !initialize_tabs {
+    if matches!(initial_content, InitialWindowContent::Empty) {
       return main_window;
     }
 
-    // Try to restore previous workspace
-    let config = cx.global::<::config::Config>();
-    let restore_workspace_once = crate::auto_update::take_restore_workspace_once();
-    if config.window.restore_workspace || restore_workspace_once {
-      if let Some(tree) = UITreeStore::load_workspace() {
-        main_window.reconciling_ui_tree = true;
-        main_window.restore_from_ui_tree(&tree, window, cx);
-        main_window.reconciling_ui_tree = false;
-        main_window.ui_tree = UITreeStore::from_tree(tree);
-        UITreeStore::delete_workspace();
-        return main_window;
+    if matches!(initial_content, InitialWindowContent::RestoreWorkspace) {
+      let config = cx.global::<::config::Config>();
+      let restore_workspace_once = crate::auto_update::take_restore_workspace_once();
+      if config.window.restore_workspace || restore_workspace_once {
+        if let Some(tree) = UITreeStore::load_workspace() {
+          main_window.reconciling_ui_tree = true;
+          main_window.restore_from_ui_tree(&tree, window, cx);
+          main_window.reconciling_ui_tree = false;
+          main_window.ui_tree = UITreeStore::from_tree(tree);
+          UITreeStore::delete_workspace();
+          return main_window;
+        }
       }
     }
 

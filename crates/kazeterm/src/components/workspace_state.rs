@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 
 use gpui::{Context, Entity, Window, px};
 use kazeterm_ui_tree::node::{PaneNode, TabNode, UITree};
@@ -13,12 +15,65 @@ use crate::components::search_bar::SearchBarState;
 use crate::components::split_pane::{PaneId, SplitContainer, SplitDirection, SplitPane};
 use crate::reconciler::UITreeStore;
 
+#[cfg(test)]
+static WORKSPACE_DIRECTORY_OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+fn workspace_directory() -> PathBuf {
+  #[cfg(test)]
+  if let Some(path) = WORKSPACE_DIRECTORY_OVERRIDE
+    .get_or_init(|| Mutex::new(None))
+    .lock()
+    .expect("workspace directory override lock should not be poisoned")
+    .clone()
+  {
+    return path;
+  }
+
+  config::Config::get_config_path()
+}
+
+#[cfg(test)]
+pub(crate) struct WorkspaceDirectoryOverride {
+  path: PathBuf,
+}
+
+#[cfg(test)]
+impl Drop for WorkspaceDirectoryOverride {
+  fn drop(&mut self) {
+    let mut current = WORKSPACE_DIRECTORY_OVERRIDE
+      .get_or_init(|| Mutex::new(None))
+      .lock()
+      .expect("workspace directory override lock should not be poisoned");
+    if current.as_ref() == Some(&self.path) {
+      *current = None;
+    }
+    drop(current);
+    let _ = std::fs::remove_dir_all(&self.path);
+  }
+}
+
+#[cfg(test)]
+pub(crate) fn override_workspace_directory_for_testing(
+  path: PathBuf,
+) -> WorkspaceDirectoryOverride {
+  let mut current = WORKSPACE_DIRECTORY_OVERRIDE
+    .get_or_init(|| Mutex::new(None))
+    .lock()
+    .expect("workspace directory override lock should not be poisoned");
+  assert!(
+    current.is_none(),
+    "workspace directory override should not already be set"
+  );
+  *current = Some(path.clone());
+  WorkspaceDirectoryOverride { path }
+}
+
 // ── UITree-based workspace persistence ──
 
 impl UITreeStore {
   /// Path to the workspace file on disk.
   pub fn workspace_file_path() -> PathBuf {
-    config::Config::get_config_path().join("workspace.json")
+    workspace_directory().join("workspace.json")
   }
 
   /// Save the current tree to disk.
@@ -76,7 +131,7 @@ impl UITreeStore {
       let _ = std::fs::remove_file(&path);
     }
     // Also clean up legacy file if it exists
-    let legacy = config::Config::get_config_path().join("workspace_legacy.json");
+    let legacy = workspace_directory().join("workspace_legacy.json");
     if legacy.exists() {
       let _ = std::fs::remove_file(&legacy);
     }
@@ -548,7 +603,7 @@ enum LegacySplitDirectionState {
 
 /// Attempt to load and migrate a legacy `workspace.json` to UITree format.
 fn migrate_legacy_workspace() -> Option<UITree> {
-  let path = config::Config::get_config_path().join("workspace.json");
+  let path = UITreeStore::workspace_file_path();
   if !path.exists() {
     return None;
   }

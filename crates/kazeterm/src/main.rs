@@ -302,6 +302,6 @@ fn main() {
       MenuItem::action("Quit", Quit),
     ]);
 
-    window_manager::open_kazeterm_window(event_source_config.clone(), cx);
+    window_manager::open_initial_kazeterm_window(event_source_config.clone(), cx);
   });
 }

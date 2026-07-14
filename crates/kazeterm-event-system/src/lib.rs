@@ -3,7 +3,7 @@
 //! This crate provides the reusable event-system plumbing used by the app:
 //! [`AppEvent`], [`JsonEvent`], [`EventSourceConfig`], a generic [`EventBus`],
 //! external stdin/socket readers, and a GPUI-based dispatch loop that forwards
-//! events onto a target entity on the main thread.
+//! events onto the main thread.
 //!
 //! # Command-line Usage
 //!
@@ -101,6 +101,22 @@ pub fn start_event_system<T: 'static>(
   event_bus: EventBus<T>,
   cx: &mut App,
 ) {
+  start_event_system_with_dispatcher(
+    source_config,
+    move |event, cx| dispatch_event(&target, window_handle, event, &event_bus, cx),
+    cx,
+  );
+}
+
+/// Initialize the event system with an application-defined dispatcher.
+///
+/// The dispatcher is resolved for every event, allowing applications to route
+/// events to a live target instead of binding the runtime to one window.
+pub fn start_event_system_with_dispatcher(
+  source_config: EventSourceConfig,
+  dispatcher: impl FnMut(AppEvent, &mut AsyncApp) -> anyhow::Result<()> + 'static,
+  cx: &mut App,
+) {
   let (sender, receiver) = unbounded::<AppEvent>();
 
   if EVENT_SENDER.set(sender.clone()).is_err() {
@@ -123,24 +139,21 @@ pub fn start_event_system<T: 'static>(
   }
 
   cx.spawn(async move |cx: &mut AsyncApp| {
-    run_event_loop(target, window_handle, receiver, event_bus, cx).await;
+    run_event_loop(receiver, dispatcher, cx).await;
   })
   .detach();
 }
 
-async fn run_event_loop<T: 'static>(
-  target: WeakEntity<T>,
-  window_handle: AnyWindowHandle,
+async fn run_event_loop(
   receiver: Receiver<AppEvent>,
-  event_bus: EventBus<T>,
+  mut dispatcher: impl FnMut(AppEvent, &mut AsyncApp) -> anyhow::Result<()>,
   cx: &mut AsyncApp,
 ) {
   loop {
     match receiver.recv().await {
       Ok(event) => {
-        if let Err(error) = dispatch_event(&target, window_handle, event, &event_bus, cx).await {
+        if let Err(error) = dispatcher(event, cx) {
           tracing::error!("Failed to dispatch event: {}", error);
-          break;
         }
       }
       Err(error) => {
@@ -151,7 +164,7 @@ async fn run_event_loop<T: 'static>(
   }
 }
 
-async fn dispatch_event<T: 'static>(
+fn dispatch_event<T: 'static>(
   target: &WeakEntity<T>,
   window_handle: AnyWindowHandle,
   event: AppEvent,

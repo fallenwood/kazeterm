@@ -44,11 +44,7 @@ impl UpdateTrigger {
   }
 }
 
-pub(crate) fn start_auto_update(
-  main_window: WeakEntity<MainWindow>,
-  window_handle: AnyWindowHandle,
-  cx: &mut App,
-) {
+pub(crate) fn start_auto_update(cx: &mut App) {
   if crate::build_info::is_local_build() {
     tracing::debug!("Skipping auto update for local build");
     return;
@@ -63,13 +59,7 @@ pub(crate) fn start_auto_update(
     return;
   }
 
-  run_update_check(
-    UpdateTrigger::Automatic,
-    auto_update,
-    main_window,
-    window_handle,
-    cx,
-  );
+  run_update_check(UpdateTrigger::Automatic, auto_update, cx);
 }
 
 /// Prepare a manual update check result, bypassing the time guard and local build check.
@@ -79,13 +69,7 @@ pub(crate) fn prepare_manual_update(
   check_and_prepare_update(auto_update, CurrentBuild::current(), UpdateTrigger::Manual)
 }
 
-fn run_update_check(
-  trigger: UpdateTrigger,
-  auto_update: ::config::AutoUpdateConfig,
-  main_window: WeakEntity<MainWindow>,
-  window_handle: AnyWindowHandle,
-  cx: &mut App,
-) {
+fn run_update_check(trigger: UpdateTrigger, auto_update: ::config::AutoUpdateConfig, cx: &mut App) {
   let current = CurrentBuild::current();
   cx.spawn(async move |cx: &mut AsyncApp| {
     let result =
@@ -93,9 +77,7 @@ fn run_update_check(
 
     match result {
       Ok(Some(prepared_update)) => {
-        if let Err(error) =
-          prompt_prepared_update(main_window, window_handle, prepared_update, cx).await
-        {
+        if let Err(error) = prompt_prepared_update_on_active_window(prepared_update, cx) {
           tracing::error!("Failed to show auto update prompt: {error:#}");
         }
       }
@@ -106,6 +88,40 @@ fn run_update_check(
     }
   })
   .detach();
+}
+
+fn prompt_prepared_update_on_active_window(
+  prepared_update: PreparedUpdate,
+  cx: &mut AsyncApp,
+) -> anyhow::Result<()> {
+  let release_tag = prepared_update.release_tag().to_string();
+  let mut prepared_update = Some(prepared_update);
+  let prompt_result = cx
+    .update(|cx| {
+      crate::window_manager::update_active_window(cx, |main_window, window, cx| {
+        main_window.show_update_confirm_dialog(
+          prepared_update
+            .take()
+            .expect("prepared update should only be presented once"),
+          window,
+          cx,
+        );
+      })
+    })
+    .and_then(|result| result);
+
+  if let Err(error) = prompt_result {
+    if let Some(prepared_update) = prepared_update.take()
+      && let Err(discard_error) = prepared_update.discard()
+    {
+      tracing::warn!(
+        "Failed to discard update '{release_tag}' after prompt routing failed: {discard_error}"
+      );
+    }
+    bail!("could not present update '{release_tag}': {error}");
+  }
+
+  Ok(())
 }
 
 pub(crate) async fn prompt_prepared_update(

@@ -2,8 +2,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-  AnyWindowHandle, App, AppContext, Bounds, Entity, Global, Pixels, Point, Size, WeakEntity,
-  Window, WindowBackgroundAppearance, WindowBounds, WindowOptions, point, px,
+  AnyWindowHandle, App, AppContext, Bounds, Context, Entity, Global, Pixels, Point, Size,
+  WeakEntity, Window, WindowBackgroundAppearance, WindowBounds, WindowOptions, point, px,
 };
 
 use crate::components::{DraggedTab, MainWindow};
@@ -19,16 +19,38 @@ struct RegisteredWindow {
 #[derive(Default)]
 struct WindowRegistry {
   windows: Vec<RegisteredWindow>,
+  event_system_started: bool,
 }
 
 impl Global for WindowRegistry {}
 
 pub(crate) fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
+  open_window(event_source_config, WindowContent::Fresh, cx);
+}
+
+pub(crate) fn open_initial_kazeterm_window(event_source_config: EventSourceConfig, cx: &mut App) {
+  open_window(event_source_config, WindowContent::RestoreWorkspace, cx);
+}
+
+#[derive(Clone, Copy)]
+enum WindowContent {
+  RestoreWorkspace,
+  Fresh,
+}
+
+fn open_window(event_source_config: EventSourceConfig, content: WindowContent, cx: &mut App) {
   let options = window_options(cx.global::<Config>(), None);
 
   cx.spawn(async move |cx| {
     cx.open_window(options, |window, cx| {
-      let view = MainWindow::view_with_event_source(window, event_source_config.clone(), cx);
+      let view = match content {
+        WindowContent::RestoreWorkspace => {
+          MainWindow::view_with_event_source(window, event_source_config.clone(), cx)
+        }
+        WindowContent::Fresh => {
+          MainWindow::fresh_view_with_event_source(window, event_source_config.clone(), cx)
+        }
+      };
       initialize_window(&view, event_source_config, window, cx);
       cx.new(|cx| gpui_component::Root::new(view, window, cx))
     })?;
@@ -153,6 +175,42 @@ pub(crate) fn mark_window_active(handle: AnyWindowHandle, cx: &mut App) {
   }
 }
 
+pub(crate) fn update_active_window<R>(
+  cx: &mut App,
+  update: impl FnOnce(&mut MainWindow, &mut Window, &mut Context<MainWindow>) -> R,
+) -> anyhow::Result<R> {
+  let registered = active_registered_window(cx)
+    .ok_or_else(|| anyhow::anyhow!("no live Kazeterm window is available"))?;
+  let view = registered
+    .view
+    .upgrade()
+    .ok_or_else(|| anyhow::anyhow!("active Kazeterm window has been dropped"))?;
+
+  cx.update_window(registered.handle, |_root, window, cx| {
+    view.update(cx, |main_window, cx| update(main_window, window, cx))
+  })
+}
+
+fn active_registered_window(cx: &App) -> Option<RegisteredWindow> {
+  let registry = cx.try_global::<WindowRegistry>()?;
+  let open_windows = cx.windows();
+  let is_live = |registered: &&RegisteredWindow| {
+    open_windows.contains(&registered.handle) && registered.view.upgrade().is_some()
+  };
+
+  if let Some(active_handle) = cx.active_window()
+    && let Some(registered) = registry
+      .windows
+      .iter()
+      .find(|registered| registered.handle == active_handle)
+      .filter(is_live)
+  {
+    return Some(registered.clone());
+  }
+
+  registry.windows.iter().rev().find(is_live).cloned()
+}
+
 pub(crate) fn close_window(window: &mut Window, cx: &mut App) {
   let current_window = window.window_handle();
   let has_other_windows = cx
@@ -160,6 +218,7 @@ pub(crate) fn close_window(window: &mut Window, cx: &mut App) {
     .into_iter()
     .any(|handle| handle != current_window);
 
+  unregister_window(current_window, cx);
   window.remove_window();
   if !has_other_windows {
     cx.quit();
@@ -222,20 +281,19 @@ fn initialize_window(
   #[cfg(target_os = "linux")]
   crate::app_icon::set_x11_window_icon(window);
 
-  let main_window_weak = view.downgrade();
-  cx.defer(move |cx| {
-    crate::event_system::start_event_system(
-      main_window_weak,
-      window_handle,
-      event_source_config,
-      cx,
-    );
-  });
+  let start_event_system = {
+    let registry = cx.global_mut::<WindowRegistry>();
+    let start_event_system = !registry.event_system_started;
+    registry.event_system_started = true;
+    start_event_system
+  };
 
-  let main_window_weak = view.downgrade();
-  cx.defer(move |cx| {
-    crate::auto_update::start_auto_update(main_window_weak, window_handle, cx);
-  });
+  if start_event_system {
+    cx.defer(move |cx| {
+      crate::event_system::start_event_system(event_source_config, cx);
+    });
+  }
+  cx.defer(crate::auto_update::start_auto_update);
 }
 
 pub(crate) fn register_window(handle: AnyWindowHandle, view: &Entity<MainWindow>, cx: &mut App) {
@@ -258,5 +316,13 @@ pub(crate) fn register_window(handle: AnyWindowHandle, view: &Entity<MainWindow>
       handle,
       view: view.downgrade(),
     });
+  }
+}
+
+fn unregister_window(handle: AnyWindowHandle, cx: &mut App) {
+  if cx.try_global::<WindowRegistry>().is_some() {
+    cx.global_mut::<WindowRegistry>()
+      .windows
+      .retain(|registered| registered.handle != handle);
   }
 }
