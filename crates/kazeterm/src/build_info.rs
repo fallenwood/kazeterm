@@ -3,12 +3,7 @@ use std::sync::OnceLock;
 use config::TerminalKernel;
 
 static ALACRITTY_TERM_PROGRAM_VERSION: OnceLock<String> = OnceLock::new();
-static GHOSTTY_TERM_PROGRAM_VERSION: OnceLock<String> = OnceLock::new();
 static VTE_TERM_PROGRAM_VERSION: OnceLock<String> = OnceLock::new();
-
-static ALACRITTY_XTVERSION_RESPONSE: OnceLock<String> = OnceLock::new();
-static GHOSTTY_XTVERSION_RESPONSE: OnceLock<String> = OnceLock::new();
-static VTE_XTVERSION_RESPONSE: OnceLock<String> = OnceLock::new();
 
 pub(crate) fn app_version() -> &'static str {
   env!("CARGO_PKG_VERSION")
@@ -53,35 +48,8 @@ pub(crate) fn terminal_program_version(kernel: TerminalKernel) -> &'static str {
     TerminalKernel::Alacritty => ALACRITTY_TERM_PROGRAM_VERSION
       .get_or_init(|| format_terminal_program_version(TerminalKernel::Alacritty))
       .as_str(),
-    TerminalKernel::Ghostty => GHOSTTY_TERM_PROGRAM_VERSION
-      .get_or_init(|| format_terminal_program_version(TerminalKernel::Ghostty))
-      .as_str(),
     TerminalKernel::Vte => VTE_TERM_PROGRAM_VERSION
       .get_or_init(|| format_terminal_program_version(TerminalKernel::Vte))
-      .as_str(),
-  }
-}
-
-pub(crate) fn xtversion_response(kernel: TerminalKernel) -> &'static str {
-  match kernel {
-    TerminalKernel::Alacritty => ALACRITTY_XTVERSION_RESPONSE
-      .get_or_init(|| {
-        format!(
-          "kazeterm {}",
-          terminal_program_version(TerminalKernel::Alacritty)
-        )
-      })
-      .as_str(),
-    TerminalKernel::Ghostty => GHOSTTY_XTVERSION_RESPONSE
-      .get_or_init(|| {
-        format!(
-          "kazeterm {}",
-          terminal_program_version(TerminalKernel::Ghostty)
-        )
-      })
-      .as_str(),
-    TerminalKernel::Vte => VTE_XTVERSION_RESPONSE
-      .get_or_init(|| format!("kazeterm {}", terminal_program_version(TerminalKernel::Vte)))
       .as_str(),
   }
 }
@@ -113,20 +81,21 @@ mod tests {
       )
     );
     assert!(version.contains("alacritty"));
-    assert!(!version.contains("ghostty"));
     assert!(!version.contains("vte"));
   }
 
   #[test]
-  fn xtversion_response_prefixes_kazeterm_and_preserves_kernel_details() {
-    let response = xtversion_response(TerminalKernel::Ghostty);
+  fn terminal_program_version_is_cached_per_kernel() {
+    let first = terminal_program_version(TerminalKernel::Vte);
+    let second = terminal_program_version(TerminalKernel::Vte);
 
+    assert_eq!(first, second);
     assert_eq!(
-      response,
+      first,
       format!(
-        "kazeterm {} ({}, commit {})",
+        "{} ({}, commit {})",
         app_version(),
-        TerminalKernel::Ghostty,
+        TerminalKernel::Vte,
         short_commit_hash()
       )
     );

@@ -35,7 +35,6 @@ notify.workspace = true
 notify-debouncer-mini.workspace = true
 semver.workspace = true
 urlencoding.workspace = true
-terminal-kernel-ghostty = { path = "../terminal-kernel-ghostty" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["font-kit", "test-support"] }
