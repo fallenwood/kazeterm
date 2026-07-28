@@ -49,7 +49,7 @@ Terminal backends are selected through the terminal kernel abstraction:
 kernel = "alacritty"
 ```
 
-Supported values are `alacritty` (default), `ghostty`, and `vte`. Unsupported kernels fail explicitly instead of silently falling back.
+Supported values are `alacritty` (default) and `vte` (Linux only). Unsupported kernels fail explicitly instead of silently falling back.
 
 ### Key debug overlay
 

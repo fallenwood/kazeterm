@@ -10,7 +10,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-26-intel]
+        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-latest, macos-26-intel]
     permissions:
       contents: write
     steps:
@@ -21,11 +21,6 @@ jobs:
       - name: Set rust vesrion
         run: rustup override set 1.97.0
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: "0.15.2"
-
       - name: Cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -33,8 +28,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            !target/release-fast/build/libghostty-vt-sys-*
-            !target/release-fast/build/libghostty-vt-sys-*/**
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Setup
@@ -62,7 +55,7 @@ jobs:
         if: runner.os == 'Windows' && runner.arch != 'ARM64'
         run: |
           mkdir -p ./coverage
-          cargo llvm-cov --workspace --all-features --exclude terminal-kernel-vte --exclude terminal-kernel-ghostty --lcov --output-path coverage/lcov.info
+          cargo llvm-cov --workspace --all-features --exclude terminal-kernel-vte --lcov --output-path coverage/lcov.info
 
       - name: Run coverage (tests included)
         if: runner.os != 'Windows'

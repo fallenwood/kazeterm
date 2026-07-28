@@ -78,18 +78,10 @@ fn create_terminal_session(
       app_config,
       term_program_version,
     ),
-    TerminalKernel::Ghostty => terminal_kernel_ghostty::create_terminal_session(
-      program,
-      args,
-      working_directory,
-      app_config,
-      term_program_version,
-      crate::build_info::xtversion_response(kernel),
-    ),
     #[allow(unreachable_patterns)]
     other => Err(format!(
       "Terminal kernel '{other}' is not available on this platform. Supported kernels are: \
-       alacritty (Windows/Linux/macOS), vte (Linux), ghostty (Windows/Linux/macOS)."
+       alacritty (Windows/Linux/macOS), vte (Linux)."
     )),
   }
 }

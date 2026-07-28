@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-26-intel]
+        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-latest, macos-26-intel]
     permissions:
       contents: write
     steps:
@@ -26,11 +26,6 @@ jobs:
       - name: Set rust vesrion
         run: rustup override set 1.97.0
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # zizmor: ignore[cache-poisoning] v2.2.1
-        with:
-          version: "0.15.2"
-
       - name: Cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # zizmor: ignore[cache-poisoning] v5.0.5
         with:
@@ -38,8 +33,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            !target/release-fast/build/libghostty-vt-sys-*
-            !target/release-fast/build/libghostty-vt-sys-*/**
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Setup
@@ -52,11 +45,6 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             zstd
-
-      - name: Cleanup libghostty
-        shell: pwsh
-        run: |
-          Remove-Item -Path "./target/release-fast/build/libghostty-vt-sys-*" -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Build
         if: runner.os == 'Windows'
@@ -73,7 +61,7 @@ jobs:
         if: runner.os == 'Windows' && runner.arch != 'ARM64'
         run: |
           mkdir -p ./coverage
-          cargo llvm-cov --workspace --all-features --exclude terminal-kernel-vte --exclude terminal-kernel-ghostty --lcov --output-path coverage/lcov.info
+          cargo llvm-cov --workspace --all-features --exclude terminal-kernel-vte --lcov --output-path coverage/lcov.info
 
       - name: Run coverage (tests included)
         if: runner.os != 'Windows'
@@ -94,23 +82,8 @@ jobs:
         run: |
           mkdir ./dists
           mv target\release-fast\kazeterm.exe ./kazeterm.exe
-          $packDir = (Resolve-Path .).Path
-          $ghosttyLibName = 'ghostty-vt.dll'
-          $ghosttyLibs = @(
-            Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue
-            Get-ChildItem ./target/release-fast/build -Recurse -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -like '*ghostty-install*' }
-          )
-          $ghosttyLib = $ghosttyLibs |
-            Sort-Object LastWriteTimeUtc, FullName -Descending |
-            Select-Object -First 1
-          if ($null -eq $ghosttyLib) {
-            throw "Missing ghostty-vt Windows runtime in target/release-fast or target/release-fast/build/**/ghostty-install/bin"
-          }
-          Write-Host "Using Ghostty runtime: $($ghosttyLib.FullName)"
-          Copy-Item $ghosttyLib.FullName -Destination $packDir -Force
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
-          7z a ./dists/kazeterm-$variant-$env:KAZETERM_PACKAGE_TAG.7z ./kazeterm.exe $ghosttyLibName
+          7z a ./dists/kazeterm-$variant-$env:KAZETERM_PACKAGE_TAG.7z ./kazeterm.exe
 
       - name: Pack
         if: runner.os == 'Linux'
@@ -121,20 +94,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path $packDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $packDir
-          $ghosttyLibName = 'libghostty-vt.so.0'
-          $ghosttyLibs = @(
-            Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue
-            Get-ChildItem ./target/release-fast/build -Recurse -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -like '*ghostty-install*' }
-          )
-          $ghosttyLib = $ghosttyLibs |
-            Sort-Object LastWriteTimeUtc, FullName -Descending |
-            Select-Object -First 1
-          if ($null -eq $ghosttyLib) {
-            throw "Missing libghostty-vt Linux runtime in target/release-fast or target/release-fast/build/**/ghostty-install/lib"
-          }
-          Write-Host "Using Ghostty runtime: $($ghosttyLib.FullName)"
-          Copy-Item $ghosttyLib.FullName -Destination $packDir -Force
           tar --zstd -cf ./dists/kazeterm-$variant-$env:KAZETERM_PACKAGE_TAG.tar.zstd -C $packDir .
 
       - name: Install cargo-bundle
@@ -154,23 +113,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path $binPackDir | Out-Null
           $variant = "${{ runner.os}}-${{ runner.arch }}".ToLower()
           Copy-Item ./target/release-fast/kazeterm $binPackDir
-          $ghosttyLibName = 'libghostty-vt.dylib'
-          $ghosttyLibs = @(
-            Get-ChildItem ./target/release-fast -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue
-            Get-ChildItem ./target/release-fast/build -Recurse -Filter $ghosttyLibName -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -like '*ghostty-install*' }
-          )
-          $ghosttyLib = $ghosttyLibs |
-            Sort-Object LastWriteTimeUtc, FullName -Descending |
-            Select-Object -First 1
-          if ($null -eq $ghosttyLib) {
-            throw "Missing libghostty-vt macOS runtime in target/release-fast or target/release-fast/build/**/ghostty-install/lib"
-          }
-          Write-Host "Using Ghostty runtime: $($ghosttyLib.FullName)"
-          Copy-Item $ghosttyLib.FullName -Destination $binPackDir -Force
-          $frameworksDir = Join-Path (Resolve-Path ./target/release-fast/bundle/osx/Kazeterm.app).Path "Contents/Frameworks"
-          New-Item -ItemType Directory -Force -Path $frameworksDir | Out-Null
-          Copy-Item $ghosttyLib.FullName -Destination $frameworksDir -Force
           tar -czf ./dists/kazeterm-$variant-$env:KAZETERM_PACKAGE_TAG.tar.gz -C $binPackDir .
           tar -czf ./dists/kazeterm-$variant-$env:KAZETERM_PACKAGE_TAG-dmg.tar.gz -C ./target/release-fast/bundle/osx Kazeterm.app
 

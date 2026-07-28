@@ -293,7 +293,6 @@ impl PaneConfig {
 pub enum TerminalKernel {
   #[default]
   Alacritty,
-  Ghostty,
   Vte,
 }
 
@@ -301,7 +300,6 @@ impl std::fmt::Display for TerminalKernel {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let value = match self {
       Self::Alacritty => "alacritty",
-      Self::Ghostty => "ghostty",
       Self::Vte => "vte",
     };
 
@@ -313,7 +311,6 @@ impl TerminalKernel {
   pub fn is_supported_on_current_platform(self) -> bool {
     match self {
       Self::Alacritty => true,
-      Self::Ghostty => true,
       Self::Vte => cfg!(target_os = "linux"),
     }
   }
@@ -321,17 +318,12 @@ impl TerminalKernel {
   pub fn supported_kernels_for_current_platform() -> &'static [&'static str] {
     #[cfg(target_os = "linux")]
     {
-      &["alacritty", "ghostty", "vte"]
+      &["alacritty", "vte"]
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
-      &["alacritty", "ghostty"]
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-      &["alacritty", "ghostty"]
+      &["alacritty"]
     }
   }
 
