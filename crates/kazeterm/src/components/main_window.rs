@@ -62,7 +62,14 @@ pub struct MainWindow {
   pub(crate) tab_switcher_visible: bool,
   pub(crate) tab_switcher: Option<Entity<TabSwitcher>>,
   pub(crate) tab_switcher_selection: usize,
+  /// Preferred expanded width, including any user drag adjustment.
   pub(crate) vertical_tabbar_width: Pixels,
+  /// Current width while the vertical tab bar transitions.
+  pub(crate) vertical_tabbar_render_width: Pixels,
+  pub(crate) vertical_tabbar_animation: Task<()>,
+  /// Applied to the root view while refreshed configuration fades in.
+  pub(crate) configuration_transition_opacity: f32,
+  pub(crate) configuration_transition_animation: Task<()>,
   pub(crate) key_debug_modifiers: KeyDebugModifiers,
   pub(crate) key_debug_pressed_keys: Vec<KeyDebugPressedKey>,
   pub(crate) key_debug_recent_keys: Vec<KeyDebugRecentKey>,
@@ -99,6 +106,8 @@ pub struct MainWindow {
   pub(crate) ui_tree: UITreeStore,
   /// Guards against re-dispatching while tree diffs are being reconciled.
   pub(crate) reconciling_ui_tree: bool,
+  /// Keeps the current programmatic window resize transition alive.
+  pub(crate) window_resize_animation: Task<()>,
   pub(crate) event_source_config: EventSourceConfig,
   pub(crate) active_tab_drag: Option<DraggedTab>,
 }
@@ -185,6 +194,11 @@ impl MainWindow {
     let vertical_tabbar_width = (window.bounds().size.width * VERTICAL_TABBAR_WIDTH_RATIO)
       .max(px(config.tab.get_vertical_tabbar_min_width(ui_font_size)))
       .min(px(config.tab.get_vertical_tabbar_max_width(ui_font_size)));
+    let vertical_tabbar_render_width = if config.tab.vertical {
+      vertical_tabbar_width
+    } else {
+      Pixels::ZERO
+    };
 
     let appearance_subscription = window.observe_window_appearance(|window, cx| {
       let config = cx.global::<::config::Config>().clone();
@@ -222,6 +236,10 @@ impl MainWindow {
       tab_switcher: None,
       tab_switcher_selection: 0,
       vertical_tabbar_width,
+      vertical_tabbar_render_width,
+      vertical_tabbar_animation: Task::ready(()),
+      configuration_transition_opacity: 1.0,
+      configuration_transition_animation: Task::ready(()),
       key_debug_modifiers: KeyDebugModifiers::default(),
       key_debug_pressed_keys: Vec::new(),
       key_debug_recent_keys: Vec::new(),
@@ -246,6 +264,7 @@ impl MainWindow {
       _window_activation_subscription: window_activation_subscription,
       ui_tree: UITreeStore::new(),
       reconciling_ui_tree: false,
+      window_resize_animation: Task::ready(()),
       event_source_config,
       active_tab_drag: None,
     };

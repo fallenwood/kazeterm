@@ -52,6 +52,9 @@ impl UITree {
         let win = self
           .window_mut(&window_id)
           .ok_or_else(|| anyhow::anyhow!("Window '{}' not found", window_id))?;
+        if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+          bail!("Window dimensions must be finite and greater than zero");
+        }
         win.size = Size { width, height };
         Ok(())
       }
@@ -626,6 +629,28 @@ mod tests {
       .apply(UIAction::CloseWindow { window_id: win_id })
       .unwrap();
     assert!(tree.windows.is_empty());
+  }
+
+  #[test]
+  fn resize_window_rejects_invalid_dimensions() {
+    let (mut tree, win_id) = setup_tree_with_window();
+    let original_size = tree.windows[0].size;
+
+    for (width, height) in [
+      (0.0, 600.0),
+      (800.0, -1.0),
+      (f32::NAN, 600.0),
+      (800.0, f32::INFINITY),
+    ] {
+      let result = tree.apply(UIAction::ResizeWindow {
+        window_id: win_id.clone(),
+        width,
+        height,
+      });
+
+      assert!(result.is_err());
+      assert_eq!(tree.windows[0].size, original_size);
+    }
   }
 
   #[test]

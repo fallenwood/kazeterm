@@ -153,6 +153,16 @@ pub(crate) fn mark_window_active(handle: AnyWindowHandle, cx: &mut App) {
   }
 }
 
+pub(crate) fn transition_configuration_change(config: &Config, cx: &mut App) {
+  for registered in registered_windows_front_to_back(cx) {
+    let _ = cx.update_window(registered.handle, |_root, window, cx| {
+      let _ = registered.view.update(cx, |main_window, cx| {
+        main_window.transition_configuration_change(config, window, cx);
+      });
+    });
+  }
+}
+
 pub(crate) fn close_window(window: &mut Window, cx: &mut App) {
   let current_window = window.window_handle();
   let has_other_windows = cx

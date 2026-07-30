@@ -319,6 +319,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
 
       // Update window background appearance for transparency
       update_window_background_appearance(cx, &new_config);
+      crate::window_manager::transition_configuration_change(&new_config, cx);
 
       tracing::info!("Config and theme reloaded successfully");
     }
@@ -335,6 +336,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
 
       // Re-initialize gpui-component theme
       themeing::SettingsStore::init_gpui_component_theme(cx);
+      crate::window_manager::transition_configuration_change(&config, cx);
 
       tracing::info!("Theme reloaded successfully: {}", config.colors.theme);
     }
