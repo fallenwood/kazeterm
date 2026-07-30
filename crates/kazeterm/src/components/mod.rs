@@ -13,6 +13,7 @@ mod main_window_tab_management;
 mod main_window_tab_switcher_logic;
 mod main_window_tab_transfer;
 mod main_window_tab_transfer_tests;
+mod main_window_transitions;
 mod main_window_window_lifecycle_tests;
 mod menu_builder;
 mod notifications;
@@ -26,6 +27,7 @@ mod tab_rename_dialog;
 mod tab_switcher;
 mod terminal_tab_bar;
 pub(crate) mod terminal_window;
+pub(crate) mod transitions;
 mod update_confirm_dialog;
 pub(crate) mod workspace_state;
 

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use gpui::{Context, Entity, Window, px};
+use gpui::{Context, Entity, Pixels, Task, Window, px};
 use kazeterm_ui_tree::node::{PaneNode, TabNode, UITree};
 use serde::Deserialize;
 use terminal::TerminalView;
@@ -105,6 +105,13 @@ impl MainWindow {
     };
 
     self.tab_bar_visible = win.tab_bar.visible;
+    self.vertical_tabbar_animation = Task::ready(());
+    self.vertical_tabbar_render_width =
+      if win.tab_bar.visible && cx.global::<::config::Config>().tab.vertical {
+        self.vertical_tabbar_width
+      } else {
+        Pixels::ZERO
+      };
     self.search_visible = win.search.visible;
 
     for tab_node in &win.tabs {

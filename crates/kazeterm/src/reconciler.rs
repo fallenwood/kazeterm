@@ -12,9 +12,46 @@ use kazeterm_ui_tree::action::UIAction;
 use kazeterm_ui_tree::diff::{self, Reconciler, TreeDiff};
 use kazeterm_ui_tree::node::*;
 
-use gpui::{Context, Window};
+use gpui::{Context, Task, Window, px};
 
+use crate::components::transitions::{
+  UI_TRANSITION_FRAME_DURATION, UI_TRANSITION_FRAMES, interpolate_size,
+};
 use crate::components::{MainWindow, PaneId, SplitDirection};
+
+impl MainWindow {
+  fn animate_window_resize(
+    &mut self,
+    target: kazeterm_ui_tree::node::Size,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let start = window.bounds().size;
+    let target = gpui::Size {
+      width: px(target.width),
+      height: px(target.height),
+    };
+
+    if start == target {
+      self.window_resize_animation = Task::ready(());
+      return;
+    }
+
+    self.window_resize_animation = cx.spawn_in(window, async move |_this, cx| {
+      for frame in 1..=UI_TRANSITION_FRAMES {
+        cx.background_executor()
+          .timer(UI_TRANSITION_FRAME_DURATION)
+          .await;
+
+        let progress = frame as f32 / UI_TRANSITION_FRAMES as f32;
+        let next_size = interpolate_size(start, target, progress);
+        if cx.update(|window, _cx| window.resize(next_size)).is_err() {
+          break;
+        }
+      }
+    });
+  }
+}
 
 /// Holds the canonical `UITree` alongside a `MainWindow` entity.
 /// All UI mutations should flow through this struct.
@@ -287,10 +324,13 @@ impl UITreeStore {
           cx.notify();
         }
 
+        TreeDiff::WindowResized { size, .. } => {
+          main_window.animate_window_resize(*size, window, cx);
+        }
+
         // These diffs update tree metadata but don't require GPUI changes
         TreeDiff::WindowAdded { .. }
         | TreeDiff::WindowRemoved { .. }
-        | TreeDiff::WindowResized { .. }
         | TreeDiff::WindowMaximizedChanged { .. }
         | TreeDiff::TabBarVerticalChanged { .. }
         | TreeDiff::PaneTitleChanged { .. }

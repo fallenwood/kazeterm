@@ -84,7 +84,6 @@ impl MainWindow {
       return;
     }
 
-    self.tab_bar_visible = !self.tab_bar_visible;
-    cx.notify();
+    self.set_tab_bar_visible(!self.tab_bar_visible, window, cx);
   }
 }

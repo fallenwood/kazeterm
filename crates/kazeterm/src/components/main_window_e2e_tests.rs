@@ -10,12 +10,14 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{TestAppContext, WindowHandle};
+use kazeterm_ui_tree::action::UIAction;
 use kazeterm_ui_tree::node::{OverlayNode, UITree};
 
 use crate::components::MainWindow;
 use crate::components::terminal_window::{
   clear_terminal_session_factory_for_testing, set_terminal_session_factory_for_testing,
 };
+use crate::components::transitions::{UI_TRANSITION_FRAME_DURATION, UI_TRANSITION_FRAMES};
 use crate::event_system::{AppEvent, EventSourceConfig, build_default_event_bus};
 use terminal::test_support::fake_terminal_session;
 
@@ -67,6 +69,13 @@ fn dispatch_app_event(window: &WindowHandle<MainWindow>, event: AppEvent, cx: &m
     .expect("event dispatch should succeed");
 }
 
+fn advance_ui_transition(cx: &mut TestAppContext, frames: u32) {
+  for _ in 0..frames {
+    cx.executor().advance_clock(UI_TRANSITION_FRAME_DURATION);
+    cx.run_until_parked();
+  }
+}
+
 #[gpui::test]
 fn main_window_creates_initial_tab_with_fake_factory(cx: &mut TestAppContext) {
   let _guard = test_lock();
@@ -81,6 +90,194 @@ fn main_window_creates_initial_tab_with_fake_factory(cx: &mut TestAppContext) {
     call_count >= 1,
     "expected MainWindow to invoke the terminal factory at least once (got {call_count})"
   );
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn resize_ui_action_transitions_to_target_size(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  let initial_size = window
+    .update(cx, |_root, window, _cx| window.bounds().size)
+    .expect("reading initial window size should succeed");
+  let target_size = gpui::size(
+    initial_size.width + gpui::px(240.0),
+    initial_size.height + gpui::px(160.0),
+  );
+
+  window
+    .update(cx, |root, window, cx| {
+      let window_id = root
+        .sync_ui_tree_and_window_id(cx)
+        .expect("UI tree should contain a window");
+      root
+        .dispatch_ui_action(
+          UIAction::ResizeWindow {
+            window_id,
+            width: f32::from(target_size.width),
+            height: f32::from(target_size.height),
+          },
+          window,
+          cx,
+        )
+        .expect("resize action should dispatch");
+    })
+    .expect("window update should succeed");
+
+  let size_before_first_frame = window
+    .update(cx, |_root, window, _cx| window.bounds().size)
+    .expect("reading pre-animation size should succeed");
+  assert_eq!(size_before_first_frame, initial_size);
+
+  cx.run_until_parked();
+  advance_ui_transition(cx, 1);
+
+  let intermediate_size = window
+    .update(cx, |_root, window, _cx| window.bounds().size)
+    .expect("reading intermediate window size should succeed");
+  assert_ne!(intermediate_size, initial_size);
+  assert_ne!(intermediate_size, target_size);
+
+  advance_ui_transition(cx, UI_TRANSITION_FRAMES - 1);
+
+  let final_size = window
+    .update(cx, |_root, window, _cx| window.bounds().size)
+    .expect("reading final window size should succeed");
+  assert_eq!(final_size, target_size);
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn vertical_sidebar_visibility_transitions_in_both_directions(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  cx.update(|cx| {
+    let mut config = cx.global::<::config::Config>().clone();
+    config.tab.vertical = true;
+    cx.set_global(config);
+  });
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  let expanded_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading expanded sidebar width should succeed");
+  assert!(expanded_width > gpui::Pixels::ZERO);
+
+  window
+    .update(cx, |root, window, cx| {
+      root.toggle_tab_bar(window, cx);
+    })
+    .expect("hiding tab bar should succeed");
+  let width_before_first_frame = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading pre-animation sidebar width should succeed");
+  assert_eq!(width_before_first_frame, expanded_width);
+
+  cx.run_until_parked();
+  advance_ui_transition(cx, 1);
+  let shrinking_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading shrinking sidebar width should succeed");
+  assert!(shrinking_width > gpui::Pixels::ZERO);
+  assert!(shrinking_width < expanded_width);
+
+  advance_ui_transition(cx, UI_TRANSITION_FRAMES - 1);
+  let hidden_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading hidden sidebar width should succeed");
+  assert_eq!(hidden_width, gpui::Pixels::ZERO);
+
+  window
+    .update(cx, |root, window, cx| {
+      root.toggle_tab_bar(window, cx);
+    })
+    .expect("showing tab bar should succeed");
+  cx.run_until_parked();
+  advance_ui_transition(cx, UI_TRANSITION_FRAMES);
+
+  let restored_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading restored sidebar width should succeed");
+  assert_eq!(restored_width, expanded_width);
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn configuration_change_fades_ui_and_expands_vertical_sidebar(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+  let view = window
+    .root(cx)
+    .expect("main window should have a root view");
+  window
+    .update(cx, |_root, window, cx| {
+      crate::window_manager::register_window(window.window_handle(), &view, cx);
+    })
+    .expect("registering main window should succeed");
+
+  let config = cx.update(|cx| {
+    let mut config = cx.global::<::config::Config>().clone();
+    config.tab.vertical = true;
+    cx.set_global(config.clone());
+    config
+  });
+  cx.update(|cx| {
+    crate::window_manager::transition_configuration_change(&config, cx);
+  });
+
+  let (initial_opacity, initial_width, target_width) = window
+    .update(cx, |root, _window, _cx| {
+      (
+        root.configuration_transition_opacity,
+        root.vertical_tabbar_render_width,
+        root.vertical_tabbar_width,
+      )
+    })
+    .expect("reading initial configuration transition should succeed");
+  assert!(initial_opacity < 1.0);
+  assert_eq!(initial_width, gpui::Pixels::ZERO);
+
+  cx.run_until_parked();
+  advance_ui_transition(cx, 1);
+  let (intermediate_opacity, intermediate_width) = window
+    .update(cx, |root, _window, _cx| {
+      (
+        root.configuration_transition_opacity,
+        root.vertical_tabbar_render_width,
+      )
+    })
+    .expect("reading intermediate configuration transition should succeed");
+  assert!(intermediate_opacity > initial_opacity);
+  assert!(intermediate_opacity < 1.0);
+  assert!(intermediate_width > gpui::Pixels::ZERO);
+  assert!(intermediate_width < target_width);
+
+  advance_ui_transition(cx, UI_TRANSITION_FRAMES - 1);
+  let (final_opacity, final_width) = window
+    .update(cx, |root, _window, _cx| {
+      (
+        root.configuration_transition_opacity,
+        root.vertical_tabbar_render_width,
+      )
+    })
+    .expect("reading completed configuration transition should succeed");
+  assert_eq!(final_opacity, 1.0);
+  assert_eq!(final_width, target_width);
 
   clear_terminal_session_factory_for_testing();
 }

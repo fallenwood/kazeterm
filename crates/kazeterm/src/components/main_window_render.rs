@@ -608,6 +608,13 @@ impl Render for MainWindow {
     let tab_label_max_width = config.tab.get_label_max_width(ui_font_size);
     let vertical_tabbar_min_width = config.tab.get_vertical_tabbar_min_width(ui_font_size);
     let tab_bar_visible = self.tab_bar_visible;
+    let vertical_tabbar_render_width = self.vertical_tabbar_render_width;
+    let vertical_tabbar_opacity = if self.vertical_tabbar_width > Pixels::ZERO {
+      (f32::from(vertical_tabbar_render_width) / f32::from(self.vertical_tabbar_width))
+        .clamp(0.0, 1.0)
+    } else {
+      0.0
+    };
     let setting_store = cx.global::<SettingsStore>();
     let local_profiles = config.get_local_profiles_with_shells();
     let container_profiles = config.get_container_profiles_with_shells();
@@ -703,6 +710,7 @@ impl Render for MainWindow {
       .flex()
       .flex_col()
       .size_full()
+      .opacity(self.configuration_transition_opacity)
       .key_context("MainWindow")
       .on_key_down(cx.listener(move |this, e: &KeyDownEvent, window, cx| {
         let key_debug_modifiers = KeyDebugModifiers {
@@ -1367,13 +1375,15 @@ impl Render for MainWindow {
           h_flex()
             .flex_1()
             .size_full()
-            .when(tab_bar_visible, |this| {
+            .when(vertical_tabbar_render_width > Pixels::ZERO, |this| {
               this
                 .child(
                   div()
                     .h_full()
                     .flex_shrink_0()
-                    .w(self.vertical_tabbar_width)
+                    .w(vertical_tabbar_render_width)
+                    .overflow_hidden()
+                    .opacity(vertical_tabbar_opacity)
                     .bg(colors.title_bar_background)
                     .p_1()
                     .child(
@@ -1590,7 +1600,8 @@ impl Render for MainWindow {
                   div()
                     .id("vertical-tabbar-resize-handle")
                     .h_full()
-                    .w(px(6.0))
+                    .w(px(6.0) * vertical_tabbar_opacity)
+                    .opacity(vertical_tabbar_opacity)
                     .cursor(CursorStyle::ResizeLeftRight)
                     .on_drag_move(cx.listener(
                       move |this, e: &DragMoveEvent<ResizeVerticalTabbar>, window, cx| {
@@ -1603,7 +1614,9 @@ impl Render for MainWindow {
                         let max_width = (window.bounds().size.width - px(160.0)).max(min_width);
                         let next_width = e.event.position.x.max(min_width).min(max_width);
                         if this.vertical_tabbar_width != next_width {
+                          this.vertical_tabbar_animation = Task::ready(());
                           this.vertical_tabbar_width = next_width;
+                          this.vertical_tabbar_render_width = next_width;
                           cx.notify();
                         }
                       },
