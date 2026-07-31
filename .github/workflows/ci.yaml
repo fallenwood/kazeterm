@@ -76,13 +76,12 @@ jobs:
         run: cargo build --target ${{ matrix.target }} --workspace --profile=release-fast
 
       - name: Install cargo-llvm-cov
+        if: runner.os != 'Windows'
         run: cargo install cargo-llvm-cov --locked
 
-      - name: Run coverage (tests included)
+      - name: Run tests
         if: runner.os == 'Windows' && matrix.arch == 'X64'
-        run: |
-          mkdir -p ./coverage
-          cargo llvm-cov --target ${{ matrix.target }} --workspace --all-features --exclude terminal-kernel-vte --lcov --output-path coverage/lcov.info
+        run: cargo test --target ${{ matrix.target }} --workspace --all-features --exclude terminal-kernel-vte
 
       - name: Run coverage (tests included)
         if: runner.os != 'Windows'
