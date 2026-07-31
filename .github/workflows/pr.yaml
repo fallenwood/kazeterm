@@ -6,11 +6,29 @@ on:
 
 jobs:
   build-debug:
-    name: Build on ${{ matrix.os }}
+    name: Build ${{ matrix.target }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, windows-11-arm, ubuntu-24.04-arm, macos-latest, macos-26-intel]
+        include:
+          - os: ubuntu-latest
+            arch: X64
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            arch: ARM64
+            target: aarch64-unknown-linux-gnu
+          - os: windows-11-arm
+            arch: ARM64
+            target: aarch64-pc-windows-msvc
+          - os: windows-11-arm
+            arch: X64
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            arch: ARM64
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            arch: X64
+            target: x86_64-apple-darwin
     permissions:
       contents: write
     steps:
@@ -21,6 +39,9 @@ jobs:
       - name: Set rust vesrion
         run: rustup override set 1.97.0
 
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -28,7 +49,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Setup
         if: runner.os == 'Linux'
@@ -42,26 +63,26 @@ jobs:
 
       - name: Build
         if: runner.os == 'Windows'
-        run: cargo build
+        run: cargo build --target ${{ matrix.target }}
 
       - name: Build
         if: runner.os != 'Windows'
-        run: cargo build --workspace
+        run: cargo build --target ${{ matrix.target }} --workspace
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
 
       - name: Run coverage (tests included)
-        if: runner.os == 'Windows' && runner.arch != 'ARM64'
+        if: runner.os == 'Windows' && matrix.arch == 'X64'
         run: |
           mkdir -p ./coverage
-          cargo llvm-cov --workspace --all-features --exclude terminal-kernel-vte --lcov --output-path coverage/lcov.info
+          cargo llvm-cov --target ${{ matrix.target }} --workspace --all-features --exclude terminal-kernel-vte --lcov --output-path coverage/lcov.info
 
       - name: Run coverage (tests included)
         if: runner.os != 'Windows'
         run: |
           mkdir -p ./coverage
-          cargo llvm-cov --workspace --all-features --lcov --output-path coverage/lcov.info
+          cargo llvm-cov --target ${{ matrix.target }} --workspace --all-features --lcov --output-path coverage/lcov.info
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
