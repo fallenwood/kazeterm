@@ -71,6 +71,14 @@ jobs:
         if: runner.os == 'Windows'
         run: cargo build --target ${{ matrix.target }} --profile=release-fast
 
+      - name: Install modern ConPTY runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/install-conpty.ps1 `
+            -TargetTriple '${{ matrix.target }}' `
+            -Destination 'target/${{ matrix.target }}/release-fast'
+
       - name: Build
         if: runner.os != 'Windows'
         run: cargo build --target ${{ matrix.target }} --workspace --profile=release-fast
@@ -101,9 +109,14 @@ jobs:
         shell: pwsh
         run: |
           mkdir ./dists
-          mv target\${{ matrix.target }}\release-fast\kazeterm.exe ./kazeterm.exe
+          $outputDir = 'target/${{ matrix.target }}/release-fast'
+          $packDir = Join-Path (Resolve-Path .).Path 'pack/windows'
+          New-Item -ItemType Directory -Force -Path $packDir | Out-Null
+          Copy-Item "$outputDir/kazeterm.exe", "$outputDir/conpty.dll", 'THIRD_PARTY_NOTICES.md' $packDir
+          Get-ChildItem $outputDir -Directory | Where-Object Name -In @('x64', 'arm64') |
+            Copy-Item -Destination $packDir -Recurse
           $variant = "${{ runner.os}}-${{ matrix.arch }}".ToLower()
-          7z a ./dists/kazeterm-$variant-$env:KAZETERM_PACKAGE_TAG.7z ./kazeterm.exe
+          7z a ./dists/kazeterm-$variant-$env:KAZETERM_PACKAGE_TAG.7z "$packDir/*"
 
       - name: Pack
         if: runner.os == 'Linux'

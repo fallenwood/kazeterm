@@ -16,8 +16,9 @@ use terminal_kernel::{
 #[cfg(unix)]
 use terminal::kitty_graphics::GraphicsPtyFilter;
 #[cfg(not(unix))]
-use terminal::kitty_graphics::{WindowsDsrCursorFn, WindowsDsrFilter};
-#[cfg(unix)]
+use terminal::kitty_graphics::{
+  WindowsDsrCursorFn, WindowsDsrFilter, WindowsGraphicsCursorFn,
+};
 use terminal_kernel::grid::Dimensions as _;
 
 /// PtySender implementation wrapping alacritty's EventLoopSender.
@@ -25,6 +26,12 @@ pub struct AlacrittyPtySender(EventLoopSender);
 
 impl PtySender for AlacrittyPtySender {
   fn send_input(&self, bytes: Cow<'static, [u8]>) {
+    if !bytes.is_empty() {
+      let _ = self.0.send(Msg::Input(bytes));
+    }
+  }
+
+  fn send_protocol_response(&self, bytes: Cow<'static, [u8]>) {
     if !bytes.is_empty() {
       let _ = self.0.send(Msg::Input(bytes));
     }
@@ -225,6 +232,14 @@ pub fn create_terminal_session(
 
   #[cfg(not(unix))]
   let (pty_tx, pty_info, graphics_rx, pending_cnl, keyboard_flags, osc7_rx) = {
+    let term_for_graphics_cursor = term.clone();
+    let graphics_cursor_fn: WindowsGraphicsCursorFn = Box::new(move || {
+      let t = term_for_graphics_cursor.try_lock_unfair()?;
+      let cursor = t.grid().cursor.point;
+      let history_size = t.history_size() as i32;
+      Some((history_size + cursor.line.0, cursor.column.0 as i32))
+    });
+
     let term_for_dsr = term.clone();
     let dsr_cursor_fn: WindowsDsrCursorFn = Box::new(move || {
       let t = term_for_dsr.try_lock_unfair()?;
@@ -233,7 +248,8 @@ pub fn create_terminal_session(
     });
 
     let pty_info = PtyProcessInfo::new(&pty);
-    let (filter, keyboard_flags) = WindowsDsrFilter::new(pty, dsr_cursor_fn);
+    let (filter, keyboard_flags, graphics_rx) =
+      WindowsDsrFilter::new(pty, graphics_cursor_fn, dsr_cursor_fn);
 
     let event_loop = EventLoop::new(
       term.clone(),
@@ -247,7 +263,14 @@ pub fn create_terminal_session(
     let pty_tx = event_loop.channel();
     let _io_thread = event_loop.spawn();
 
-    (pty_tx, pty_info, None, None, keyboard_flags, None)
+    (
+      pty_tx,
+      pty_info,
+      Some(graphics_rx),
+      None,
+      keyboard_flags,
+      None,
+    )
   };
 
   let backend = AlacrittyBackend::new(term);

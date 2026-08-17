@@ -683,24 +683,39 @@ fn paint_image_placement(
   let y = origin.y
     + placement.viewport_line as f32 * dimensions.line_height()
     + gpui::px(placement.y_offset as f32);
-  let w = placement.width_cells as f32 * dimensions.cell_width();
-  let h = placement.height_cells as f32 * dimensions.line_height();
+  let w = gpui::px(placement.width_pixels as f32);
+  let h = gpui::px(placement.height_pixels as f32);
 
-  let img_bounds = Bounds::new(
+  let target_bounds = Bounds::new(
     Point::new(x, y),
     gpui::Size {
       width: w,
       height: h,
     },
   );
-
-  let _ = window.paint_image(
-    img_bounds,
-    gpui::Corners::default(),
-    placement.render_image.clone(),
-    0,
-    false,
+  let (crop_x, crop_y, crop_width, crop_height) = placement.crop;
+  let scale_x = placement.width_pixels as f32 / crop_width as f32;
+  let scale_y = placement.height_pixels as f32 / crop_height as f32;
+  let image_bounds = Bounds::new(
+    Point::new(
+      x - gpui::px(crop_x as f32 * scale_x),
+      y - gpui::px(crop_y as f32 * scale_y),
+    ),
+    gpui::Size {
+      width: gpui::px(placement.source_width as f32 * scale_x),
+      height: gpui::px(placement.source_height as f32 * scale_y),
+    },
   );
+
+  window.with_content_mask(Some(gpui::ContentMask { bounds: target_bounds }), |window| {
+    let _ = window.paint_image(
+      image_bounds,
+      gpui::Corners::default(),
+      placement.render_image.clone(),
+      0,
+      false,
+    );
+  });
 }
 
 /// Blend a color toward grey based on an opacity factor.

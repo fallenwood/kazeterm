@@ -46,6 +46,10 @@ impl PtySender for FakePtySender {
     self.writes.lock().unwrap().push(bytes.into_owned());
   }
 
+  fn send_protocol_response(&self, bytes: Cow<'static, [u8]>) {
+    self.writes.lock().unwrap().push(bytes.into_owned());
+  }
+
   fn send_resize(&self, size: WindowSize) {
     self
       .resizes

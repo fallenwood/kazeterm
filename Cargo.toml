@@ -11,6 +11,7 @@ members = [
   "crates/terminal-kernel-alacritty",
   "crates/terminal-kernel-unix-bundle",
   "crates/terminal-kernel-vte",
+  "tools/kitty-protocol-client",
 ]
 # Keep the default root build working on Windows while Unix builds still pull
 # in the extra terminal kernels through the unix bundle crate.

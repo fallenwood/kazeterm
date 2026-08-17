@@ -5,14 +5,17 @@ use crate::{
   TerminalBounds,
   indexed_cell::IndexedCell,
   kitty_graphics::{
-    ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
-    PlacementManager, RawGraphicsCommand,
+    ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyErrorCode, KittyImageStorage,
+    KittyParser, KittyProtocolError, KittyResponse, KittyTransmission, PlacementManager,
+    RawGraphicsCommand,
   },
   mouse::grid_point_and_side,
   pty_info::PtyProcessInfo,
   terminal_content::TerminalContent,
   terminal_hyperlinks::RegexSearches,
 };
+use crate::kitty_graphics::placement::resolve_geometry;
+use crate::kitty_graphics::scroll_tracker::{GraphicsScroll, GraphicsScrollDirection};
 use gpui::{Context, EventEmitter, Pixels, Window, px};
 use terminal_kernel::{
   SelectionDisplay, TerminalBackend,
@@ -70,6 +73,7 @@ pub enum Event {
 /// notifying the PTY of terminal resize events.
 pub trait PtySender: Send {
   fn send_input(&self, bytes: std::borrow::Cow<'static, [u8]>);
+  fn send_protocol_response(&self, bytes: std::borrow::Cow<'static, [u8]>);
   fn send_resize(&self, size: terminal_kernel::event::WindowSize);
 }
 
@@ -108,6 +112,9 @@ pub struct Terminal {
   graphics_parser: KittyParser,
   pub image_storage: KittyImageStorage,
   pub placement_manager: PlacementManager,
+  alternate_image_storage: KittyImageStorage,
+  alternate_placement_manager: PlacementManager,
+  was_alternate_screen: bool,
   /// Shared atomic for signaling cursor advancement to the PTY filter.
   pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
   /// Shared atomic exposing active kitty keyboard protocol flags.
@@ -168,6 +175,9 @@ impl Terminal {
       graphics_parser: KittyParser::new(),
       image_storage: KittyImageStorage::new(),
       placement_manager: PlacementManager::new(),
+      alternate_image_storage: KittyImageStorage::new(),
+      alternate_placement_manager: PlacementManager::new(),
+      was_alternate_screen: false,
       pending_cnl,
       keyboard_protocol_flags,
       osc7_rx,
@@ -300,7 +310,18 @@ impl Terminal {
     while let Some(e) = self.events.pop_front() {
       self.process_terminal_event(&e, window, cx)
     }
+    let previous_history_size = self.last_content.history_size;
     self.last_content = Self::make_content(&*self.term, &self.last_content);
+
+    let alternate_screen = self
+      .last_content
+      .mode
+      .contains(terminal_kernel::term::TermMode::ALT_SCREEN);
+    if alternate_screen && !self.was_alternate_screen {
+      self.alternate_placement_manager.clear();
+      self.alternate_image_storage.clear();
+    }
+    self.was_alternate_screen = alternate_screen;
 
     // Re-run search only when content has actually changed.
     if let Some(search_state) = &self.search_state {
@@ -319,26 +340,50 @@ impl Terminal {
       }
     }
 
-    let history_size = self.term.history_size() as i32;
+    let current_history_size = self.last_content.history_size;
+    let history_size = current_history_size as i32;
     let display_offset = self.last_content.display_offset as i32;
+    let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
 
     // Process graphics commands AFTER terminal events so terminal_bounds is up to date.
-    self.process_graphics_commands();
+    self.process_graphics_commands(
+      previous_history_size,
+      current_history_size,
+      viewport_lines,
+    );
 
     // Detect shell prompt returns and update CWD (non-blocking).
     self.process_prompt_detection(cx);
 
     // Collect visible image placements for rendering.
     let viewport_top = history_size - display_offset;
-    let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
 
-    self.last_content.image_placements =
-      self
-        .placement_manager
-        .visible_placements(&self.image_storage, viewport_top, viewport_lines);
+    let image_placements = {
+      let (storage, placements) = self.active_graphics_mut();
+      placements.visible_placements(storage, viewport_top, viewport_lines)
+    };
+    self.last_content.image_placements = image_placements;
   }
 
-  fn process_graphics_commands(&mut self) {
+  fn active_graphics_mut(
+    &mut self,
+  ) -> (&mut KittyImageStorage, &mut PlacementManager) {
+    if self.was_alternate_screen {
+      (
+        &mut self.alternate_image_storage,
+        &mut self.alternate_placement_manager,
+      )
+    } else {
+      (&mut self.image_storage, &mut self.placement_manager)
+    }
+  }
+
+  fn process_graphics_commands(
+    &mut self,
+    previous_history_size: usize,
+    current_history_size: usize,
+    screen_lines: u32,
+  ) {
     // Drain all available graphics commands (non-blocking).
     let mut raw_commands: Vec<RawGraphicsCommand> = Vec::new();
     if let Some(rx) = &self.graphics_rx {
@@ -347,22 +392,70 @@ impl Terminal {
       }
     }
 
+    let mut simulated_history_size = previous_history_size.min(current_history_size);
+    let mut remaining_history_growth = current_history_size.saturating_sub(previous_history_size);
+
     for raw_cmd in raw_commands {
+      if let Some(scroll) = raw_cmd.scroll {
+        if let Some(scroll) = resolve_graphics_scroll(
+          scroll,
+          screen_lines,
+          self.was_alternate_screen,
+          &mut simulated_history_size,
+          &mut remaining_history_growth,
+        ) {
+          self.active_graphics_mut().1.scroll_region(
+            scroll.direction,
+            scroll.top,
+            scroll.bottom,
+            scroll.lines,
+          );
+        }
+        continue;
+      }
       if raw_cmd.clear_all {
-        self.placement_manager.clear();
-        self.image_storage.clear();
+        self.active_graphics_mut().1.clear();
+        continue;
+      }
+      if let Some(error) = raw_cmd.protocol_error {
+        self.send_kitty_response(KittyResponse::from_error(error), 0);
         continue;
       }
       let cursor_line = raw_cmd.cursor_line;
       let cursor_column = raw_cmd.cursor_column;
-      if let Some(cmd) = self.graphics_parser.parse(&raw_cmd.data) {
-        self.execute_graphics_command(&cmd, cursor_line, cursor_column);
+      let parsed = if let Some(command) = raw_cmd.parsed_command {
+        Ok(Some(command))
+      } else {
+        self.graphics_parser.parse(&raw_cmd.data)
+      };
+      match parsed {
+        Ok(Some(cmd)) => {
+          let quiet = cmd.quiet;
+          match self.execute_graphics_command(&cmd, cursor_line, cursor_column) {
+            Ok(Some(response)) => self.send_kitty_response(response, quiet),
+            Ok(None) => {}
+            Err(error) => {
+              self.send_kitty_response(KittyResponse::from_error(error), quiet)
+            }
+          }
+        }
+        Ok(None) => {}
+        Err(error) => {
+          let quiet = error.quiet;
+          self.send_kitty_response(KittyResponse::from_error(error), quiet);
+        }
       }
     }
-    // Note: Kitty protocol responses are intentionally NOT sent back.
-    // Our architecture intercepts APC on the read side, so write_to_pty
-    // would send responses to the shell's stdin (appearing as typed text).
-    // Tools like kitten icat use q=2 (suppress all) and handle timeouts.
+  }
+
+  fn send_kitty_response(&self, response: KittyResponse, quiet: u8) {
+    let is_error = response.error_code.is_some();
+    if quiet == 2 || (quiet == 1 && !is_error) {
+      return;
+    }
+    self
+      .pty_tx
+      .send_protocol_response(std::borrow::Cow::Owned(response.encode()));
   }
 
   /// Detect shell prompt returns and update CWD.
@@ -427,29 +520,117 @@ impl Terminal {
     }
   }
 
-  fn execute_graphics_command(&mut self, cmd: &KittyCommand, cursor_line: i32, cursor_column: i32) {
+  fn execute_graphics_command(
+    &mut self,
+    cmd: &KittyCommand,
+    cursor_line: i32,
+    cursor_column: i32,
+  ) -> Result<Option<KittyResponse>, KittyProtocolError> {
+    if cmd.transmission != KittyTransmission::Direct {
+      return Err(
+        KittyProtocolError::new(
+          KittyErrorCode::NotSupported,
+          "only direct transmission is supported",
+        )
+        .with_command(cmd),
+      );
+    }
+    if cmd.virtual_placement
+      || cmd.parent_image_id != 0
+      || cmd.parent_placement_id != 0
+      || cmd.relative_x != 0
+      || cmd.relative_y != 0
+    {
+      return Err(
+        KittyProtocolError::new(
+          KittyErrorCode::NotSupported,
+          "advanced placements are not supported",
+        )
+        .with_command(cmd),
+      );
+    }
+
     match cmd.action {
       KittyAction::Transmit => {
-        let _ = self.image_storage.store(cmd);
+        let replaced_id = (cmd.image_id != 0).then_some(cmd.image_id);
+        let (storage, placements) = self.active_graphics_mut();
+        let image_id = storage.store(cmd)?;
+        if let Some(replaced_id) = replaced_id {
+          placements.remove_by_image(replaced_id);
+        }
+        Ok(Self::success_response(cmd, image_id))
       }
       KittyAction::TransmitAndDisplay => {
-        if let Ok(id) = self.image_storage.store(cmd) {
-          self.place_image(id, cmd, cursor_line, cursor_column);
+        let replaced_id = (cmd.image_id != 0).then_some(cmd.image_id);
+        let image_id = self.active_graphics_mut().0.store(cmd)?;
+        if let Some(replaced_id) = replaced_id {
+          self.active_graphics_mut().1.remove_by_image(replaced_id);
         }
+        self.place_image(image_id, cmd, cursor_line, cursor_column)?;
+        Ok(Self::success_response(cmd, image_id))
       }
       KittyAction::Display => {
-        let image_id = cmd.image_id;
-        if self.image_storage.get(image_id).is_some() {
-          self.place_image(image_id, cmd, cursor_line, cursor_column);
-        }
+        let image_id = self.resolve_image_id(cmd)?;
+        self.place_image(image_id, cmd, cursor_line, cursor_column)?;
+        Ok(Self::success_response(cmd, image_id))
       }
       KittyAction::Delete => {
-        self.handle_delete(cmd);
+        if matches!(cmd.delete, Some(KittyDelete::AnimationFrames)) {
+          return Err(
+            KittyProtocolError::new(
+              KittyErrorCode::NotSupported,
+              "animation frame deletion is not supported",
+            )
+            .with_command(cmd),
+          );
+        }
+        self.handle_delete(cmd, cursor_line, cursor_column);
+        Ok(Self::success_response(cmd, cmd.image_id))
       }
       KittyAction::Query => {
-        // We support the protocol but can't send responses back
-        // without them leaking to the shell's stdin.
+        KittyImageStorage::validate(cmd)?;
+        Ok(Some(Self::response(cmd, cmd.image_id)))
       }
+      KittyAction::TransmitFrame
+      | KittyAction::ControlAnimation
+      | KittyAction::ComposeFrames => Err(
+        KittyProtocolError::new(KittyErrorCode::NotSupported, "animations are not supported")
+          .with_command(cmd),
+      ),
+    }
+  }
+
+  fn resolve_image_id(&mut self, cmd: &KittyCommand) -> Result<u32, KittyProtocolError> {
+    let image_id = if cmd.image_id != 0 {
+      Some(cmd.image_id)
+    } else if cmd.image_number != 0 {
+      self.active_graphics_mut().0.newest_id_by_number(cmd.image_number)
+    } else {
+      None
+    };
+    let image_id = image_id.ok_or_else(|| {
+      KittyProtocolError::new(KittyErrorCode::NotFound, "image not found").with_command(cmd)
+    })?;
+    if self.active_graphics_mut().0.get(image_id).is_none() {
+      return Err(
+        KittyProtocolError::new(KittyErrorCode::NotFound, "image not found")
+          .with_command(cmd),
+      );
+    }
+    Ok(image_id)
+  }
+
+  fn success_response(cmd: &KittyCommand, image_id: u32) -> Option<KittyResponse> {
+    (cmd.image_id != 0 || cmd.image_number != 0).then(|| Self::response(cmd, image_id))
+  }
+
+  fn response(cmd: &KittyCommand, image_id: u32) -> KittyResponse {
+    KittyResponse {
+      image_id,
+      image_number: cmd.image_number,
+      placement_id: cmd.placement_id,
+      message: "OK".to_string(),
+      error_code: None,
     }
   }
 
@@ -459,46 +640,47 @@ impl Terminal {
     cmd: &KittyCommand,
     cursor_line: i32,
     cursor_column: i32,
-  ) {
+  ) -> Result<(), KittyProtocolError> {
     // Use cursor position captured at APC intercept time (not current cursor).
     let line = cursor_line;
     let column = cursor_column;
 
-    // Determine display size in cells.
-    let (width_cells, height_cells) = if cmd.display_columns > 0 && cmd.display_rows > 0 {
-      (cmd.display_columns, cmd.display_rows)
-    } else if let Some(img) = self.image_storage.peek(image_id) {
-      // Scale to fit terminal width, preserving aspect ratio.
-      let bounds = &self.last_content.terminal_bounds;
-      let cw = f32::from(bounds.cell_width().max(gpui::px(1.0))) as u32;
-      let lh = f32::from(bounds.line_height().max(gpui::px(1.0))) as u32;
-      let terminal_cols = bounds.num_columns() as u32;
-      let terminal_width_px = terminal_cols.saturating_mul(cw).max(1);
-
-      if img.width > terminal_width_px {
-        // Image wider than terminal — scale down to fit.
-        let h_px =
-          ((img.height as u64 * terminal_width_px as u64) / img.width.max(1) as u64) as u32;
-        let h_cells = (h_px + lh - 1) / lh;
-        (terminal_cols.max(1), h_cells.max(1))
-      } else {
-        // Image fits — use native pixel size.
-        let w = (img.width + cw - 1) / cw;
-        let h = (img.height + lh - 1) / lh;
-        (w.max(1), h.max(1))
-      }
-    } else {
-      (1, 1)
+    let (source_width, source_height) = {
+      let image = self.active_graphics_mut().0.peek(image_id).ok_or_else(|| {
+        KittyProtocolError::new(KittyErrorCode::NotFound, "image not found").with_command(cmd)
+      })?;
+      (image.width, image.height)
     };
+    let bounds = &self.last_content.terminal_bounds;
+    let cell_width = f32::from(bounds.cell_width().max(gpui::px(1.0))).ceil() as u32;
+    let cell_height = f32::from(bounds.line_height().max(gpui::px(1.0))).ceil() as u32;
+    let geometry = resolve_geometry(
+      source_width,
+      source_height,
+      (cmd.crop_x, cmd.crop_y, cmd.crop_width, cmd.crop_height),
+      cmd.display_columns,
+      cmd.display_rows,
+      cmd.x_offset,
+      cmd.y_offset,
+      cell_width,
+      cell_height,
+    )
+    .ok_or_else(|| {
+      KittyProtocolError::invalid("invalid image crop or display size").with_command(cmd)
+    })?;
 
-    self.placement_manager.add(ImagePlacement {
+    self.active_graphics_mut().1.add(ImagePlacement {
       image_id,
       placement_id: cmd.placement_id,
+      source_width,
+      source_height,
       line,
       column,
-      width_cells,
-      height_cells,
-      crop: (cmd.crop_x, cmd.crop_y, cmd.crop_width, cmd.crop_height),
+      width_cells: geometry.width_cells,
+      height_cells: geometry.height_cells,
+      width_pixels: geometry.width_pixels,
+      height_pixels: geometry.height_pixels,
+      crop: geometry.crop,
       z_index: cmd.z_index,
       x_offset: cmd.x_offset,
       y_offset: cmd.y_offset,
@@ -508,41 +690,93 @@ impl Terminal {
     // This is the fallback mechanism for when the filter couldn't compute
     // the height from APC params alone (e.g., PNG without r=/v=).
     if let Some(cnl) = &self.pending_cnl {
-      cnl.store(height_cells, std::sync::atomic::Ordering::Release);
+      cnl.store(geometry.height_cells, std::sync::atomic::Ordering::Release);
     }
+    Ok(())
   }
 
-  fn handle_delete(&mut self, cmd: &KittyCommand) {
+  fn handle_delete(&mut self, cmd: &KittyCommand, cursor_line: i32, cursor_column: i32) {
+    let history_size = self.term.history_size();
+    let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
     let delete = cmd.delete.as_ref().cloned().unwrap_or(KittyDelete::All);
+    let (storage, placements) = self.active_graphics_mut();
+    let mut affected_image_ids = placements.image_ids();
+    if cmd.delete_data {
+      match delete {
+        KittyDelete::ById { image_id, .. } => affected_image_ids.push(image_id),
+        KittyDelete::ByNumber { image_number, .. } => {
+          if let Some(image_id) = storage.newest_id_by_number(image_number) {
+            affected_image_ids.push(image_id);
+          }
+        }
+        KittyDelete::ByIdRange { first, last } => affected_image_ids.extend(
+          storage
+            .image_ids()
+            .into_iter()
+            .filter(|image_id| *image_id >= first && *image_id <= last),
+        ),
+        _ => {}
+      }
+      affected_image_ids.sort_unstable();
+      affected_image_ids.dedup();
+    }
     match delete {
       KittyDelete::All => {
-        self.placement_manager.clear();
-        self.image_storage.clear();
+        placements.remove_visible(history_size as i32, viewport_lines);
       }
-      KittyDelete::ById {
-        image_id: _,
+      KittyDelete::ById { image_id, placement_id } => {
+        placements.remove_by_id(image_id, placement_id);
+      }
+      KittyDelete::ByNumber {
+        image_number,
         placement_id,
       } => {
-        let id = cmd.image_id;
-        self.placement_manager.remove_by_id(id, placement_id);
-        if placement_id.is_none() {
-          self.image_storage.remove(id);
+        if let Some(image_id) = storage.newest_id_by_number(image_number) {
+          placements.remove_by_id(image_id, placement_id);
         }
       }
       KittyDelete::AtCursor => {
-        let cursor = self.term.cursor_point();
-        let history_size = self.term.history_size() as i32;
-        let line = history_size + cursor.line.0;
-        let col = cursor.column.0 as i32;
-        self.placement_manager.remove_at_cursor(line, col);
+        placements.remove_at_cursor(cursor_line, cursor_column);
       }
-      KittyDelete::ByZIndex(_) | KittyDelete::AtColumn(_) | KittyDelete::AtRow(_) => {
-        // Simplified: just remove all for these advanced cases.
-        self.placement_manager.clear();
+      KittyDelete::AtCell { column, row } => {
+        let line = history_size.saturating_add(row.saturating_sub(1) as usize) as i32;
+        placements.remove_at_cell(line, column.saturating_sub(1) as i32);
       }
-      KittyDelete::AnimationFrames => {
-        // Not supported in MVP.
+      KittyDelete::AtCellAndZIndex {
+        column,
+        row,
+        z_index,
+      } => {
+        let line = history_size.saturating_add(row.saturating_sub(1) as usize) as i32;
+        placements.remove_at_cell_and_z_index(
+          line,
+          column.saturating_sub(1) as i32,
+          z_index,
+        );
       }
+      KittyDelete::ByIdRange { first, last } => {
+        placements.remove_by_image_range(first, last);
+      }
+      KittyDelete::ByZIndex(z_index) => {
+        placements.remove_by_z_index(z_index);
+      }
+      KittyDelete::AtColumn(column) => {
+        placements.remove_at_column(column.saturating_sub(1) as i32);
+      }
+      KittyDelete::AtRow(row) => {
+        let line = history_size.saturating_add(row.saturating_sub(1) as usize) as i32;
+        placements.remove_at_row(line);
+      }
+      KittyDelete::AnimationFrames => {}
+    }
+
+    if cmd.delete_data {
+      for image_id in affected_image_ids {
+        if !placements.has_image(image_id) {
+          storage.remove(image_id);
+        }
+      }
+      placements.gc(storage);
     }
   }
 
@@ -821,11 +1055,177 @@ fn should_hide_mouse_cursor(
   hide_mouse_when_typing && last_input_time > last_mouse_activity_time
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AbsoluteGraphicsScroll {
+  direction: GraphicsScrollDirection,
+  top: i32,
+  bottom: i32,
+  lines: u32,
+}
+
+fn resolve_graphics_scroll(
+  scroll: GraphicsScroll,
+  screen_lines: u32,
+  alternate_screen: bool,
+  simulated_history_size: &mut usize,
+  remaining_history_growth: &mut usize,
+) -> Option<AbsoluteGraphicsScroll> {
+  let is_full_screen = scroll.top == 0 && scroll.bottom == screen_lines;
+  if !alternate_screen && is_full_screen && scroll.direction == GraphicsScrollDirection::Up {
+    let natural_growth = (*remaining_history_growth).min(scroll.lines as usize);
+    *simulated_history_size = simulated_history_size.saturating_add(natural_growth);
+    *remaining_history_growth -= natural_growth;
+
+    let evicted_lines = scroll.lines.saturating_sub(natural_growth as u32);
+    return (evicted_lines > 0).then(|| AbsoluteGraphicsScroll {
+      direction: scroll.direction,
+      top: 0,
+      bottom: placement_line(
+        simulated_history_size.saturating_add(screen_lines as usize),
+      ),
+      lines: evicted_lines,
+    });
+  }
+
+  let history_offset = if alternate_screen {
+    0
+  } else {
+    *simulated_history_size
+  };
+  Some(AbsoluteGraphicsScroll {
+    direction: scroll.direction,
+    top: placement_line(history_offset.saturating_add(scroll.top as usize)),
+    bottom: placement_line(history_offset.saturating_add(scroll.bottom as usize)),
+    lines: scroll.lines,
+  })
+}
+
+fn placement_line(line: usize) -> i32 {
+  i32::try_from(line).unwrap_or(i32::MAX)
+}
+
 #[cfg(test)]
 mod tests {
   use std::time::{Duration, Instant};
 
-  use super::should_hide_mouse_cursor;
+  use super::{
+    AbsoluteGraphicsScroll, GraphicsScroll, GraphicsScrollDirection, resolve_graphics_scroll,
+    should_hide_mouse_cursor,
+  };
+
+  fn scroll(
+    direction: GraphicsScrollDirection,
+    top: u32,
+    bottom: u32,
+    lines: u32,
+  ) -> GraphicsScroll {
+    GraphicsScroll {
+      direction,
+      top,
+      bottom,
+      lines,
+    }
+  }
+
+  fn absolute_scroll(
+    direction: GraphicsScrollDirection,
+    top: i32,
+    bottom: i32,
+    lines: u32,
+  ) -> AbsoluteGraphicsScroll {
+    AbsoluteGraphicsScroll {
+      direction,
+      top,
+      bottom,
+      lines,
+    }
+  }
+
+  #[test]
+  fn full_screen_scroll_that_grows_history_keeps_absolute_placements_fixed() {
+    let mut history = 2;
+    let mut growth = 3;
+
+    assert_eq!(
+      resolve_graphics_scroll(
+        scroll(GraphicsScrollDirection::Up, 0, 5, 3),
+        5,
+        false,
+        &mut history,
+        &mut growth,
+      ),
+      None
+    );
+    assert_eq!((history, growth), (5, 0));
+  }
+
+  #[test]
+  fn full_screen_scroll_moves_retained_buffer_after_history_fills() {
+    let mut history = 8;
+    let mut growth = 2;
+
+    assert_eq!(
+      resolve_graphics_scroll(
+        scroll(GraphicsScrollDirection::Up, 0, 5, 4),
+        5,
+        false,
+        &mut history,
+        &mut growth,
+      ),
+      Some(absolute_scroll(GraphicsScrollDirection::Up, 0, 15, 2))
+    );
+    assert_eq!((history, growth), (10, 0));
+  }
+
+  #[test]
+  fn full_screen_scroll_at_capacity_moves_the_entire_retained_buffer() {
+    let mut history = 10;
+    let mut growth = 0;
+
+    assert_eq!(
+      resolve_graphics_scroll(
+        scroll(GraphicsScrollDirection::Up, 0, 5, 2),
+        5,
+        false,
+        &mut history,
+        &mut growth,
+      ),
+      Some(absolute_scroll(GraphicsScrollDirection::Up, 0, 15, 2))
+    );
+  }
+
+  #[test]
+  fn local_and_alternate_scroll_regions_use_the_correct_origin() {
+    let mut history = 10;
+    let mut growth = 0;
+    let local = scroll(GraphicsScrollDirection::Up, 2, 6, 1);
+
+    assert_eq!(
+      resolve_graphics_scroll(local, 8, false, &mut history, &mut growth),
+      Some(absolute_scroll(GraphicsScrollDirection::Up, 12, 16, 1))
+    );
+    assert_eq!(
+      resolve_graphics_scroll(local, 8, true, &mut history, &mut growth),
+      Some(absolute_scroll(GraphicsScrollDirection::Up, 2, 6, 1))
+    );
+  }
+
+  #[test]
+  fn full_screen_down_scroll_only_moves_primary_screen_rows() {
+    let mut history = 10;
+    let mut growth = 0;
+
+    assert_eq!(
+      resolve_graphics_scroll(
+        scroll(GraphicsScrollDirection::Down, 0, 5, 1),
+        5,
+        false,
+        &mut history,
+        &mut growth,
+      ),
+      Some(absolute_scroll(GraphicsScrollDirection::Down, 10, 15, 1))
+    );
+  }
 
   #[test]
   fn hide_mouse_cursor_when_input_is_newer_than_mouse_activity() {

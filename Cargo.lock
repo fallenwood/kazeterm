@@ -3341,6 +3341,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kitty-protocol-client"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "png 0.18.1",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "kqueue"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6271,6 +6280,7 @@ dependencies = [
  "anyhow",
  "base64",
  "config",
+ "flate2",
  "futures",
  "gpui",
  "gpui-macros",
@@ -6285,6 +6295,7 @@ dependencies = [
  "terminal-kernel",
  "themeing",
  "tracing",
+ "unicode-width",
  "url",
  "urlencoding",
  "windows 0.62.2",

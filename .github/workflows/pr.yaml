@@ -65,6 +65,14 @@ jobs:
         if: runner.os == 'Windows'
         run: cargo build --target ${{ matrix.target }}
 
+      - name: Install modern ConPTY runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/install-conpty.ps1 `
+            -TargetTriple '${{ matrix.target }}' `
+            -Destination 'target/${{ matrix.target }}/debug'
+
       - name: Build
         if: runner.os != 'Windows'
         run: cargo build --target ${{ matrix.target }} --workspace

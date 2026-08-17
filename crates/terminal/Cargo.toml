@@ -18,7 +18,9 @@ urlencoding.workspace = true
 tracing.workspace = true
 image.workspace = true
 base64 = "0.22"
+flate2 = "1"
 polling = "3"
+unicode-width = "0.2"
 
 config = { path = "../config" }
 terminal-kernel = { path = "../terminal-kernel" }

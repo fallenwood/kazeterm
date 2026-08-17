@@ -204,6 +204,7 @@ mod unix {
   use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
 
   use super::super::command::RawGraphicsCommand;
+  use super::super::scroll_tracker::{GraphicsScrollTracker, GraphicsTerminalEvent};
   use super::KeyboardModeTracker;
   use crate::osc7;
 
@@ -261,6 +262,7 @@ mod unix {
     last_dsr_cursor: (i32, i32),
     keyboard_mode: KeyboardModeTracker,
     keyboard_flags: Arc<AtomicU32>,
+    scroll_tracker: GraphicsScrollTracker,
   }
 
   /// Parsed APC parameters relevant to cursor advancement.
@@ -539,6 +541,29 @@ mod unix {
         self.cnl_injected = true;
       }
     }
+
+    fn flush_scroll_events(&mut self, tracked_pending_len: &mut usize) {
+      self
+        .scroll_tracker
+        .advance(&self.pending[*tracked_pending_len..]);
+      *tracked_pending_len = self.pending.len();
+
+      for event in self.scroll_tracker.drain() {
+        let (scroll, clear_all) = match event {
+          GraphicsTerminalEvent::Scroll(scroll) => (Some(scroll), false),
+          GraphicsTerminalEvent::ClearAll => (None, true),
+        };
+        let _ = self.graphics_tx.send(RawGraphicsCommand {
+          data: Vec::new(),
+          parsed_command: None,
+          cursor_line: 0,
+          cursor_column: 0,
+          clear_all,
+          scroll,
+          protocol_error: None,
+        });
+      }
+    }
   }
 
   impl Read for FilteringReader {
@@ -547,6 +572,22 @@ mod unix {
       let feedback_rows = self.pending_cnl.swap(0, Ordering::AcqRel);
       if feedback_rows > 0 && !self.cnl_injected {
         let cnl = format!("\x1b[{}E", feedback_rows + IMAGE_BOTTOM_PADDING);
+        self.scroll_tracker.advance(cnl.as_bytes());
+        for event in self.scroll_tracker.drain() {
+          let (scroll, clear_all) = match event {
+            GraphicsTerminalEvent::Scroll(scroll) => (Some(scroll), false),
+            GraphicsTerminalEvent::ClearAll => (None, true),
+          };
+          let _ = self.graphics_tx.send(RawGraphicsCommand {
+            data: Vec::new(),
+            parsed_command: None,
+            cursor_line: 0,
+            cursor_column: 0,
+            clear_all,
+            scroll,
+            protocol_error: None,
+          });
+        }
         // Prepend to any existing pending data.
         let mut new_pending = Vec::with_capacity(cnl.len() + self.pending.len());
         new_pending.extend_from_slice(cnl.as_bytes());
@@ -581,6 +622,7 @@ mod unix {
       // Run the APC state machine over the raw bytes.
       self.pending.clear();
       self.pending_pos = 0;
+      let mut tracked_pending_len = 0;
 
       for &byte in &raw[..n] {
         match self.state {
@@ -649,6 +691,7 @@ mod unix {
             if byte == b'\\' {
               // Complete APC sequence. Check for Kitty graphics prefix 'G'.
               if self.apc_buf.first() == Some(&b'G') {
+                self.flush_scroll_events(&mut tracked_pending_len);
                 let (cursor_line, cursor_column) = self.capture_cursor();
                 let cmd_data = self.apc_buf[1..].to_vec();
                 let params = parse_apc_params(&cmd_data);
@@ -679,9 +722,12 @@ mod unix {
 
                 let _ = self.graphics_tx.send(RawGraphicsCommand {
                   data: cmd_data,
+                  parsed_command: None,
                   cursor_line,
                   cursor_column,
                   clear_all: false,
+                  scroll: None,
+                  protocol_error: None,
                 });
               }
               self.apc_buf.clear();
@@ -696,21 +742,7 @@ mod unix {
         }
       }
 
-      // Detect terminal clear/reset sequences in pass-through bytes.
-      // ESC[2J (erase display), ESC[3J (erase display+scrollback), ESC c (RIS).
-      let has_clear = self
-        .pending
-        .windows(4)
-        .any(|w| w == b"\x1b[2J" || w == b"\x1b[3J")
-        || self.pending.windows(2).any(|w| w == b"\x1bc");
-      if has_clear {
-        let _ = self.graphics_tx.send(RawGraphicsCommand {
-          data: Vec::new(),
-          cursor_line: 0,
-          cursor_column: 0,
-          clear_all: true,
-        });
-      }
+      self.flush_scroll_events(&mut tracked_pending_len);
 
       if self.pending.is_empty() {
         // All bytes were APC data — signal "no data yet" to the EventLoop.
@@ -799,6 +831,7 @@ mod unix {
         last_dsr_cursor: (1, 1),
         keyboard_mode: KeyboardModeTracker::default(),
         keyboard_flags: Arc::clone(&keyboard_flags),
+        scroll_tracker: GraphicsScrollTracker::new(1, 1),
       };
 
       Ok((
@@ -874,6 +907,10 @@ mod unix {
   impl OnResize for GraphicsPtyFilter {
     #[inline]
     fn on_resize(&mut self, window_size: WindowSize) {
+      self.reader.scroll_tracker.resize(
+        u32::from(window_size.num_lines),
+        u32::from(window_size.num_cols),
+      );
       self.pty.on_resize(window_size);
     }
   }
@@ -884,10 +921,21 @@ pub use unix::GraphicsPtyFilter;
 
 #[cfg(not(unix))]
 mod windows {
+  use std::collections::{HashMap, VecDeque};
   use std::io::{self, Read, Write};
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
+  use std::sync::mpsc;
 
+  use super::super::apc_filter::{KittyApcEvent, KittyApcFilter};
+  use super::super::command::{
+    KittyAction, KittyCommand, KittyErrorCode, KittyProtocolError, KittyResponse,
+    KittyTransmission, RawGraphicsCommand,
+  };
+  use super::super::placement::resolve_geometry;
+  use super::super::scroll_tracker::{GraphicsScrollTracker, GraphicsTerminalEvent};
+  use super::super::storage::image_dimensions;
+  use super::super::{KittyImageStorage, KittyParser};
   use super::KeyboardModeTracker;
   use polling::{Event, PollMode, Poller};
   use terminal_kernel::event::{OnResize, WindowSize};
@@ -896,6 +944,7 @@ mod windows {
   /// Callback for DSR cursor position queries (DECXCPR).
   /// Returns `Some((row_1based, col_1based))` screen-relative, or `None` if lock unavailable.
   pub type DsrCursorFn = Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
+  pub type GraphicsCursorFn = Box<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
 
   /// Minimal CSI filter state for DSR detection on Windows.
   #[derive(Debug, Clone, Copy, PartialEq)]
@@ -903,6 +952,73 @@ mod windows {
     Normal,
     Escape,
     CsiCollect,
+  }
+
+  #[derive(Debug)]
+  enum OrderedOutput {
+    Bytes(Vec<u8>),
+    Graphics(KittyApcEvent),
+  }
+
+  #[derive(Default)]
+  struct CursorPlacementTracker {
+    dimensions_by_id: HashMap<u32, (u32, u32)>,
+    dimensions_by_number: HashMap<u32, (u32, u32)>,
+  }
+
+  impl CursorPlacementTracker {
+    fn movement_for(
+      &mut self,
+      command: &KittyCommand,
+      cell_width: u32,
+      cell_height: u32,
+    ) -> Option<(u32, u32)> {
+      let dimensions = match command.action {
+        KittyAction::Transmit | KittyAction::TransmitAndDisplay => {
+          let dimensions = image_dimensions(command).ok()?;
+          if command.image_id != 0 {
+            self.dimensions_by_id.insert(command.image_id, dimensions);
+          }
+          if command.image_number != 0 {
+            self
+              .dimensions_by_number
+              .insert(command.image_number, dimensions);
+          }
+          dimensions
+        }
+        KittyAction::Display => {
+          if command.image_id != 0 {
+            *self.dimensions_by_id.get(&command.image_id)?
+          } else if command.image_number != 0 {
+            *self.dimensions_by_number.get(&command.image_number)?
+          } else {
+            return None;
+          }
+        }
+        _ => return None,
+      };
+
+      if command.action == KittyAction::Transmit || command.cursor_movement == 1 {
+        return None;
+      }
+      let geometry = resolve_geometry(
+        dimensions.0,
+        dimensions.1,
+        (
+          command.crop_x,
+          command.crop_y,
+          command.crop_width,
+          command.crop_height,
+        ),
+        command.display_columns,
+        command.display_rows,
+        command.x_offset,
+        command.y_offset,
+        cell_width,
+        cell_height,
+      )?;
+      Some((geometry.width_cells, geometry.height_cells))
+    }
   }
 
   /// PTY wrapper that intercepts private DSR queries and Kitty keyboard
@@ -920,6 +1036,17 @@ mod windows {
     csi_buf: Vec<u8>,
     pending: Vec<u8>,
     pending_pos: usize,
+    ordered_output: VecDeque<OrderedOutput>,
+    apc_filter: KittyApcFilter,
+    graphics_parser: KittyParser,
+    scroll_tracker: GraphicsScrollTracker,
+    query_pending: bool,
+    cursor_placement_tracker: CursorPlacementTracker,
+    cell_width: u32,
+    cell_height: u32,
+    graphics_tx: mpsc::Sender<RawGraphicsCommand>,
+    graphics_cursor_fn: GraphicsCursorFn,
+    last_graphics_cursor: (i32, i32),
     dsr_cursor_fn: DsrCursorFn,
     last_dsr_cursor: (i32, i32),
     keyboard_mode: KeyboardModeTracker,
@@ -927,8 +1054,17 @@ mod windows {
   }
 
   impl WindowsDsrFilter {
-    pub fn new(pty: Pty, dsr_cursor_fn: DsrCursorFn) -> (Self, Arc<AtomicU32>) {
+    pub fn new(
+      pty: Pty,
+      graphics_cursor_fn: GraphicsCursorFn,
+      dsr_cursor_fn: DsrCursorFn,
+    ) -> (
+      Self,
+      Arc<AtomicU32>,
+      mpsc::Receiver<RawGraphicsCommand>,
+    ) {
       let keyboard_flags = Arc::new(AtomicU32::new(0));
+      let (graphics_tx, graphics_rx) = mpsc::channel();
 
       (
         Self {
@@ -937,13 +1073,246 @@ mod windows {
           csi_buf: Vec::with_capacity(64),
           pending: Vec::with_capacity(8192),
           pending_pos: 0,
+          ordered_output: VecDeque::new(),
+          apc_filter: KittyApcFilter::new(),
+          graphics_parser: KittyParser::new(),
+          scroll_tracker: GraphicsScrollTracker::new(1, 1),
+          query_pending: false,
+          cursor_placement_tracker: CursorPlacementTracker::default(),
+          cell_width: 1,
+          cell_height: 1,
+          graphics_tx,
+          graphics_cursor_fn,
+          last_graphics_cursor: (0, 0),
           dsr_cursor_fn,
           last_dsr_cursor: (1, 1),
           keyboard_mode: KeyboardModeTracker::default(),
           keyboard_flags: Arc::clone(&keyboard_flags),
         },
         keyboard_flags,
+        graphics_rx,
       )
+    }
+
+    fn capture_graphics_cursor(&mut self) -> (i32, i32) {
+      if let Some(position) = (self.graphics_cursor_fn)() {
+        self.last_graphics_cursor = position;
+      }
+      self.last_graphics_cursor
+    }
+
+    fn forward_graphics_event(&mut self, event: KittyApcEvent) {
+      let KittyApcEvent::Command { data, .. } = event else {
+        let (cursor_line, cursor_column) = self.capture_graphics_cursor();
+        let _ = self.graphics_tx.send(RawGraphicsCommand {
+          data: Vec::new(),
+          parsed_command: None,
+          cursor_line,
+          cursor_column,
+          clear_all: false,
+          scroll: None,
+          protocol_error: Some(KittyProtocolError::new(
+            KittyErrorCode::NoSpace,
+            "graphics APC exceeds 64 KiB",
+          )),
+        });
+        return;
+      };
+
+      let is_query = self.query_pending || is_query_command(&data);
+      match self.graphics_parser.parse(&data) {
+        Ok(None) => self.query_pending = is_query,
+        Ok(Some(command)) => {
+          let is_query = is_query || command.action == KittyAction::Query;
+          self.query_pending = false;
+          if is_query {
+            self.handle_immediate_query(Ok(command));
+            return;
+          }
+
+          let (cursor_line, cursor_column) = self.capture_graphics_cursor();
+          if let Some((columns, rows)) = self.cursor_placement_tracker.movement_for(
+            &command,
+            self.cell_width,
+            self.cell_height,
+          ) {
+            self
+              .pending
+              .extend_from_slice(format!("\x1b[{columns}C\x1b[{rows}B").as_bytes());
+          }
+          let _ = self.graphics_tx.send(RawGraphicsCommand {
+            data: Vec::new(),
+            parsed_command: Some(command),
+            cursor_line,
+            cursor_column,
+            clear_all: false,
+            scroll: None,
+            protocol_error: None,
+          });
+        }
+        Err(error) => {
+          self.query_pending = false;
+          if is_query {
+            self.handle_immediate_query(Err(error));
+          } else {
+            let (cursor_line, cursor_column) = self.capture_graphics_cursor();
+            let _ = self.graphics_tx.send(RawGraphicsCommand {
+              data: Vec::new(),
+              parsed_command: None,
+              cursor_line,
+              cursor_column,
+              clear_all: false,
+              scroll: None,
+              protocol_error: Some(error),
+            });
+          }
+        }
+      }
+    }
+
+    fn queue_ordered_output(
+      &mut self,
+      passthrough: Vec<u8>,
+      events: Vec<KittyApcEvent>,
+    ) {
+      let mut start = 0;
+      for event in events {
+        let offset = match &event {
+          KittyApcEvent::Command {
+            passthrough_offset, ..
+          }
+          | KittyApcEvent::Oversized {
+            passthrough_offset,
+          } => *passthrough_offset,
+        };
+        if offset > start {
+          self
+            .ordered_output
+            .push_back(OrderedOutput::Bytes(passthrough[start..offset].to_vec()));
+        }
+        self
+          .ordered_output
+          .push_back(OrderedOutput::Graphics(event));
+        start = offset;
+      }
+      if start < passthrough.len() {
+        self
+          .ordered_output
+          .push_back(OrderedOutput::Bytes(passthrough[start..].to_vec()));
+      }
+    }
+
+    fn process_passthrough(&mut self, bytes: &[u8]) {
+      self.scroll_tracker.advance(bytes);
+      for event in self.scroll_tracker.drain() {
+        let (scroll, clear_all) = match event {
+          GraphicsTerminalEvent::Scroll(scroll) => (Some(scroll), false),
+          GraphicsTerminalEvent::ClearAll => (None, true),
+        };
+        let _ = self.graphics_tx.send(RawGraphicsCommand {
+          data: Vec::new(),
+          parsed_command: None,
+          cursor_line: 0,
+          cursor_column: 0,
+          clear_all,
+          scroll,
+          protocol_error: None,
+        });
+      }
+
+      for &byte in bytes {
+        match self.state {
+          FilterState::Normal => {
+            if byte == 0x1B {
+              self.state = FilterState::Escape;
+            } else {
+              self.pending.push(byte);
+            }
+          }
+          FilterState::Escape => {
+            if byte == b'[' {
+              self.state = FilterState::CsiCollect;
+              self.csi_buf.clear();
+            } else {
+              self.pending.push(0x1B);
+              self.pending.push(byte);
+              self.state = FilterState::Normal;
+            }
+          }
+          FilterState::CsiCollect => match byte {
+            0x30..=0x3F => {
+              self.csi_buf.push(byte);
+              if self.csi_buf.len() > 256 {
+                self.flush_csi_to_pending(None);
+                self.state = FilterState::Normal;
+              }
+            }
+            0x20..=0x2F => self.csi_buf.push(byte),
+            0x40..=0x7E => {
+              if !self.handle_csi_final(byte) {
+                self.flush_csi_to_pending(Some(byte));
+              } else {
+                self.csi_buf.clear();
+              }
+              self.state = FilterState::Normal;
+            }
+            _ => {
+              self.flush_csi_to_pending(None);
+              self.pending.push(byte);
+              self.state = FilterState::Normal;
+            }
+          },
+        }
+      }
+    }
+
+    fn handle_immediate_query(
+      &mut self,
+      parsed: Result<KittyCommand, KittyProtocolError>,
+    ) {
+      match parsed {
+        Ok(command) => {
+          let result = if command.action != KittyAction::Query {
+            Err(
+              KittyProtocolError::invalid("query upload changed action")
+                .with_command(&command),
+            )
+          } else if command.transmission != KittyTransmission::Direct {
+            Err(
+              KittyProtocolError::new(
+                KittyErrorCode::NotSupported,
+                "only direct transmission is supported",
+              )
+              .with_command(&command),
+            )
+          } else {
+            KittyImageStorage::validate(&command).map(|_| KittyResponse {
+              image_id: command.image_id,
+              image_number: command.image_number,
+              placement_id: command.placement_id,
+              message: "OK".to_string(),
+              error_code: None,
+            })
+          };
+          let response = match result {
+            Ok(response) if command.quiet == 0 => Some(response),
+            Ok(_) => None,
+            Err(error) if command.quiet < 2 => Some(KittyResponse::from_error(error)),
+            Err(_) => None,
+          };
+          if let Some(response) = response {
+            let _ = self.pty.writer().write_all(&response.encode());
+          }
+        }
+        Err(error) => {
+          if error.quiet < 2 {
+            let _ = self
+              .pty
+              .writer()
+              .write_all(&KittyResponse::from_error(error).encode());
+          }
+        }
+      }
     }
 
     /// Try to capture screen-relative cursor position for DSR.
@@ -1109,6 +1478,16 @@ mod windows {
     }
   }
 
+  fn is_query_command(data: &[u8]) -> bool {
+    let control = data
+      .split(|byte| *byte == b';')
+      .next()
+      .unwrap_or_default();
+    control
+      .split(|byte| *byte == b',')
+      .any(|field| field == b"a=q")
+  }
+
   impl Read for WindowsDsrFilter {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
       // Drain pending filtered bytes from a previous read.
@@ -1124,81 +1503,43 @@ mod windows {
         return Ok(n);
       }
 
-      // Read raw bytes from the inner PTY reader.
-      let mut raw = [0u8; 8192];
-      let n = self.pty.reader().read(&mut raw)?;
-      if n == 0 {
-        return Ok(0);
-      }
-
-      self.pending.clear();
-      self.pending_pos = 0;
-
-      // Run the CSI/DSR state machine over the raw bytes.
-      for &byte in &raw[..n] {
-        match self.state {
-          FilterState::Normal => {
-            if byte == 0x1B {
-              self.state = FilterState::Escape;
-            } else {
-              self.pending.push(byte);
-            }
+      loop {
+        if let Some(output) = self.ordered_output.pop_front() {
+          match output {
+            OrderedOutput::Bytes(bytes) => self.process_passthrough(&bytes),
+            OrderedOutput::Graphics(event) => self.forward_graphics_event(event),
           }
-          FilterState::Escape => {
-            if byte == b'[' {
-              self.state = FilterState::CsiCollect;
-              self.csi_buf.clear();
-            } else {
-              // Not CSI — pass through the ESC and this byte.
-              self.pending.push(0x1B);
-              self.pending.push(byte);
-              self.state = FilterState::Normal;
-            }
+          if self.pending.is_empty() {
+            continue;
           }
-          FilterState::CsiCollect => match byte {
-            // Parameter bytes (digits, semicolons, private-mode markers like '?').
-            0x30..=0x3F => {
-              self.csi_buf.push(byte);
-              if self.csi_buf.len() > 256 {
-                self.flush_csi_to_pending(None);
-                self.state = FilterState::Normal;
-              }
-            }
-            // Intermediate bytes (space through '/').
-            0x20..=0x2F => {
-              self.csi_buf.push(byte);
-            }
-            // Final byte — CSI sequence is complete.
-            0x40..=0x7E => {
-              if !self.handle_csi_final(byte) {
-                self.flush_csi_to_pending(Some(byte));
-              } else {
-                self.csi_buf.clear();
-              }
-              self.state = FilterState::Normal;
-            }
-            // Invalid byte inside CSI.
-            _ => {
-              self.flush_csi_to_pending(None);
-              self.pending.push(byte);
-              self.state = FilterState::Normal;
-            }
-          },
+
+          let n = self.pending.len().min(buf.len());
+          buf[..n].copy_from_slice(&self.pending[..n]);
+          self.pending_pos = n;
+          if self.pending_pos >= self.pending.len() {
+            self.pending.clear();
+            self.pending_pos = 0;
+          }
+          return Ok(n);
         }
-      }
 
-      if self.pending.is_empty() {
-        return Ok(0);
-      }
+        // Read raw bytes from the inner PTY reader.
+        let mut raw = [0u8; 8192];
+        let n = self.pty.reader().read(&mut raw)?;
+        if n == 0 {
+          return Ok(0);
+        }
 
-      let n = self.pending.len().min(buf.len());
-      buf[..n].copy_from_slice(&self.pending[..n]);
-      self.pending_pos = n;
-      if self.pending_pos >= self.pending.len() {
         self.pending.clear();
         self.pending_pos = 0;
+
+        let mut apc_passthrough = Vec::with_capacity(n);
+        let mut apc_events = Vec::new();
+        self
+          .apc_filter
+          .feed(&raw[..n], &mut apc_passthrough, &mut apc_events);
+        self.queue_ordered_output(apc_passthrough, apc_events);
       }
-      Ok(n)
     }
   }
 
@@ -1264,13 +1605,73 @@ mod windows {
   impl OnResize for WindowsDsrFilter {
     #[inline]
     fn on_resize(&mut self, window_size: WindowSize) {
+      self.cell_width = u32::from(window_size.cell_width.max(1));
+      self.cell_height = u32::from(window_size.cell_height.max(1));
+      self.scroll_tracker.resize(
+        u32::from(window_size.num_lines),
+        u32::from(window_size.num_cols),
+      );
       self.pty.on_resize(window_size);
+    }
+  }
+
+  #[cfg(test)]
+  mod tests {
+    use super::*;
+    use crate::kitty_graphics::{KittyFormat, KittyTransmission};
+
+    fn rgba_command(action: KittyAction) -> KittyCommand {
+      KittyCommand {
+        action,
+        format: KittyFormat::Rgba,
+        transmission: KittyTransmission::Direct,
+        source_width: 20,
+        source_height: 10,
+        payload: vec![0; 20 * 10 * 4],
+        ..KittyCommand::default()
+      }
+    }
+
+    #[test]
+    fn default_policy_moves_by_placement_columns_and_rows() {
+      let mut tracker = CursorPlacementTracker::default();
+      let mut command = rgba_command(KittyAction::TransmitAndDisplay);
+      command.display_columns = 4;
+      command.display_rows = 3;
+
+      assert_eq!(tracker.movement_for(&command, 8, 16), Some((4, 3)));
+    }
+
+    #[test]
+    fn c_one_suppresses_cursor_movement() {
+      let mut tracker = CursorPlacementTracker::default();
+      let mut command = rgba_command(KittyAction::TransmitAndDisplay);
+      command.cursor_movement = 1;
+
+      assert_eq!(tracker.movement_for(&command, 8, 16), None);
+    }
+
+    #[test]
+    fn transmit_then_display_by_number_uses_stored_dimensions() {
+      let mut tracker = CursorPlacementTracker::default();
+      let mut transmit = rgba_command(KittyAction::Transmit);
+      transmit.image_number = 42;
+      assert_eq!(tracker.movement_for(&transmit, 8, 5), None);
+
+      let display = KittyCommand {
+        action: KittyAction::Display,
+        image_number: 42,
+        ..KittyCommand::default()
+      };
+      assert_eq!(tracker.movement_for(&display, 8, 5), Some((3, 2)));
     }
   }
 }
 
 #[cfg(not(unix))]
 pub use windows::DsrCursorFn as WindowsDsrCursorFn;
+#[cfg(not(unix))]
+pub use windows::GraphicsCursorFn as WindowsGraphicsCursorFn;
 #[cfg(not(unix))]
 pub use windows::WindowsDsrFilter;
 

@@ -129,6 +129,18 @@ For debug build, run:
 cargo build
 ```
 
+On Windows, install the pinned modern ConPTY runtime next to the debug executable. This is
+required for Kitty graphics APC sequences to reach Kazeterm's terminal parser:
+
+```powershell
+./scripts/install-conpty.ps1 `
+  -TargetTriple x86_64-pc-windows-msvc `
+  -Destination target/debug
+```
+
+Use `aarch64-pc-windows-msvc` for a native ARM64 build. Release archives include the runtime
+automatically.
+
 For release build, run:
 
 ```
@@ -211,4 +223,7 @@ This produces `coverage/lcov.info`.
 - The bundled Cascadia Code fonts follow the SIL Open Font License.
 
 - The bundled lucide icons follows original MIT license.
+
+- Windows packages include Microsoft's standalone ConPTY runtime under the MIT license; see
+  [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 

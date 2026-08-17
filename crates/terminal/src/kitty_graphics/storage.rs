@@ -1,10 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use gpui::RenderImage;
-use image::{ImageBuffer, Rgba};
+use image::{ImageBuffer, ImageDecoder, Rgba};
 use tracing::warn;
 
-use super::command::{KittyCommand, KittyFormat, StoredImage};
+use super::command::{
+  KittyCommand, KittyErrorCode, KittyFormat, KittyProtocolError, StoredImage,
+};
 
 const DEFAULT_MAX_MEMORY: usize = 320 * 1024 * 1024; // 320 MB
 
@@ -34,7 +36,7 @@ impl KittyImageStorage {
 
   /// Store a decoded image from a completed Kitty command.
   /// Returns the assigned image ID, or an error message.
-  pub fn store(&mut self, cmd: &KittyCommand) -> Result<u32, String> {
+  pub fn store(&mut self, cmd: &KittyCommand) -> Result<u32, KittyProtocolError> {
     let image_id = if cmd.image_id == 0 {
       self.allocate_id()
     } else {
@@ -44,12 +46,19 @@ impl KittyImageStorage {
     let (width, height, rgba_data) = decode_image_data(cmd)?;
 
     let img_buf: ImageBuffer<Rgba<u8>, Vec<u8>> =
-      ImageBuffer::from_raw(width, height, rgba_data.clone())
-        .ok_or_else(|| "Failed to create image buffer".to_string())?;
+      ImageBuffer::from_raw(width, height, rgba_data.clone()).ok_or_else(|| {
+        KittyProtocolError::invalid("failed to create image buffer").with_command(cmd)
+      })?;
 
     let frame = image::Frame::new(img_buf);
     let render_image = Arc::new(RenderImage::new(vec![frame]));
-    let memory_bytes = (width as usize) * (height as usize) * 4;
+    let memory_bytes = pixel_bytes(width, height, 4).map_err(|error| error.with_command(cmd))?;
+    if memory_bytes > self.max_memory {
+      return Err(
+        KittyProtocolError::new(KittyErrorCode::NoSpace, "image exceeds 320 MiB quota")
+          .with_command(cmd),
+      );
+    }
 
     // Evict old images if needed.
     while self.total_memory + memory_bytes > self.max_memory && !self.access_order.is_empty() {
@@ -66,6 +75,7 @@ impl KittyImageStorage {
       image_id,
       StoredImage {
         id: image_id,
+        image_number: cmd.image_number,
         render_image,
         width,
         height,
@@ -93,6 +103,23 @@ impl KittyImageStorage {
     self.images.get(&image_id)
   }
 
+  pub fn newest_id_by_number(&self, image_number: u32) -> Option<u32> {
+    self
+      .access_order
+      .iter()
+      .rev()
+      .copied()
+      .find(|id| self.images.get(id).is_some_and(|image| image.image_number == image_number))
+  }
+
+  pub fn image_ids(&self) -> Vec<u32> {
+    self.images.keys().copied().collect()
+  }
+
+  pub fn validate(cmd: &KittyCommand) -> Result<(), KittyProtocolError> {
+    decode_image_data(cmd).map(|_| ())
+  }
+
   /// Delete an image by ID.
   pub fn remove(&mut self, image_id: u32) -> bool {
     if let Some(img) = self.images.remove(&image_id) {
@@ -116,9 +143,13 @@ impl KittyImageStorage {
   }
 
   fn allocate_id(&mut self) -> u32 {
-    let id = self.next_id;
-    self.next_id = self.next_id.wrapping_add(1).max(1);
-    id
+    loop {
+      let id = self.next_id;
+      self.next_id = self.next_id.wrapping_add(1).max(1);
+      if !self.images.contains_key(&id) {
+        return id;
+      }
+    }
   }
 
   fn touch(&mut self, image_id: u32) {
@@ -136,25 +167,91 @@ impl KittyImageStorage {
   }
 }
 
+pub(crate) fn image_dimensions(
+  cmd: &KittyCommand,
+) -> Result<(u32, u32), KittyProtocolError> {
+  match cmd.format {
+    KittyFormat::Png => {
+      let decoder = image::codecs::png::PngDecoder::new(std::io::Cursor::new(&cmd.payload))
+        .map_err(|error| {
+          KittyProtocolError::invalid(format!("invalid PNG data: {error}"))
+            .with_command(cmd)
+        })?;
+      let (width, height) = decoder.dimensions();
+      validate_dimensions(width, height, cmd)?;
+      Ok((width, height))
+    }
+    KittyFormat::Rgba => raw_dimensions(cmd, 4),
+    KittyFormat::Rgb => raw_dimensions(cmd, 3),
+  }
+}
+
+fn raw_dimensions(
+  cmd: &KittyCommand,
+  bytes_per_pixel: usize,
+) -> Result<(u32, u32), KittyProtocolError> {
+  validate_dimensions(cmd.source_width, cmd.source_height, cmd)?;
+  let expected = pixel_bytes(cmd.source_width, cmd.source_height, bytes_per_pixel)
+    .map_err(|error| error.with_command(cmd))?;
+  if cmd.payload.len() != expected {
+    return Err(
+      KittyProtocolError::invalid(format!(
+        "raw payload size mismatch: expected {expected} got {}",
+        cmd.payload.len(),
+      ))
+      .with_command(cmd),
+    );
+  }
+  Ok((cmd.source_width, cmd.source_height))
+}
+
+fn validate_dimensions(
+  width: u32,
+  height: u32,
+  cmd: &KittyCommand,
+) -> Result<(), KittyProtocolError> {
+  if width == 0 || height == 0 {
+    return Err(KittyProtocolError::invalid("image dimensions must be non-zero").with_command(cmd));
+  }
+  if width > super::parser::MAX_IMAGE_DIMENSION || height > super::parser::MAX_IMAGE_DIMENSION {
+    return Err(
+      KittyProtocolError::invalid("image dimensions exceed 32768 pixels")
+        .with_command(cmd),
+    );
+  }
+  let memory_bytes = pixel_bytes(width, height, 4).map_err(|error| error.with_command(cmd))?;
+  if memory_bytes > DEFAULT_MAX_MEMORY {
+    return Err(
+      KittyProtocolError::new(KittyErrorCode::NoSpace, "image exceeds 320 MiB quota")
+        .with_command(cmd),
+    );
+  }
+  Ok(())
+}
+
 /// Decode raw image data from a Kitty command payload into BGRA pixels.
 ///
 /// GPUI's `paint_image` expects BGRA format, so all decode paths convert to BGRA.
-fn decode_image_data(cmd: &KittyCommand) -> Result<(u32, u32, Vec<u8>), String> {
+fn decode_image_data(
+  cmd: &KittyCommand,
+) -> Result<(u32, u32, Vec<u8>), KittyProtocolError> {
   let (w, h, mut data) = match cmd.format {
     KittyFormat::Png => decode_png(&cmd.payload)?,
     KittyFormat::Rgba => {
       let w = cmd.source_width;
       let h = cmd.source_height;
       if w == 0 || h == 0 {
-        return Err("RGBA format requires s= and v= (width/height)".to_string());
+        return Err(
+          KittyProtocolError::invalid("RGBA format requires s and v").with_command(cmd),
+        );
       }
-      let expected = (w as usize) * (h as usize) * 4;
+      let expected = pixel_bytes(w, h, 4).map_err(|error| error.with_command(cmd))?;
       if cmd.payload.len() != expected {
-        return Err(format!(
-          "RGBA payload size mismatch: expected {} got {}",
-          expected,
-          cmd.payload.len()
-        ));
+        return Err(KittyProtocolError::invalid(format!(
+          "RGBA payload size mismatch: expected {expected} got {}",
+          cmd.payload.len(),
+        ))
+        .with_command(cmd));
       }
       (w, h, cmd.payload.clone())
     }
@@ -162,15 +259,17 @@ fn decode_image_data(cmd: &KittyCommand) -> Result<(u32, u32, Vec<u8>), String> 
       let w = cmd.source_width;
       let h = cmd.source_height;
       if w == 0 || h == 0 {
-        return Err("RGB format requires s= and v= (width/height)".to_string());
+        return Err(
+          KittyProtocolError::invalid("RGB format requires s and v").with_command(cmd),
+        );
       }
-      let expected = (w as usize) * (h as usize) * 3;
+      let expected = pixel_bytes(w, h, 3).map_err(|error| error.with_command(cmd))?;
       if cmd.payload.len() != expected {
-        return Err(format!(
-          "RGB payload size mismatch: expected {} got {}",
-          expected,
-          cmd.payload.len()
-        ));
+        return Err(KittyProtocolError::invalid(format!(
+          "RGB payload size mismatch: expected {expected} got {}",
+          cmd.payload.len(),
+        ))
+        .with_command(cmd));
       }
       // Convert RGB to RGBA.
       let mut rgba = Vec::with_capacity((w as usize) * (h as usize) * 4);
@@ -192,20 +291,27 @@ fn decode_image_data(cmd: &KittyCommand) -> Result<(u32, u32, Vec<u8>), String> 
   Ok((w, h, data))
 }
 
-fn decode_png(data: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
+fn decode_png(data: &[u8]) -> Result<(u32, u32, Vec<u8>), KittyProtocolError> {
   let img = image::load_from_memory_with_format(data, image::ImageFormat::Png)
-    .or_else(|_| {
-      // Fall back to auto-detect format (some clients send JPEG as f=100).
-      image::load_from_memory(data)
-    })
     .map_err(|e| {
       warn!("Failed to decode image: {}", e);
-      format!("Failed to decode image: {e}")
+      KittyProtocolError::invalid(format!("invalid PNG data: {e}"))
     })?;
 
   let rgba = img.to_rgba8();
   let (w, h) = rgba.dimensions();
   Ok((w, h, rgba.into_raw()))
+}
+
+fn pixel_bytes(
+  width: u32,
+  height: u32,
+  channels: usize,
+) -> Result<usize, KittyProtocolError> {
+  (width as usize)
+    .checked_mul(height as usize)
+    .and_then(|pixels| pixels.checked_mul(channels))
+    .ok_or_else(|| KittyProtocolError::invalid("image dimensions overflow"))
 }
 
 #[cfg(test)]

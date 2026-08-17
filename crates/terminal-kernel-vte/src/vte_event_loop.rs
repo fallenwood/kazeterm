@@ -15,6 +15,7 @@ use crate::vte_term::VteTermInner;
 #[allow(dead_code)]
 pub enum VteMsg {
   Input(Cow<'static, [u8]>),
+  ProtocolResponse(Cow<'static, [u8]>),
   Resize(WindowSize),
   Shutdown,
 }
@@ -88,6 +89,10 @@ impl VteEventLoop {
       loop {
         match self.rx.try_recv() {
           Ok(VteMsg::Input(bytes)) => {
+            let _ = self.pty.writer().write_all(&bytes);
+            let _ = self.pty.writer().flush();
+          }
+          Ok(VteMsg::ProtocolResponse(bytes)) => {
             let _ = self.pty.writer().write_all(&bytes);
             let _ = self.pty.writer().flush();
           }

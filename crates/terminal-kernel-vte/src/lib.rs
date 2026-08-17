@@ -25,6 +25,12 @@ impl PtySender for VtePtySender {
     }
   }
 
+  fn send_protocol_response(&self, bytes: Cow<'static, [u8]>) {
+    if !bytes.is_empty() {
+      let _ = self.0.send(VteMsg::ProtocolResponse(bytes));
+    }
+  }
+
   fn send_resize(&self, size: WindowSize) {
     let _ = self.0.send(VteMsg::Resize(size));
   }
