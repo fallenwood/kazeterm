@@ -380,6 +380,11 @@ fn migrated_config_deserializes_to_config_struct() {
   assert_eq!(config.font.size, 18.0);
   assert_eq!(config.pane.divider_width, 6.0);
   assert!(!config.window.start_maximized);
+  assert!(config.animation.enabled);
+  assert_eq!(config.animation.duration_ms, 180);
+  assert_eq!(config.animation.frame_interval_ms, 15);
+  assert_eq!(config.animation.easing, crate::AnimationEasing::EaseInOut);
+  assert!((config.animation.fade_start_opacity - 0.82).abs() < 0.001);
   assert!((config.pane.inactive_opacity - 0.6).abs() < 0.001);
   assert_eq!(config.tab.label_min_width, 60.0);
   assert_eq!(config.tab.label_max_width, 200.0);
@@ -389,6 +394,102 @@ fn migrated_config_deserializes_to_config_struct() {
   assert_eq!(config.auto_update.proxy, None);
   assert_eq!(config.auto_update.last_check_unix_secs, None);
   assert!(!config.auto_update.restore_workspace_once);
+}
+
+#[test]
+fn migrate_20260512_1_adds_animation_config() {
+  let mut config: Value = toml::from_str(
+    r#"
+version = "20260512.1"
+
+[appearance]
+background_opacity = 0.9
+"#,
+  )
+  .unwrap();
+
+  let migrated = apply_migrations(&mut config);
+  assert!(migrated);
+  assert_eq!(
+    config.get("version").unwrap().as_str().unwrap(),
+    CURRENT_CONFIG_VERSION
+  );
+  assert_eq!(
+    get_nested(&config, "animation", "enabled")
+      .unwrap()
+      .as_bool()
+      .unwrap(),
+    true
+  );
+  assert_eq!(
+    get_nested(&config, "animation", "duration_ms")
+      .unwrap()
+      .as_integer()
+      .unwrap(),
+    180
+  );
+  assert_eq!(
+    get_nested(&config, "animation", "frame_interval_ms")
+      .unwrap()
+      .as_integer()
+      .unwrap(),
+    15
+  );
+  assert_eq!(
+    get_nested(&config, "animation", "easing")
+      .unwrap()
+      .as_str()
+      .unwrap(),
+    "ease_in_out"
+  );
+  assert!(
+    (get_nested(&config, "animation", "fade_start_opacity")
+      .unwrap()
+      .as_float()
+      .unwrap()
+      - 0.82)
+      .abs()
+      < 0.001
+  );
+}
+
+#[test]
+fn migrate_20260512_1_preserves_existing_animation_values() {
+  let mut config: Value = toml::from_str(
+    r#"
+version = "20260512.1"
+
+[animation]
+enabled = false
+duration_ms = 320
+frame_interval_ms = 20
+easing = "linear"
+fade_start_opacity = 0.5
+"#,
+  )
+  .unwrap();
+
+  assert!(apply_migrations(&mut config));
+  assert!(
+    !get_nested(&config, "animation", "enabled")
+      .unwrap()
+      .as_bool()
+      .unwrap()
+  );
+  assert_eq!(
+    get_nested(&config, "animation", "duration_ms")
+      .unwrap()
+      .as_integer()
+      .unwrap(),
+    320
+  );
+  assert_eq!(
+    get_nested(&config, "animation", "easing")
+      .unwrap()
+      .as_str()
+      .unwrap(),
+    "linear"
+  );
 }
 
 #[test]

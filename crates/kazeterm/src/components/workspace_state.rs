@@ -181,6 +181,7 @@ impl MainWindow {
     self.reconciling_ui_tree = was_reconciling;
     self.ui_tree = UITreeStore::from_tree(tree.clone());
     self.sync_ui_tree(cx);
+    self.animate_ui_change(window, cx);
   }
 
   pub(crate) fn restore_tab_from_node(

@@ -75,7 +75,7 @@ impl MainWindow {
 
     self.active_tab_drag = None;
     if dragged.source_entity_id == cx.entity_id() {
-      self.reorder_local_tab(dragged.tab_index, target_ix, cx);
+      self.reorder_local_tab(dragged.tab_index, target_ix, window, cx);
       return;
     }
 
@@ -184,7 +184,7 @@ impl MainWindow {
     }
 
     self.sync_ui_tree(cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
     if taken.close_source {
       Self::close_empty_source(dragged.clone(), cx);
     }
@@ -208,6 +208,7 @@ impl MainWindow {
     &mut self,
     tab_index: usize,
     target_ix: Option<usize>,
+    window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     let Some(from_ix) = self.items.iter().position(|item| item.index == tab_index) else {
@@ -231,7 +232,7 @@ impl MainWindow {
     }
 
     self.sync_ui_tree(cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   fn take_external_tab(
@@ -287,7 +288,7 @@ impl MainWindow {
     }
 
     self.sync_ui_tree(cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
     Some((item, self.items.is_empty()))
   }
 
@@ -310,7 +311,7 @@ impl MainWindow {
     self.set_active_tab_direct(target_ix, window, cx);
     self.scroll_to_active_tab = true;
     self.sync_ui_tree(cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   fn prepare_transferred_terminals(

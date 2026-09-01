@@ -252,7 +252,11 @@ impl MainWindow {
     // Mark that we need to scroll tabs to the end after next render
     this.scroll_tabs_to_end = true;
 
-    cx.notify();
+    if this.items.len() == 1 {
+      cx.notify();
+    } else {
+      this.animate_ui_change(window, cx);
+    }
   }
 
   pub(crate) fn active_terminal(&self) -> Option<gpui::Entity<TerminalView>> {
@@ -341,7 +345,7 @@ impl MainWindow {
               Self::focus_terminal(window, &terminal, cx);
             }
             this.resubscribe_tab_terminals(tab_pos, window, cx);
-            cx.notify();
+            this.animate_ui_change(window, cx);
           }
         }
       }
@@ -459,22 +463,32 @@ impl MainWindow {
       self.set_active_tab(new_active_ix, window, cx);
     }
 
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
-  pub(crate) fn move_tab_left(&mut self, tab_ix: usize, cx: &mut Context<Self>) {
+  pub(crate) fn move_tab_left(
+    &mut self,
+    tab_ix: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     if tab_ix > 0 {
       self.items.swap(tab_ix, tab_ix - 1);
       self.active_tab_ix = Some(tab_ix - 1);
-      cx.notify();
+      self.animate_ui_change(window, cx);
     }
   }
 
-  pub(crate) fn move_tab_right(&mut self, tab_ix: usize, cx: &mut Context<Self>) {
+  pub(crate) fn move_tab_right(
+    &mut self,
+    tab_ix: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     if tab_ix + 1 < self.items.len() {
       self.items.swap(tab_ix, tab_ix + 1);
       self.active_tab_ix = Some(tab_ix + 1);
-      cx.notify();
+      self.animate_ui_change(window, cx);
     }
   }
 
@@ -512,11 +526,16 @@ impl MainWindow {
 
     if let Some(item) = self.items.iter_mut().find(|item| item.index == tab_index) {
       item.pinned = pinned;
-      cx.notify();
+      self.animate_ui_change(window, cx);
     }
   }
 
-  pub(crate) fn close_other_tabs(&mut self, keep_tab_index: usize, cx: &mut Context<Self>) {
+  pub(crate) fn close_other_tabs(
+    &mut self,
+    keep_tab_index: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     if self.items.len() <= 1 {
       return;
     }
@@ -530,10 +549,15 @@ impl MainWindow {
       .iter()
       .position(|tab| tab.index == keep_tab_index)
       .or_else(|| (!self.items.is_empty()).then_some(0));
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
-  pub(crate) fn close_tabs_to_right(&mut self, tab_ix: usize, cx: &mut Context<Self>) {
+  pub(crate) fn close_tabs_to_right(
+    &mut self,
+    tab_ix: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     let right_ix = tab_ix + 1;
     if right_ix < self.items.len() {
       self.items = std::mem::take(&mut self.items)
@@ -542,7 +566,7 @@ impl MainWindow {
         .filter_map(|(ix, item)| (ix <= tab_ix || item.pinned).then_some(item))
         .collect();
       self.active_tab_ix = Some(tab_ix.min(self.items.len().saturating_sub(1)));
-      cx.notify();
+      self.animate_ui_change(window, cx);
     }
   }
 

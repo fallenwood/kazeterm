@@ -40,7 +40,7 @@ impl MainWindow {
 
     self.rename_dialog = Some(dialog);
     self._rename_dialog_subscription = Some(subscription);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub(crate) fn on_rename_dialog_event(
@@ -64,7 +64,7 @@ impl MainWindow {
 
     // Refocus the terminal
     self.refocus_active_terminal(window, cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   /// Show close confirmation dialog
@@ -80,7 +80,7 @@ impl MainWindow {
 
     self.close_confirm_dialog = Some(dialog);
     self._close_confirm_subscription = Some(subscription);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub(crate) fn on_close_confirm_event(
@@ -112,7 +112,7 @@ impl MainWindow {
 
         // Refocus the terminal
         self.refocus_active_terminal(window, cx);
-        cx.notify();
+        self.animate_ui_change(window, cx);
       }
     }
   }
@@ -136,7 +136,7 @@ impl MainWindow {
     self.about_dialog = Some(dialog);
     self._about_dialog_subscription = Some(subscription);
     self._about_dialog_event_subscription = Some(event_subscription);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub(crate) fn on_about_dialog_event(
@@ -153,7 +153,7 @@ impl MainWindow {
 
     // Refocus the terminal
     self.refocus_active_terminal(window, cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub(crate) fn on_about_dialog_action_event(
@@ -243,7 +243,7 @@ impl MainWindow {
     self.pending_update = Some(prepared_update);
     self.update_confirm_dialog = Some(dialog);
     self._update_confirm_subscription = Some(subscription);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub(crate) fn on_update_confirm_event(
@@ -261,7 +261,7 @@ impl MainWindow {
         let Some(prepared_update) = self.pending_update.take() else {
           tracing::warn!("Update was confirmed but no prepared update was pending");
           self.refocus_active_terminal(window, cx);
-          cx.notify();
+          self.animate_ui_change(window, cx);
           return;
         };
         let release_tag = prepared_update.release_tag().to_string();
@@ -282,7 +282,7 @@ impl MainWindow {
             });
           }
           self.refocus_active_terminal(window, cx);
-          cx.notify();
+          self.animate_ui_change(window, cx);
         }
       }
       UpdateConfirmEvent::Cancel => {
@@ -298,7 +298,7 @@ impl MainWindow {
           }
         }
         self.refocus_active_terminal(window, cx);
-        cx.notify();
+        self.animate_ui_change(window, cx);
       }
     }
   }
@@ -318,7 +318,7 @@ impl MainWindow {
 
     self.import_alacritty_dialog = Some(dialog);
     self._import_alacritty_subscription = Some(subscription);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub fn prompt_dump_ui_tree_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -438,7 +438,7 @@ impl MainWindow {
     self.import_alacritty_dialog = None;
     self._import_alacritty_subscription = None;
     self.refocus_active_terminal(window, cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   fn handle_dump_ui_tree_prompt_result(
@@ -507,7 +507,7 @@ impl MainWindow {
 
     self.shell_error_dialog = Some(dialog);
     self._shell_error_subscription = Some(subscription);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub(crate) fn on_shell_error_event(
@@ -520,6 +520,6 @@ impl MainWindow {
     self.shell_error_dialog = None;
     self._shell_error_subscription = None;
     self.refocus_active_terminal(window, cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 }

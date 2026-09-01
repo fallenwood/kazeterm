@@ -155,9 +155,9 @@ impl Config {
 #[cfg(test)]
 mod tests {
   use crate::{
-    AppearanceConfig, AutoUpdateConfig, CURRENT_CONFIG_VERSION, ColorsConfig, Config, CursorConfig,
-    FontConfig, KeybindingConfig, NotificationConfig, PaneConfig, Profile, TabConfig,
-    TerminalConfig, ThemeMode, WindowConfig,
+    AnimationConfig, AppearanceConfig, AutoUpdateConfig, CURRENT_CONFIG_VERSION, ColorsConfig,
+    Config, CursorConfig, FontConfig, KeybindingConfig, NotificationConfig, PaneConfig, Profile,
+    TabConfig, TerminalConfig, ThemeMode, WindowConfig,
   };
 
   #[test]
@@ -191,6 +191,7 @@ mod tests {
         background_opacity: 1.0,
         background_blur: false,
       },
+      animation: AnimationConfig::default(),
       font: FontConfig {
         size: 12.0,
         family: "Cascadia Code".into(),

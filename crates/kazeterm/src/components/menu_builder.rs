@@ -150,9 +150,9 @@ pub(super) fn build_tab_context_menu(
       PopupMenuItem::new(move_prev_label)
         .icon(move_prev_icon)
         .disabled(is_first)
-        .on_click(move |_, _window, cx| {
+        .on_click(move |_, window, cx| {
           view_move_left.update(cx, |this, cx| {
-            this.move_tab_left(tab_ix, cx);
+            this.move_tab_left(tab_ix, window, cx);
           });
         }),
     )
@@ -160,9 +160,9 @@ pub(super) fn build_tab_context_menu(
       PopupMenuItem::new(move_next_label)
         .icon(move_next_icon)
         .disabled(is_last)
-        .on_click(move |_, _window, cx| {
+        .on_click(move |_, window, cx| {
           view_move_right.update(cx, |this, cx| {
-            this.move_tab_right(tab_ix, cx);
+            this.move_tab_right(tab_ix, window, cx);
           });
         }),
     )
@@ -171,9 +171,9 @@ pub(super) fn build_tab_context_menu(
       PopupMenuItem::new("Close Other Tabs")
         .icon(IconName::Close)
         .disabled(!can_close_other_tabs)
-        .on_click(move |_, _window, cx| {
+        .on_click(move |_, window, cx| {
           view_close_others.update(cx, |this, cx| {
-            this.close_other_tabs(tab_index, cx);
+            this.close_other_tabs(tab_index, window, cx);
           });
         }),
     )
@@ -181,9 +181,9 @@ pub(super) fn build_tab_context_menu(
       PopupMenuItem::new("Close Tabs to Right")
         .icon(IconName::Close)
         .disabled(!can_close_tabs_to_right)
-        .on_click(move |_, _window, cx| {
+        .on_click(move |_, window, cx| {
           view_close_right.update(cx, |this, cx| {
-            this.close_tabs_to_right(tab_ix, cx);
+            this.close_tabs_to_right(tab_ix, window, cx);
           });
         }),
     )
