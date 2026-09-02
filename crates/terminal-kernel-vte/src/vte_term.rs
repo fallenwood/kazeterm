@@ -1439,13 +1439,17 @@ impl TerminalBackend for VteBackend {
     let selection = s
       .selection_display
       .and_then(|selection| selection_range(&s, selection));
+    let cursor_char = cell_at_state(&s, s.cursor.point).c;
 
     RenderableSnapshot {
       cells,
       mode: s.mode,
       display_offset: offset,
       cursor,
+      cursor_char,
       selection,
+      history_size: s.scrollback.len(),
+      colors: s.colors,
     }
   }
 

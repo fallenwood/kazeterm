@@ -23,8 +23,8 @@ use super::TerminalElement;
 use super::helpers::{is_blank, is_decorative_character, merge_background_regions};
 
 impl TerminalElement {
-  pub fn layout_grid(
-    grid: impl Iterator<Item = IndexedCell>,
+  pub fn layout_grid<'a>(
+    grid: impl Iterator<Item = &'a IndexedCell>,
     start_line_offset: i32,
     text_style: &TextStyle,
     hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
@@ -105,9 +105,9 @@ impl TerminalElement {
         previous_cell_had_extras = cell.extra.is_some();
 
         {
-          if !is_blank(&cell) {
+          if !is_blank(cell) {
             let cell_style = Self::cell_style(
-              &cell,
+              cell,
               fg,
               bg,
               theme,

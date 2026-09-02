@@ -10,7 +10,7 @@ use crate::sync::FairMutex;
 use crate::term::cell::Cell;
 use crate::term::{RenderableCursor, TermMode};
 use crate::vte::ansi::{CursorStyle, Rgb};
-use crate::{Term, grid};
+use crate::{ANSI_COLOR_COUNT, Term, grid};
 
 /// A snapshot of the renderable terminal content, independent of backend.
 pub struct RenderableSnapshot {
@@ -18,7 +18,10 @@ pub struct RenderableSnapshot {
   pub mode: TermMode,
   pub display_offset: usize,
   pub cursor: RenderableCursor,
+  pub cursor_char: char,
   pub selection: Option<SelectionRange>,
+  pub history_size: usize,
+  pub colors: [Option<Rgb>; ANSI_COLOR_COUNT],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -194,12 +197,19 @@ impl<L: EventListener + Send> TerminalBackend for AlacrittyBackend<L> {
       .display_iter
       .map(|ic| (ic.point, ic.cell.clone()))
       .collect();
+    let mut colors = [None; ANSI_COLOR_COUNT];
+    for (index, color) in colors.iter_mut().enumerate() {
+      *color = term.colors()[index];
+    }
     RenderableSnapshot {
       cells,
       mode: content.mode,
       display_offset: content.display_offset,
       cursor: content.cursor,
+      cursor_char: term.grid()[content.cursor.point].c,
       selection: content.selection,
+      history_size: term.history_size(),
+      colors,
     }
   }
 

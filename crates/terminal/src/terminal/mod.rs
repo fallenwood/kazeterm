@@ -144,6 +144,8 @@ pub struct Terminal {
   content_revision: u64,
   /// Content version consumed by the most recent search execution.
   last_search_revision: u64,
+  /// Content version consumed by the most recent render snapshot.
+  last_synced_content_revision: Option<u64>,
 }
 
 impl Terminal {
@@ -196,6 +198,7 @@ impl Terminal {
       search_state: None,
       content_revision: 0,
       last_search_revision: 0,
+      last_synced_content_revision: None,
     }
   }
 
@@ -272,16 +275,6 @@ impl Terminal {
     &self.last_content
   }
 
-  pub fn color_table(
-    &self,
-  ) -> [Option<terminal_kernel::vte::ansi::Rgb>; terminal_kernel::ANSI_COLOR_COUNT] {
-    let mut colors = [None; terminal_kernel::ANSI_COLOR_COUNT];
-    for (index, slot) in colors.iter_mut().enumerate() {
-      *slot = self.term.color_at(index);
-    }
-    colors
-  }
-
   /// Collect a bounded, uniformly sampled representation of the grid.
   pub fn collect_minimap_cells(
     &self,
@@ -345,9 +338,16 @@ impl Terminal {
   }
 
   pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    let mut processed_internal_event = false;
     while let Some(e) = self.events.pop_front() {
+      processed_internal_event = true;
       self.process_terminal_event(&e, window, cx)
     }
+    if !processed_internal_event && self.last_synced_content_revision == Some(self.content_revision)
+    {
+      return;
+    }
+    self.last_synced_content_revision = Some(self.content_revision);
     self.last_content = Self::make_content(&*self.term, &self.last_content);
 
     // Re-run search only when content has actually changed.
@@ -611,7 +611,7 @@ impl Terminal {
     // Adjust search match coordinates when content has shifted.
     // When new output pushes content into scrollback, history_size increases
     // and all grid coordinates shift by the delta.
-    let current_history_size = term.history_size();
+    let current_history_size = content.history_size;
 
     TerminalContent {
       cells,
@@ -620,7 +620,7 @@ impl Terminal {
       selection_text,
       selection: content.selection,
       cursor: content.cursor,
-      cursor_char: term.cell_at(content.cursor.point).c,
+      cursor_char: content.cursor_char,
       terminal_bounds: last_content.terminal_bounds,
       last_hovered_word: last_content.last_hovered_word.clone(),
       history_size: current_history_size,
@@ -631,6 +631,7 @@ impl Terminal {
       search_matches: last_content.search_matches.clone(),
       current_search_match_index: last_content.current_search_match_index,
       image_placements: Vec::new(),
+      color_table: content.colors,
     }
   }
 
@@ -851,6 +852,10 @@ impl Terminal {
 
   fn mark_content_changed(&mut self) {
     self.content_revision = self.content_revision.saturating_add(1);
+  }
+
+  pub(crate) fn content_revision(&self) -> u64 {
+    self.content_revision
   }
 }
 

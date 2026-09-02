@@ -1,4 +1,5 @@
 use std::ops::RangeInclusive;
+use std::sync::Arc;
 
 use gpui::{
   Entity, FocusHandle, Hsla, InteractiveElement, IntoElement, Pixels, Point, ShapedLine,
@@ -21,6 +22,27 @@ mod element_impl;
 mod grid_layout;
 mod helpers;
 mod mouse_handlers;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct GridRenderCacheKey {
+  pub content_revision: u64,
+  pub display_offset: usize,
+  pub theme_identity: usize,
+  pub font_family: gpui::SharedString,
+  pub font_size_bits: u32,
+  pub cell_width_bits: u32,
+  pub minimum_contrast_bits: u32,
+  pub inactive_factor_bits: u32,
+  pub bold_as_bright: bool,
+  pub hovered_range: Option<RangeInclusive<AlacPoint>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct GridRenderCache {
+  pub key: GridRenderCacheKey,
+  pub rects: Arc<[LayoutRect]>,
+  pub batched_text_runs: Arc<[BatchedTextRun]>,
+}
 
 /// Check if the current mouse event originated from a touch screen on Windows.
 #[cfg(target_os = "windows")]
@@ -114,8 +136,8 @@ impl IntoElement for TerminalElement {
 /// The information generated during layout that is necessary for painting.
 pub struct LayoutState {
   hitbox: gpui::Hitbox,
-  batched_text_runs: Vec<BatchedTextRun>,
-  rects: Vec<LayoutRect>,
+  batched_text_runs: Arc<[BatchedTextRun]>,
+  rects: Arc<[LayoutRect]>,
   relative_highlighted_ranges: Vec<(RangeInclusive<AlacPoint>, Hsla)>,
   cursor: Option<CursorLayout>,
   background_color: Hsla,
@@ -132,4 +154,5 @@ pub struct LayoutState {
   minimap_cells: Vec<crate::minimap::MinimapCell>,
   minimap_columns: usize,
   image_placements: Vec<crate::kitty_graphics::VisiblePlacement>,
+  ime_text: Option<ShapedLine>,
 }
