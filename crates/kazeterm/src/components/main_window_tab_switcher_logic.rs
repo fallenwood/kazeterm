@@ -38,14 +38,14 @@ impl MainWindow {
 
     self.update_tab_switcher(cx);
     self.set_active_tab(self.tab_switcher_selection, window, cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
-  pub(crate) fn hide_tab_switcher(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+  pub(crate) fn hide_tab_switcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if self.tab_switcher_visible {
       self.tab_switcher_visible = false;
       self.tab_switcher = None;
-      cx.notify();
+      self.animate_ui_change(window, cx);
     }
   }
 

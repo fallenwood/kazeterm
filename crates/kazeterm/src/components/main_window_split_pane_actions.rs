@@ -148,7 +148,7 @@ impl MainWindow {
 
     // Focus the new terminal
     Self::focus_terminal(window, &new_terminal, cx);
-    cx.notify();
+    self.animate_ui_change(window, cx);
   }
 
   pub fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -189,7 +189,7 @@ impl MainWindow {
 
     if pane_closed {
       self.focus_active_terminal(window, cx);
-      cx.notify();
+      self.animate_ui_change(window, cx);
     }
   }
 
@@ -226,7 +226,7 @@ impl MainWindow {
 
     if toggled {
       self.focus_active_terminal(window, cx);
-      cx.notify();
+      self.animate_ui_change(window, cx);
     }
   }
 
@@ -253,7 +253,7 @@ impl MainWindow {
     if let Some(item) = self.active_tab_item_mut() {
       if let Some(terminal) = item.split_container.focus_next_pane() {
         Self::focus_terminal(window, &terminal, cx);
-        cx.notify();
+        self.animate_ui_change(window, cx);
       }
     }
   }
@@ -281,7 +281,7 @@ impl MainWindow {
     if let Some(item) = self.active_tab_item_mut() {
       if let Some(terminal) = item.split_container.focus_prev_pane() {
         Self::focus_terminal(window, &terminal, cx);
-        cx.notify();
+        self.animate_ui_change(window, cx);
       }
     }
   }
@@ -297,7 +297,7 @@ impl MainWindow {
     if let Some(item) = self.active_tab_item_mut() {
       if let Some(terminal) = item.split_container.focus_pane_in_direction(direction) {
         Self::focus_terminal(window, &terminal, cx);
-        cx.notify();
+        self.animate_ui_change(window, cx);
       }
     }
   }
@@ -318,9 +318,9 @@ impl MainWindow {
     self.focus_pane_in_direction(PaneFocusDirection::Right, window, cx);
   }
 
-  pub fn swap_split_panes(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+  pub fn swap_split_panes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
-      self.sync_active_pane_from_focus(_window, cx);
+      self.sync_active_pane_from_focus(window, cx);
       let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
         return;
       };
@@ -330,17 +330,17 @@ impl MainWindow {
       self.dispatch_default_ui_action(
         UIAction::SwapPanes { window_id, tab_id },
         "swap panes",
-        _window,
+        window,
         cx,
       );
       return;
     }
 
-    self.sync_active_pane_from_focus(_window, cx);
+    self.sync_active_pane_from_focus(window, cx);
 
     if let Some(item) = self.active_tab_item_mut() {
       if item.split_container.swap_panes() {
-        cx.notify();
+        self.animate_ui_change(window, cx);
       }
     }
   }

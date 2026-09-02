@@ -14,9 +14,7 @@ use kazeterm_ui_tree::node::*;
 
 use gpui::{Context, Task, Window, px};
 
-use crate::components::transitions::{
-  UI_TRANSITION_FRAME_DURATION, UI_TRANSITION_FRAMES, interpolate_size,
-};
+use crate::components::transitions::{TransitionSpec, interpolate_size};
 use crate::components::{MainWindow, PaneId, SplitDirection};
 
 impl MainWindow {
@@ -37,13 +35,20 @@ impl MainWindow {
       return;
     }
 
+    let animation = cx.global::<::config::Config>().animation;
+    let Some(transition) = TransitionSpec::from_config(&animation) else {
+      self.window_resize_animation = Task::ready(());
+      window.resize(target);
+      return;
+    };
+
     self.window_resize_animation = cx.spawn_in(window, async move |_this, cx| {
-      for frame in 1..=UI_TRANSITION_FRAMES {
+      for frame in 1..=transition.frames {
         cx.background_executor()
-          .timer(UI_TRANSITION_FRAME_DURATION)
+          .timer(transition.frame_duration)
           .await;
 
-        let progress = frame as f32 / UI_TRANSITION_FRAMES as f32;
+        let progress = transition.progress(frame);
         let next_size = interpolate_size(start, target, progress);
         if cx.update(|window, _cx| window.resize(next_size)).is_err() {
           break;
@@ -204,6 +209,7 @@ impl UITreeStore {
     window: &mut Window,
     cx: &mut Context<MainWindow>,
   ) {
+    let had_visible_content = !main_window.items.is_empty();
     for d in diffs {
       match d {
         TreeDiff::TabAdded { tab, .. } => {
@@ -372,6 +378,14 @@ impl UITreeStore {
         }
       }
     }
+
+    let is_initial_content = !had_visible_content
+      && diffs
+        .iter()
+        .any(|diff| matches!(diff, TreeDiff::TabAdded { .. }));
+    if !is_initial_content && diffs.iter().any(tree_diff_changes_visible_ui) {
+      main_window.animate_ui_change(window, cx);
+    }
   }
 
   /// Convenience: apply an action and immediately reconcile.
@@ -389,6 +403,17 @@ impl UITreeStore {
     main_window.reconciling_ui_tree = was_reconciling;
     Ok(())
   }
+}
+
+fn tree_diff_changes_visible_ui(diff: &TreeDiff) -> bool {
+  !matches!(
+    diff,
+    TreeDiff::WindowAdded { .. }
+      | TreeDiff::WindowRemoved { .. }
+      | TreeDiff::PaneWorkingDirectoryChanged { .. }
+      | TreeDiff::SearchQueryChanged { .. }
+      | TreeDiff::SearchFlagsChanged { .. }
+  )
 }
 
 impl Reconciler for UITreeStore {

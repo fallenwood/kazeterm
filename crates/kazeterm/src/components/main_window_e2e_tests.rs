@@ -7,7 +7,7 @@
 #![cfg(test)]
 
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui::{TestAppContext, WindowHandle};
 use kazeterm_ui_tree::action::UIAction;
@@ -243,7 +243,7 @@ fn configuration_change_fades_ui_and_expands_vertical_sidebar(cx: &mut TestAppCo
   let (initial_opacity, initial_width, target_width) = window
     .update(cx, |root, _window, _cx| {
       (
-        root.configuration_transition_opacity,
+        root.ui_transition_opacity,
         root.vertical_tabbar_render_width,
         root.vertical_tabbar_width,
       )
@@ -257,7 +257,7 @@ fn configuration_change_fades_ui_and_expands_vertical_sidebar(cx: &mut TestAppCo
   let (intermediate_opacity, intermediate_width) = window
     .update(cx, |root, _window, _cx| {
       (
-        root.configuration_transition_opacity,
+        root.ui_transition_opacity,
         root.vertical_tabbar_render_width,
       )
     })
@@ -271,13 +271,120 @@ fn configuration_change_fades_ui_and_expands_vertical_sidebar(cx: &mut TestAppCo
   let (final_opacity, final_width) = window
     .update(cx, |root, _window, _cx| {
       (
-        root.configuration_transition_opacity,
+        root.ui_transition_opacity,
         root.vertical_tabbar_render_width,
       )
     })
     .expect("reading completed configuration transition should succeed");
   assert_eq!(final_opacity, 1.0);
   assert_eq!(final_width, target_width);
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn structural_change_uses_configured_animation_parameters(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  cx.update(|cx| {
+    let mut config = cx.global::<::config::Config>().clone();
+    config.animation.duration_ms = 60;
+    config.animation.frame_interval_ms = 20;
+    config.animation.easing = ::config::AnimationEasing::Linear;
+    config.animation.fade_start_opacity = 0.4;
+    cx.set_global(config);
+  });
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root, window, cx| root.insert_new_tab(window, cx))
+    .expect("adding a tab should succeed");
+  let initial_opacity = window
+    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
+    .expect("reading initial transition opacity should succeed");
+  assert!((initial_opacity - 0.4).abs() < 0.001);
+
+  cx.run_until_parked();
+  cx.executor().advance_clock(Duration::from_millis(20));
+  cx.run_until_parked();
+  let first_frame_opacity = window
+    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
+    .expect("reading intermediate transition opacity should succeed");
+  assert!((first_frame_opacity - 0.6).abs() < 0.001);
+
+  for _ in 0..2 {
+    cx.executor().advance_clock(Duration::from_millis(20));
+    cx.run_until_parked();
+  }
+  let final_opacity = window
+    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
+    .expect("reading final transition opacity should succeed");
+  assert_eq!(final_opacity, 1.0);
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn disabled_animation_applies_changes_immediately(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  cx.update(|cx| {
+    let mut config = cx.global::<::config::Config>().clone();
+    config.tab.vertical = true;
+    config.animation.enabled = false;
+    cx.set_global(config);
+  });
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root, window, cx| root.toggle_tab_bar(window, cx))
+    .expect("hiding the tab bar should succeed");
+  let (sidebar_width, opacity) = window
+    .update(cx, |root, _window, _cx| {
+      (
+        root.vertical_tabbar_render_width,
+        root.ui_transition_opacity,
+      )
+    })
+    .expect("reading immediate transition state should succeed");
+  assert_eq!(sidebar_width, gpui::Pixels::ZERO);
+  assert_eq!(opacity, 1.0);
+
+  let initial_size = window
+    .update(cx, |_root, window, _cx| window.bounds().size)
+    .expect("reading initial size should succeed");
+  let target_size = gpui::size(
+    initial_size.width + gpui::px(120.0),
+    initial_size.height + gpui::px(80.0),
+  );
+  window
+    .update(cx, |root, window, cx| {
+      let window_id = root
+        .sync_ui_tree_and_window_id(cx)
+        .expect("UI tree should contain a window");
+      root
+        .dispatch_ui_action(
+          UIAction::ResizeWindow {
+            window_id,
+            width: f32::from(target_size.width),
+            height: f32::from(target_size.height),
+          },
+          window,
+          cx,
+        )
+        .expect("resize action should dispatch");
+    })
+    .expect("window update should succeed");
+  let resized = window
+    .update(cx, |_root, window, _cx| window.bounds().size)
+    .expect("reading resized window should succeed");
+  assert_eq!(resized, target_size);
 
   clear_terminal_session_factory_for_testing();
 }
@@ -733,8 +840,8 @@ fn pinned_tabs_are_ignored_by_close_tabs_to_right(cx: &mut TestAppContext) {
   cx.run_until_parked();
 
   window
-    .update(cx, |root: &mut MainWindow, _window, cx| {
-      root.close_tabs_to_right(0, cx);
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.close_tabs_to_right(0, window, cx);
       root.sync_ui_tree(cx);
     })
     .expect("closing tabs to the right should succeed");
@@ -786,8 +893,8 @@ fn pinned_tabs_are_ignored_by_close_other_tabs(cx: &mut TestAppContext) {
   cx.run_until_parked();
 
   window
-    .update(cx, |root: &mut MainWindow, _window, cx| {
-      root.close_other_tabs(keep_tab_index, cx);
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.close_other_tabs(keep_tab_index, window, cx);
       root.sync_ui_tree(cx);
     })
     .expect("closing other tabs should succeed");

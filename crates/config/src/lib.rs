@@ -87,6 +87,105 @@ pub struct AppearanceConfig {
   pub background_blur: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AnimationEasing {
+  Linear,
+  EaseIn,
+  EaseOut,
+  #[default]
+  EaseInOut,
+}
+
+impl AnimationEasing {
+  /// Apply the configured easing curve to normalized transition progress.
+  pub fn apply(self, progress: f32) -> f32 {
+    let progress = progress.clamp(0.0, 1.0);
+    match self {
+      Self::Linear => progress,
+      Self::EaseIn => progress * progress,
+      Self::EaseOut => 1.0 - (1.0 - progress) * (1.0 - progress),
+      Self::EaseInOut => gpui::ease_in_out(progress),
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(default)]
+pub struct AnimationConfig {
+  /// Enable transition animations. When disabled, every change is applied immediately.
+  pub enabled: bool,
+  /// Total transition duration in milliseconds. Zero also disables animation.
+  pub duration_ms: u64,
+  /// Requested delay between rendered animation frames in milliseconds.
+  pub frame_interval_ms: u64,
+  /// Easing curve used for geometry and opacity interpolation.
+  pub easing: AnimationEasing,
+  /// Starting opacity for content fade-in transitions.
+  pub fade_start_opacity: f32,
+}
+
+impl Default for AnimationConfig {
+  fn default() -> Self {
+    Self {
+      enabled: true,
+      duration_ms: 180,
+      frame_interval_ms: 15,
+      easing: AnimationEasing::EaseInOut,
+      fade_start_opacity: 0.82,
+    }
+  }
+}
+
+impl AnimationConfig {
+  const MAX_DURATION_MS: u64 = 5_000;
+  const MIN_FRAME_INTERVAL_MS: u64 = 4;
+  const MAX_FRAME_INTERVAL_MS: u64 = 1_000;
+  const MAX_FRAME_COUNT: u32 = 600;
+
+  /// Whether this configuration should produce intermediate animation frames.
+  pub fn is_active(&self) -> bool {
+    self.enabled && self.duration_ms > 0
+  }
+
+  /// Total duration clamped to a safe upper bound.
+  pub fn get_duration(&self) -> std::time::Duration {
+    std::time::Duration::from_millis(self.duration_ms.min(Self::MAX_DURATION_MS))
+  }
+
+  /// Number of frames used by a transition, bounded to avoid runaway repaint loops.
+  pub fn get_frame_count(&self) -> u32 {
+    if !self.is_active() {
+      return 0;
+    }
+
+    let duration_ms = self.get_duration().as_millis().max(1) as u64;
+    let interval_ms = self
+      .frame_interval_ms
+      .clamp(Self::MIN_FRAME_INTERVAL_MS, Self::MAX_FRAME_INTERVAL_MS);
+    duration_ms
+      .div_ceil(interval_ms)
+      .clamp(1, u64::from(Self::MAX_FRAME_COUNT)) as u32
+  }
+
+  /// Effective per-frame duration, adjusted so the configured total duration is exact.
+  pub fn get_frame_duration(&self) -> std::time::Duration {
+    let frames = self.get_frame_count();
+    if frames == 0 {
+      return std::time::Duration::ZERO;
+    }
+    self.get_duration().div_f32(frames as f32)
+  }
+
+  pub fn get_fade_start_opacity(&self) -> f32 {
+    if self.fade_start_opacity.is_finite() {
+      self.fade_start_opacity.clamp(0.0, 1.0)
+    } else {
+      Self::default().fade_start_opacity
+    }
+  }
+}
+
 impl Default for AppearanceConfig {
   fn default() -> Self {
     Self {
@@ -490,6 +589,7 @@ pub struct Config {
   pub imports: Vec<String>,
   pub colors: ColorsConfig,
   pub appearance: AppearanceConfig,
+  pub animation: AnimationConfig,
   pub font: FontConfig,
   pub window: WindowConfig,
   pub tab: TabConfig,
@@ -513,6 +613,7 @@ impl Default for Config {
       imports: Vec::new(),
       colors: ColorsConfig::default(),
       appearance: AppearanceConfig::default(),
+      animation: AnimationConfig::default(),
       font: FontConfig::default(),
       window: WindowConfig::default(),
       tab: TabConfig::default(),
@@ -1064,6 +1165,39 @@ mod tests {
     assert_eq!(to_hex_string(&rgba(34, 85, 136, 255)), "#225588FF");
   }
 
+  #[test]
+  fn animation_config_clamps_timing_and_opacity() {
+    let config = AnimationConfig {
+      duration_ms: 10_000,
+      frame_interval_ms: 1,
+      fade_start_opacity: f32::NAN,
+      ..Default::default()
+    };
+
+    assert_eq!(config.get_duration(), std::time::Duration::from_secs(5));
+    assert_eq!(config.get_frame_count(), 600);
+    assert_eq!(
+      config.get_fade_start_opacity(),
+      AnimationConfig::default().fade_start_opacity
+    );
+  }
+
+  #[test]
+  fn animation_config_disables_frames_with_switch_or_zero_duration() {
+    let disabled = AnimationConfig {
+      enabled: false,
+      ..Default::default()
+    };
+    let zero_duration = AnimationConfig {
+      duration_ms: 0,
+      ..Default::default()
+    };
+
+    assert_eq!(disabled.get_frame_count(), 0);
+    assert_eq!(disabled.get_frame_duration(), std::time::Duration::ZERO);
+    assert_eq!(zero_duration.get_frame_count(), 0);
+  }
+
   fn test_dir(name: &str) -> PathBuf {
     let unique = SystemTime::now()
       .duration_since(UNIX_EPOCH)
@@ -1103,6 +1237,10 @@ imports = ["./kazeterm.windows.toml"]
 [appearance]
 background_opacity = 1.0
 
+[animation]
+enabled = true
+duration_ms = 180
+
 [keybindings]
 "ctrl-alt-c" = "copy"
 "alt-v" = "paste"
@@ -1119,6 +1257,10 @@ BASE = "from-base"
       r##"[appearance]
 background_opacity = 0.4
 
+[animation]
+enabled = false
+duration_ms = 240
+
 [keybindings]
 "ctrl-alt-v" = "paste"
 
@@ -1133,6 +1275,8 @@ EXTRA = "present"
     let defaults = crate::KeybindingConfig::default();
 
     assert_eq!(config.appearance.background_opacity, 0.4);
+    assert!(!config.animation.enabled);
+    assert_eq!(config.animation.duration_ms, 240);
     assert_binding_strings(
       &config.keybindings.copy,
       vec![

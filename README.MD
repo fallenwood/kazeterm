@@ -60,6 +60,24 @@ Enable the bottom-right shortcut inspector with:
 key_debug_mode = true
 ```
 
+### Transition animations
+
+All structural UI changes share one transition configuration. Set `enabled = false`
+to apply changes immediately.
+
+```toml
+[animation]
+enabled = true
+duration_ms = 180
+frame_interval_ms = 15
+# Supported values: "linear", "ease_in", "ease_out", "ease_in_out"
+easing = "ease_in_out"
+fade_start_opacity = 0.82
+```
+
+`duration_ms` is capped at 5000 ms, `frame_interval_ms` is clamped to 4–1000 ms,
+and `fade_start_opacity` is clamped to 0–1.
+
 ### Auto update
 
 Kazeterm can check GitHub releases and apply matching packages for the current
