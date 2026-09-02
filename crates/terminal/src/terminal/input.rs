@@ -187,7 +187,7 @@ impl Terminal {
       Some(state) => {
         self.search_state = Some(state);
         // Run the search immediately so results are available this frame.
-        self.search_fingerprint = (self.term.history_size(), self.last_content.cursor.point);
+        self.last_search_revision = self.content_revision;
         self.last_content.search_matches =
           Self::execute_search(&*self.term, self.search_state.as_ref().unwrap());
         let match_count = self.last_content.search_matches.len();
@@ -301,5 +301,18 @@ mod tests {
         AlacPoint::new(Line(0), Column(12))..=AlacPoint::new(Line(0), Column(14))
       ]
     );
+  }
+
+  #[test]
+  fn content_revision_invalidates_search_without_cursor_or_history_changes() {
+    let (mut terminal, _events, _writes, _resizes) =
+      crate::test_support::fake_terminal_session(8, 2);
+
+    assert!(terminal.set_search_query("prompt".to_string(), true, false, false));
+    assert_eq!(terminal.last_search_revision, terminal.content_revision);
+
+    terminal.mark_content_changed();
+
+    assert_ne!(terminal.last_search_revision, terminal.content_revision);
   }
 }

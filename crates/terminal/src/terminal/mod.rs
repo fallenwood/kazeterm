@@ -139,9 +139,10 @@ pub struct Terminal {
   last_cwd_file_check: Option<std::time::Instant>,
   /// Active search state. When set, search is re-run on content changes.
   pub search_state: Option<SearchState>,
-  /// Fingerprint of terminal content at last search execution.
-  /// Used to skip re-running the search when nothing changed.
-  search_fingerprint: (usize, AlacPoint),
+  /// Monotonic version advanced whenever the emulator grid may have changed.
+  content_revision: u64,
+  /// Content version consumed by the most recent search execution.
+  last_search_revision: u64,
 }
 
 impl Terminal {
@@ -192,7 +193,8 @@ impl Terminal {
       cwd_file_mtime: None,
       last_cwd_file_check: None,
       search_state: None,
-      search_fingerprint: (0, AlacPoint::new(AlacLine(0), AlacColumn(0))),
+      content_revision: 0,
+      last_search_revision: 0,
     }
   }
 
@@ -320,9 +322,8 @@ impl Terminal {
 
     // Re-run search only when content has actually changed.
     if let Some(search_state) = &self.search_state {
-      let fingerprint = (self.term.history_size(), self.last_content.cursor.point);
-      if fingerprint != self.search_fingerprint {
-        self.search_fingerprint = fingerprint;
+      if self.content_revision != self.last_search_revision {
+        self.last_search_revision = self.content_revision;
         let old_count = self.last_content.search_matches.len();
         self.last_content.search_matches = Self::execute_search(&*self.term, search_state);
         let new_count = self.last_content.search_matches.len();
@@ -656,6 +657,7 @@ impl Terminal {
       }
       AlacTermEvent::MouseCursorDirty => {}
       AlacTermEvent::Wakeup => {
+        self.mark_content_changed();
         cx.emit(Event::Wakeup);
 
         // Run prompt detection on every wakeup so background terminals
@@ -710,6 +712,7 @@ impl Terminal {
         self
           .term
           .resize(new_bounds.num_lines(), new_bounds.num_columns());
+        self.mark_content_changed();
       }
       InternalEvent::Clear => {}
       InternalEvent::Scroll(scroll) => {
@@ -814,6 +817,10 @@ impl Terminal {
         self.process_hyperlink(hyperlink.clone(), *open, cx);
       }
     }
+  }
+
+  fn mark_content_changed(&mut self) {
+    self.content_revision = self.content_revision.saturating_add(1);
   }
 }
 
