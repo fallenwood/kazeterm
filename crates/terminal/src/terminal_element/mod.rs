@@ -129,6 +129,7 @@ pub struct LayoutState {
   minimap_state: Option<MinimapState>,
   minimap_bounds: Option<gpui::Bounds<Pixels>>,
   color_table: [Option<Rgb>; ANSI_COLOR_COUNT],
-  minimap_cells: Vec<crate::indexed_cell::IndexedCell>,
+  minimap_cells: Vec<crate::minimap::MinimapCell>,
+  minimap_columns: usize,
   image_placements: Vec<crate::kitty_graphics::VisiblePlacement>,
 }

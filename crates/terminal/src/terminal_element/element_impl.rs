@@ -13,7 +13,9 @@ use crate::{
   cursor_layout::CursorLayout,
   highlighted_range_line::HighlightedRange,
   mappings::colors::resolve_palette_index,
-  minimap::{MINIMAP_WIDTH, MinimapState, paint_minimap},
+  minimap::{
+    MINIMAP_WIDTH, MinimapState, minimap_column_capacity, minimap_line_capacity, paint_minimap,
+  },
   scrollbar::{MIN_THUMB_HEIGHT, SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
   terminal_input_handler::TerminalInputHandler,
 };
@@ -153,14 +155,17 @@ impl Element for TerminalElement {
           terminal.sync(window, cx);
         });
 
-        let (minimap_cells, color_table) = {
+        let (minimap_cells, minimap_columns, color_table) = {
           let terminal = self.terminal.read(cx);
-          let minimap_cells = if minimap_enabled {
-            terminal.collect_minimap_cells()
+          let (minimap_cells, minimap_columns) = if minimap_enabled {
+            terminal.collect_minimap_cells(
+              minimap_line_capacity(bounds.size.height),
+              minimap_column_capacity(minimap_width),
+            )
           } else {
-            Vec::new()
+            (Vec::new(), 0)
           };
-          (minimap_cells, terminal.color_table())
+          (minimap_cells, minimap_columns, terminal.color_table())
         };
         let terminal_background_color =
           resolve_palette_index(BACKGROUND_COLOR_INDEX, theme.as_ref(), &color_table);
@@ -341,6 +346,7 @@ impl Element for TerminalElement {
           minimap_bounds,
           color_table,
           minimap_cells,
+          minimap_columns,
           image_placements,
         };
 
@@ -639,7 +645,7 @@ impl Element for TerminalElement {
           *minimap_bounds,
           &layout.minimap_cells,
           minimap_state.visible_lines,
-          layout.dimensions.columns(),
+          layout.minimap_columns,
           minimap_state,
           theme,
           &layout.color_table,

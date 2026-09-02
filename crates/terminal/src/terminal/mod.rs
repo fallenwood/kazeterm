@@ -14,6 +14,7 @@ use crate::{
     ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
     PlacementManager, RawGraphicsCommand,
   },
+  minimap::{MinimapCell, sampled_line_indices},
   mouse::grid_point_and_side,
   pty_info::PtyProcessInfo,
   terminal_content::TerminalContent,
@@ -24,7 +25,7 @@ use terminal_kernel::{
   SelectionDisplay, TerminalBackend,
   event::Event as AlacTermEvent,
   grid::{Dimensions as _, Scroll},
-  index::{Column as AlacColumn, Direction, Line as AlacLine, Point as AlacPoint, Side},
+  index::{Direction, Line as AlacLine, Point as AlacPoint, Side},
   selection::Selection,
 };
 use themeing::ActiveTheme;
@@ -281,31 +282,60 @@ impl Terminal {
     colors
   }
 
-  /// Collect all grid cells (history + visible) for minimap rendering.
-  /// Returns cells with 0-based line numbers (0 = oldest history line).
-  pub fn collect_minimap_cells(&self) -> Vec<IndexedCell> {
+  /// Collect a bounded, uniformly sampled representation of the grid.
+  pub fn collect_minimap_cells(
+    &self,
+    max_lines: usize,
+    max_columns: usize,
+  ) -> (Vec<MinimapCell>, usize) {
     let history_size = self.term.history_size();
     let screen_lines = self.term.screen_lines();
     let columns = self.term.columns();
     let total_lines = history_size + screen_lines;
 
-    let mut cells = Vec::new();
-    for line_idx in 0..total_lines {
-      let original_line = line_idx as i32 - history_size as i32;
-      for col_idx in 0..columns {
-        let cell = self
-          .term
-          .cell_at(AlacPoint::new(AlacLine(original_line), AlacColumn(col_idx)));
-        if cell.c != ' ' && cell.c != '\t' && cell.c != '\0' {
-          cells.push(IndexedCell {
-            point: AlacPoint::new(AlacLine(line_idx as i32), AlacColumn(col_idx)),
-            cell,
-          });
-        }
-      }
+    if total_lines == 0 || columns == 0 {
+      return (Vec::new(), 0);
     }
 
-    cells
+    let sampled_lines = sampled_line_indices(total_lines, max_lines);
+    let source_lines: Vec<_> = sampled_lines
+      .iter()
+      .map(|line| AlacLine(*line as i32 - history_size as i32))
+      .collect();
+    let sampled_columns = columns.min(max_columns.max(1));
+    let mut colors = vec![None; sampled_lines.len() * sampled_columns];
+
+    self
+      .term
+      .iter_selected_lines(&source_lines, &mut |sampled_line, point, cell| {
+        if matches!(cell.c, ' ' | '\t' | '\0') {
+          return;
+        }
+        let sampled_column = point.column.0 * sampled_columns / columns;
+        let color = if cell
+          .flags
+          .contains(terminal_kernel::term::cell::Flags::INVERSE)
+        {
+          cell.bg
+        } else {
+          cell.fg
+        };
+        colors[sampled_line * sampled_columns + sampled_column] = Some(color);
+      });
+
+    let cells = colors
+      .into_iter()
+      .enumerate()
+      .filter_map(|(index, color)| {
+        color.map(|color| MinimapCell {
+          line: index / sampled_columns,
+          column: index % sampled_columns,
+          color,
+        })
+      })
+      .collect();
+
+    (cells, sampled_columns)
   }
 
   pub fn set_size(&mut self, new_bounds: TerminalBounds) {

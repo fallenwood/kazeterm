@@ -1695,6 +1695,23 @@ impl TerminalBackend for VteBackend {
     }
   }
 
+  fn iter_selected_lines(&self, lines: &[Line], f: &mut dyn FnMut(usize, AlacPoint, &Cell)) {
+    let state = self.state.lock();
+    let topmost_line = -(state.scrollback.len() as i32);
+    let bottommost_line = state.num_lines as i32 - 1;
+
+    for (selected_index, &line) in lines.iter().enumerate() {
+      if line.0 < topmost_line || line.0 > bottommost_line {
+        continue;
+      }
+      for column in 0..state.num_cols {
+        let point = AlacPoint::new(line, Column(column));
+        let cell = cell_at_state(&state, point);
+        f(selected_index, point, &cell);
+      }
+    }
+  }
+
   fn line_search_left(&self, point: AlacPoint) -> AlacPoint {
     let s = self.state.lock();
     line_search_left_state(&s, point)
