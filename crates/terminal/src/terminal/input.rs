@@ -5,10 +5,88 @@ use std::sync::atomic::Ordering;
 use gpui::{Context, Keystroke};
 use terminal_kernel::{
   grid::Scroll,
-  index::{Column, Point as AlacPoint},
+  index::{Column, Line, Point as AlacPoint},
 };
 
 use super::{Event, InternalEvent, Terminal};
+
+fn is_word_char(c: char) -> bool {
+  c.is_alphanumeric() || c == '_'
+}
+
+fn find_matches_simple(
+  line: &str,
+  query: &str,
+  match_case: bool,
+  match_whole: bool,
+) -> Vec<(usize, usize)> {
+  let mut matches = Vec::new();
+  let (search_line, search_query) = if match_case {
+    (line.to_string(), query.to_string())
+  } else {
+    (line.to_lowercase(), query.to_lowercase())
+  };
+
+  let mut start = 0;
+  while let Some(pos) = search_line[start..].find(&search_query) {
+    let match_start = start + pos;
+    let match_end = match_start + query.len();
+
+    if match_whole {
+      let before_ok =
+        match_start == 0 || !is_word_char(line[..match_start].chars().last().unwrap_or(' '));
+      let after_ok =
+        match_end >= line.len() || !is_word_char(line[match_end..].chars().next().unwrap_or(' '));
+      if before_ok && after_ok {
+        matches.push((match_start, match_end));
+      }
+    } else {
+      matches.push((match_start, match_end));
+    }
+    start = match_start + 1;
+  }
+  matches
+}
+
+fn append_line_matches(
+  line_number: Line,
+  current_line_text: &str,
+  search_state: &super::SearchState,
+  match_ranges: &mut Vec<std::ops::RangeInclusive<AlacPoint>>,
+) {
+  let trimmed_len = current_line_text.trim_end().len();
+  if trimmed_len == 0 {
+    return;
+  }
+
+  let line_matches: Vec<(usize, usize)> = if let Some(ref regex) = search_state.compiled_regex {
+    regex
+      .find_iter(&current_line_text[..trimmed_len])
+      .map(|m| (m.start(), m.end()))
+      .collect()
+  } else {
+    find_matches_simple(
+      &current_line_text[..trimmed_len],
+      &search_state.query,
+      search_state.match_case,
+      search_state.match_whole,
+    )
+  };
+
+  for (byte_start, byte_end) in line_matches {
+    // Convert byte offsets to cell indices. Each terminal cell stores one
+    // char, including wide-character spacer cells.
+    let start_column = current_line_text[..byte_start].chars().count();
+    let end_column = current_line_text[..byte_end]
+      .chars()
+      .count()
+      .saturating_sub(1);
+    match_ranges.push(
+      AlacPoint::new(line_number, Column(start_column))
+        ..=AlacPoint::new(line_number, Column(end_column)),
+    );
+  }
+}
 
 impl Terminal {
   pub fn get_content(&self) -> String {
@@ -138,98 +216,36 @@ impl Terminal {
     term: &dyn terminal_kernel::TerminalBackend,
     search_state: &super::SearchState,
   ) -> Vec<std::ops::RangeInclusive<AlacPoint>> {
-    fn is_word_char(c: char) -> bool {
-      c.is_alphanumeric() || c == '_'
-    }
-
-    fn find_matches_simple(
-      line: &str,
-      query: &str,
-      match_case: bool,
-      match_whole: bool,
-    ) -> Vec<(usize, usize)> {
-      let mut matches = Vec::new();
-      let (search_line, search_query) = if match_case {
-        (line.to_string(), query.to_string())
-      } else {
-        (line.to_lowercase(), query.to_lowercase())
-      };
-
-      let mut start = 0;
-      while let Some(pos) = search_line[start..].find(&search_query) {
-        let match_start = start + pos;
-        let match_end = match_start + query.len();
-
-        if match_whole {
-          let before_ok =
-            match_start == 0 || !is_word_char(line[..match_start].chars().last().unwrap_or(' '));
-          let after_ok = match_end >= line.len()
-            || !is_word_char(line[match_end..].chars().next().unwrap_or(' '));
-          if before_ok && after_ok {
-            matches.push((match_start, match_end));
-          }
-        } else {
-          matches.push((match_start, match_end));
-        }
-        start = match_start + 1;
-      }
-      matches
-    }
-
     let topmost_line = term.topmost_line();
-    let bottommost_line = term.bottommost_line();
     let columns = term.columns();
 
     let mut match_ranges = Vec::new();
-    let mut line = topmost_line;
-    while line <= bottommost_line {
-      let mut current_line_text = String::new();
-      let mut current_line_cells = Vec::new();
+    let mut current_line_number = topmost_line;
+    let mut current_line_text = String::with_capacity(columns);
 
-      for col in 0..columns {
-        let point = AlacPoint::new(line, Column(col));
-        let cell = term.cell_at(point);
-        current_line_text.push(cell.c);
-        current_line_cells.push(point);
-      }
-
-      let trimmed_len = current_line_text.trim_end().len();
-
-      if trimmed_len > 0 {
-        let line_matches: Vec<(usize, usize)> = if let Some(ref regex) = search_state.compiled_regex
-        {
-          regex
-            .find_iter(&current_line_text[..trimmed_len])
-            .map(|m| (m.start(), m.end()))
-            .collect()
-        } else {
-          find_matches_simple(
-            &current_line_text[..trimmed_len],
-            &search_state.query,
-            search_state.match_case,
-            search_state.match_whole,
-          )
-        };
-
-        for (byte_start, byte_end) in line_matches {
-          // Convert byte offsets to character indices (= cell indices),
-          // since multibyte chars (e.g. "→") occupy 1 cell but multiple bytes.
-          let start_pos = current_line_text[..byte_start].chars().count();
-          let end_pos = current_line_text[..byte_end]
-            .chars()
-            .count()
-            .saturating_sub(1);
-          if start_pos < current_line_cells.len() {
-            let match_start = current_line_cells[start_pos];
-            let match_end_idx = end_pos.min(current_line_cells.len().saturating_sub(1));
-            let match_end = current_line_cells[match_end_idx];
-            match_ranges.push(match_start..=match_end);
-          }
+    term.iter_from(
+      AlacPoint::new(topmost_line, Column(0)),
+      &mut |point, cell| {
+        if point.line != current_line_number {
+          append_line_matches(
+            current_line_number,
+            &current_line_text,
+            search_state,
+            &mut match_ranges,
+          );
+          current_line_text.clear();
+          current_line_number = point.line;
         }
-      }
-
-      line += 1;
-    }
+        current_line_text.push(cell.c);
+        true
+      },
+    );
+    append_line_matches(
+      current_line_number,
+      &current_line_text,
+      search_state,
+      &mut match_ranges,
+    );
 
     match_ranges
   }
@@ -251,5 +267,39 @@ impl Terminal {
   /// Write the Input payload to the tty.
   pub(super) fn write_to_pty(&self, input: impl Into<Cow<'static, [u8]>>) {
     self.pty_tx.send_input(input.into());
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn line_search_maps_utf8_offsets_to_terminal_columns() {
+    let state = super::super::SearchState::new("→".to_string(), true, false, false).unwrap();
+    let mut matches = Vec::new();
+
+    append_line_matches(Line(-2), "a→b ", &state, &mut matches);
+
+    assert_eq!(
+      matches,
+      vec![AlacPoint::new(Line(-2), Column(1))..=AlacPoint::new(Line(-2), Column(1))]
+    );
+  }
+
+  #[test]
+  fn whole_word_search_rejects_embedded_matches() {
+    let state = super::super::SearchState::new("cat".to_string(), true, true, false).unwrap();
+    let mut matches = Vec::new();
+
+    append_line_matches(Line(0), "cat scatter cat", &state, &mut matches);
+
+    assert_eq!(
+      matches,
+      vec![
+        AlacPoint::new(Line(0), Column(0))..=AlacPoint::new(Line(0), Column(2)),
+        AlacPoint::new(Line(0), Column(12))..=AlacPoint::new(Line(0), Column(14))
+      ]
+    );
   }
 }
