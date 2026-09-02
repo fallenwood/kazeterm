@@ -11,7 +11,8 @@
 
 - `TransitionSpec` converts runtime configuration into cancellable GPUI frame loops.
 - Window resize and vertical tab-bar width interpolation now use configured timing and easing.
-- Visible UI-tree diffs share a root content fade, covering tabs, panes, search visibility, overlays, window state, and reordering at the common reconciliation boundary.
+- Visible UI-tree diffs share a root content fade, covering panes, search visibility, overlays, window state, and reordering at the common reconciliation boundary.
+- Creating or switching tabs does not fade the terminal; those diffs skip the shared opacity animation.
 - Direct presentation changes also trigger the shared fade: dialogs, tab switcher, tab context operations and transfers, hidden/focused/swapped panes, and loaded UI-tree replacement.
 - Initial window content is not faded. With animation disabled or duration zero, geometry and opacity move directly to final values.
 
