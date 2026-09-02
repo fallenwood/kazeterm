@@ -14,6 +14,20 @@ fn is_word_char(c: char) -> bool {
   c.is_alphanumeric() || c == '_'
 }
 
+fn lowercase_with_source_ranges(value: &str) -> (String, Vec<(usize, usize)>) {
+  let mut lowercase = String::with_capacity(value.len());
+  let mut source_ranges = Vec::with_capacity(value.len());
+
+  for (source_start, c) in value.char_indices() {
+    let source_end = source_start + c.len_utf8();
+    lowercase.extend(c.to_lowercase());
+    // Lowercasing can expand one source character into multiple UTF-8 bytes.
+    source_ranges.resize(lowercase.len(), (source_start, source_end));
+  }
+
+  (lowercase, source_ranges)
+}
+
 fn find_matches_simple(
   line: &str,
   query: &str,
@@ -21,16 +35,33 @@ fn find_matches_simple(
   match_whole: bool,
 ) -> Vec<(usize, usize)> {
   let mut matches = Vec::new();
-  let (search_line, search_query) = if match_case {
-    (line.to_string(), query.to_string())
+  if query.is_empty() {
+    return matches;
+  }
+
+  let (search_line, search_query, source_ranges) = if match_case {
+    (Cow::Borrowed(line), Cow::Borrowed(query), None)
   } else {
-    (line.to_lowercase(), query.to_lowercase())
+    let (lowercase_line, source_ranges) = lowercase_with_source_ranges(line);
+    (
+      Cow::Owned(lowercase_line),
+      Cow::Owned(query.to_lowercase()),
+      Some(source_ranges),
+    )
   };
 
   let mut start = 0;
-  while let Some(pos) = search_line[start..].find(&search_query) {
-    let match_start = start + pos;
-    let match_end = match_start + query.len();
+  while let Some(pos) = search_line[start..].find(search_query.as_ref()) {
+    let search_match_start = start + pos;
+    let search_match_end = search_match_start + search_query.len();
+    let (match_start, match_end) = if let Some(source_ranges) = &source_ranges {
+      (
+        source_ranges[search_match_start].0,
+        source_ranges[search_match_end - 1].1,
+      )
+    } else {
+      (search_match_start, search_match_end)
+    };
 
     if match_whole {
       let before_ok =
@@ -43,7 +74,12 @@ fn find_matches_simple(
     } else {
       matches.push((match_start, match_end));
     }
-    start = match_start + 1;
+    start = search_match_start
+      + search_line[search_match_start..]
+        .chars()
+        .next()
+        .unwrap()
+        .len_utf8();
   }
   matches
 }
@@ -284,6 +320,19 @@ mod tests {
     assert_eq!(
       matches,
       vec![AlacPoint::new(Line(-2), Column(1))..=AlacPoint::new(Line(-2), Column(1))]
+    );
+  }
+
+  #[test]
+  fn case_insensitive_line_search_preserves_utf8_source_offsets() {
+    let state = super::super::SearchState::new("X".to_string(), false, false, false).unwrap();
+    let mut matches = Vec::new();
+
+    append_line_matches(Line(1), "İx ", &state, &mut matches);
+
+    assert_eq!(
+      matches,
+      vec![AlacPoint::new(Line(1), Column(1))..=AlacPoint::new(Line(1), Column(1))]
     );
   }
 
