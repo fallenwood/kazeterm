@@ -11,8 +11,9 @@ use crate::{
   TerminalBounds,
   indexed_cell::IndexedCell,
   kitty_graphics::{
-    ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
-    PlacementManager, RawGraphicsCommand,
+    GRAPHICS_BATCH_SIZE, ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage,
+    PlacementManager, PreparedGraphicsEvent, PreparedImage, RawGraphicsCommand,
+    spawn_graphics_worker,
   },
   minimap::{MinimapCell, sampled_line_indices},
   mouse::grid_point_and_side,
@@ -121,7 +122,6 @@ pub struct Terminal {
   pub last_input_time: std::time::Instant,
   /// Kitty graphics protocol state.
   graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
-  graphics_parser: KittyParser,
   pub image_storage: KittyImageStorage,
   pub placement_manager: PlacementManager,
   /// Shared atomic for signaling cursor advancement to the PTY filter.
@@ -185,7 +185,6 @@ impl Terminal {
       touch_state: None,
       last_input_time: std::time::Instant::now(),
       graphics_rx,
-      graphics_parser: KittyParser::new(),
       image_storage: KittyImageStorage::new(),
       placement_manager: PlacementManager::new(),
       pending_cnl,
@@ -338,6 +337,7 @@ impl Terminal {
   }
 
   pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.start_graphics_worker(cx);
     let mut processed_internal_event = false;
     while let Some(e) = self.events.pop_front() {
       processed_internal_event = true;
@@ -369,9 +369,6 @@ impl Terminal {
     let history_size = self.term.history_size() as i32;
     let display_offset = self.last_content.display_offset as i32;
 
-    // Process graphics commands AFTER terminal events so terminal_bounds is up to date.
-    self.process_graphics_commands();
-
     // Detect shell prompt returns and update CWD (non-blocking).
     self.process_prompt_detection(cx);
 
@@ -385,31 +382,54 @@ impl Terminal {
         .visible_placements(&self.image_storage, viewport_top, viewport_lines);
   }
 
-  fn process_graphics_commands(&mut self) {
-    // Drain all available graphics commands (non-blocking).
-    let mut raw_commands: Vec<RawGraphicsCommand> = Vec::new();
-    if let Some(rx) = &self.graphics_rx {
-      while let Ok(raw_cmd) = rx.try_recv() {
-        raw_commands.push(raw_cmd);
-      }
-    }
+  fn start_graphics_worker(&mut self, cx: &mut Context<Self>) {
+    let Some(raw_rx) = self.graphics_rx.take() else {
+      return;
+    };
+    let prepared_rx = spawn_graphics_worker(raw_rx);
 
-    for raw_cmd in raw_commands {
-      if raw_cmd.clear_all {
+    cx.spawn(async move |this, cx| {
+      while let Ok(first_event) = prepared_rx.recv().await {
+        let mut events = Vec::with_capacity(GRAPHICS_BATCH_SIZE);
+        events.push(first_event);
+        while events.len() < GRAPHICS_BATCH_SIZE {
+          let Ok(event) = prepared_rx.try_recv() else {
+            break;
+          };
+          events.push(event);
+        }
+
+        if this
+          .update(cx, |terminal, cx| {
+            for event in events {
+              terminal.apply_graphics_event(event);
+            }
+            terminal.mark_content_changed();
+            cx.notify();
+          })
+          .is_err()
+        {
+          break;
+        }
+        smol::future::yield_now().await;
+      }
+    })
+    .detach();
+  }
+
+  fn apply_graphics_event(&mut self, event: PreparedGraphicsEvent) {
+    match event {
+      PreparedGraphicsEvent::ClearAll => {
         self.placement_manager.clear();
         self.image_storage.clear();
-        continue;
       }
-      let cursor_line = raw_cmd.cursor_line;
-      let cursor_column = raw_cmd.cursor_column;
-      if let Some(cmd) = self.graphics_parser.parse(&raw_cmd.data) {
-        self.execute_graphics_command(&cmd, cursor_line, cursor_column);
-      }
+      PreparedGraphicsEvent::Command {
+        command,
+        image,
+        cursor_line,
+        cursor_column,
+      } => self.execute_graphics_command(&command, image, cursor_line, cursor_column),
     }
-    // Note: Kitty protocol responses are intentionally NOT sent back.
-    // Our architecture intercepts APC on the read side, so write_to_pty
-    // would send responses to the shell's stdin (appearing as typed text).
-    // Tools like kitten icat use q=2 (suppress all) and handle timeouts.
   }
 
   /// Detect shell prompt returns and update CWD.
@@ -474,14 +494,27 @@ impl Terminal {
     }
   }
 
-  fn execute_graphics_command(&mut self, cmd: &KittyCommand, cursor_line: i32, cursor_column: i32) {
+  fn execute_graphics_command(
+    &mut self,
+    cmd: &KittyCommand,
+    prepared_image: Option<PreparedImage>,
+    cursor_line: i32,
+    cursor_column: i32,
+  ) {
     match cmd.action {
       KittyAction::Transmit => {
-        let _ = self.image_storage.store(cmd);
+        if let Some(image) = prepared_image
+          && let Err(error) = self.image_storage.store_prepared(cmd.image_id, image)
+        {
+          tracing::warn!("Failed to store Kitty image: {error}");
+        }
       }
       KittyAction::TransmitAndDisplay => {
-        if let Ok(id) = self.image_storage.store(cmd) {
-          self.place_image(id, cmd, cursor_line, cursor_column);
+        if let Some(image) = prepared_image {
+          match self.image_storage.store_prepared(cmd.image_id, image) {
+            Ok(id) => self.place_image(id, cmd, cursor_line, cursor_column),
+            Err(error) => tracing::warn!("Failed to store Kitty image: {error}"),
+          }
         }
       }
       KittyAction::Display => {
