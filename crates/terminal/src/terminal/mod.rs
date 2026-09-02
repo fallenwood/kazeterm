@@ -1,5 +1,11 @@
 use std::sync::atomic::AtomicU32;
-use std::{cmp, collections::VecDeque, process::ExitStatus, sync::Arc};
+use std::{
+  cmp,
+  collections::VecDeque,
+  process::ExitStatus,
+  sync::Arc,
+  time::{Duration, Instant},
+};
 
 use crate::{
   TerminalBounds,
@@ -33,6 +39,14 @@ pub use events::TerminalEventListener;
 pub use search::SearchState;
 #[allow(unused_imports)]
 pub use touch::{TouchMode, TouchState};
+
+const PROCESS_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
+
+fn process_refresh_due(last_refresh: Option<Instant>, now: Instant) -> bool {
+  last_refresh.is_none_or(|last_refresh| {
+    now.saturating_duration_since(last_refresh) >= PROCESS_REFRESH_INTERVAL
+  })
+}
 
 #[derive(Clone)]
 pub enum InternalEvent {
@@ -97,6 +111,7 @@ pub struct Terminal {
   pub previous_title_text: String,
   pub next_link_id: usize,
   pub process_changed_at: Option<std::time::Instant>,
+  last_process_refresh: Option<Instant>,
   pub scroll_velocity: f32,
   pub last_scroll_time: Option<std::time::Instant>,
   pub touch_state: Option<TouchState>,
@@ -160,6 +175,7 @@ impl Terminal {
       previous_title_text: "".to_string(),
       next_link_id: 0,
       process_changed_at: None,
+      last_process_refresh: None,
       scroll_velocity: 0.0,
       last_scroll_time: None,
       touch_state: None,
@@ -647,12 +663,16 @@ impl Terminal {
         // still emit PromptReturned and trigger notifications.
         self.process_prompt_detection(cx);
 
-        if self.pty_info.has_changed()
-          && let Some(info) = &self.pty_info.current
-        {
-          self.title_text = info.name.clone();
-          self.process_changed_at = Some(std::time::Instant::now());
-          cx.emit(Event::TitleChanged);
+        let now = Instant::now();
+        if process_refresh_due(self.last_process_refresh, now) {
+          self.last_process_refresh = Some(now);
+          if self.pty_info.has_changed()
+            && let Some(info) = &self.pty_info.current
+          {
+            self.title_text = info.name.clone();
+            self.process_changed_at = Some(now);
+            cx.emit(Event::TitleChanged);
+          }
         }
       }
       AlacTermEvent::ColorRequest(index, format) => {
@@ -825,7 +845,19 @@ fn should_hide_mouse_cursor(
 mod tests {
   use std::time::{Duration, Instant};
 
-  use super::should_hide_mouse_cursor;
+  use super::{PROCESS_REFRESH_INTERVAL, process_refresh_due, should_hide_mouse_cursor};
+
+  #[test]
+  fn process_refresh_is_immediate_then_throttled() {
+    let now = Instant::now();
+
+    assert!(process_refresh_due(None, now));
+    assert!(!process_refresh_due(Some(now), now));
+    assert!(process_refresh_due(
+      Some(now),
+      now + PROCESS_REFRESH_INTERVAL
+    ));
+  }
 
   #[test]
   fn hide_mouse_cursor_when_input_is_newer_than_mouse_activity() {
