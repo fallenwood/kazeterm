@@ -13,7 +13,9 @@ use crate::{
   cursor_layout::CursorLayout,
   highlighted_range_line::HighlightedRange,
   mappings::colors::resolve_palette_index,
-  minimap::{MINIMAP_WIDTH, MinimapState, paint_minimap},
+  minimap::{
+    MINIMAP_WIDTH, MinimapState, minimap_column_capacity, minimap_line_capacity, paint_minimap,
+  },
   scrollbar::{MIN_THUMB_HEIGHT, SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
   terminal_input_handler::TerminalInputHandler,
 };
@@ -21,7 +23,7 @@ use crate::{
 use super::TerminalBounds;
 use super::TerminalContent;
 use super::helpers::{DisplayCursor, to_highlighted_range_lines};
-use super::{LayoutState, TerminalElement};
+use super::{GridRenderCache, GridRenderCacheKey, LayoutState, TerminalElement};
 
 impl Element for TerminalElement {
   type RequestLayoutState = ();
@@ -153,14 +155,22 @@ impl Element for TerminalElement {
           terminal.sync(window, cx);
         });
 
-        let (minimap_cells, color_table) = {
+        let (minimap_cells, minimap_columns, color_table, content_revision) = {
           let terminal = self.terminal.read(cx);
-          let minimap_cells = if minimap_enabled {
-            terminal.collect_minimap_cells()
+          let (minimap_cells, minimap_columns) = if minimap_enabled {
+            terminal.collect_minimap_cells(
+              minimap_line_capacity(bounds.size.height),
+              minimap_column_capacity(minimap_width),
+            )
           } else {
-            Vec::new()
+            (Vec::new(), 0)
           };
-          (minimap_cells, terminal.color_table())
+          (
+            minimap_cells,
+            minimap_columns,
+            terminal.last_content.color_table,
+            terminal.content_revision(),
+          )
         };
         let terminal_background_color =
           resolve_palette_index(BACKGROUND_COLOR_INDEX, theme.as_ref(), &color_table);
@@ -222,18 +232,60 @@ impl Element for TerminalElement {
           relative_highlighted_ranges.push((selection.start..=selection.end, selection_color));
         }
 
-        let (rects, batched_text_runs) = TerminalElement::layout_grid(
-          cells.iter().cloned(),
-          0,
-          &text_style,
-          last_hovered_word
-            .as_ref()
-            .map(|last_hovered_word| (link_style, &last_hovered_word.word_match)),
-          minimum_contrast,
+        let hovered_range = last_hovered_word
+          .as_ref()
+          .map(|last_hovered_word| last_hovered_word.word_match.clone());
+        let inactive_factor = if inactive { inactive_opacity } else { 1.0 };
+        let grid_cache_key = GridRenderCacheKey {
+          content_revision,
+          display_offset,
+          theme_identity: std::ptr::from_ref(theme.as_ref()) as usize,
+          font_family: text_style.font_family.clone(),
+          font_size_bits: f32::from(text_style.font_size.to_pixels(window.rem_size())).to_bits(),
+          cell_width_bits: f32::from(dimensions.cell_width()).to_bits(),
+          minimum_contrast_bits: minimum_contrast.to_bits(),
+          inactive_factor_bits: inactive_factor.to_bits(),
           bold_as_bright,
-          &color_table,
-          cx,
-        );
+          hovered_range,
+        };
+        let cached_grid = self
+          .terminal_view
+          .read(cx)
+          .grid_render_cache
+          .as_ref()
+          .filter(|cache| cache.key == grid_cache_key)
+          .cloned();
+        let mut pending_grid_cache = None;
+        let (rects, batched_text_runs) = if let Some(cache) = cached_grid {
+          (cache.rects, cache.batched_text_runs)
+        } else {
+          let (mut rects, mut batched_text_runs) = TerminalElement::layout_grid(
+            cells.iter(),
+            0,
+            &text_style,
+            last_hovered_word
+              .as_ref()
+              .map(|last_hovered_word| (link_style, &last_hovered_word.word_match)),
+            minimum_contrast,
+            bold_as_bright,
+            &color_table,
+            cx,
+          );
+          if inactive_factor < 1.0 {
+            desaturate_grid(&mut rects, &mut batched_text_runs, inactive_factor);
+          }
+          for run in &mut batched_text_runs {
+            run.shape(&dimensions, window);
+          }
+          let cache = GridRenderCache {
+            key: grid_cache_key,
+            rects: rects.into(),
+            batched_text_runs: batched_text_runs.into(),
+          };
+          let result = (cache.rects.clone(), cache.batched_text_runs.clone());
+          pending_grid_cache = Some(cache);
+          result
+        };
 
         let cursor = if let AlacCursorShape::Hidden = cursor.shape {
           None
@@ -341,12 +393,50 @@ impl Element for TerminalElement {
           minimap_bounds,
           color_table,
           minimap_cells,
+          minimap_columns,
           image_placements,
+          ime_text: None,
         };
 
-        if inactive && inactive_opacity < 1.0 {
-          desaturate_layout(&mut layout, inactive_opacity);
+        if let Some(cache) = pending_grid_cache {
+          self.terminal_view.update(cx, |view, _| {
+            view.grid_render_cache = Some(cache);
+          });
         }
+
+        if inactive && inactive_opacity < 1.0 {
+          desaturate_layout_chrome(&mut layout, inactive_opacity);
+        }
+
+        let marked_text = self
+          .terminal_view
+          .read(cx)
+          .ime_state
+          .as_ref()
+          .map(|state| state.marked_text.clone())
+          .filter(|text| !text.is_empty());
+        layout.ime_text = marked_text.map(|text| {
+          let text_len = text.len();
+          let mut ime_style = layout.base_text_style.clone();
+          ime_style.underline = Some(UnderlineStyle {
+            color: Some(ime_style.color),
+            thickness: px(1.0),
+            wavy: false,
+          });
+          window.text_system().shape_line(
+            text.into(),
+            ime_style.font_size.to_pixels(window.rem_size()),
+            &[TextRun {
+              len: text_len,
+              font: ime_style.font(),
+              color: ime_style.color,
+              background_color: None,
+              underline: ime_style.underline,
+              strikethrough: None,
+            }],
+            None,
+          )
+        });
 
         layout
       },
@@ -369,11 +459,6 @@ impl Element for TerminalElement {
       window.paint_quad(fill(bounds, layout.background_color));
       let origin =
         bounds.origin + Point::new(layout.gutter, px(0.)) - Point::new(px(0.), scroll_top);
-
-      let marked_text_cloned: Option<String> = {
-        let ime_state = &self.terminal_view.read(cx).ime_state;
-        ime_state.as_ref().map(|state| state.marked_text.clone())
-      };
 
       let terminal_input_handler = TerminalInputHandler {
         terminal: self.terminal.clone(),
@@ -430,7 +515,7 @@ impl Element for TerminalElement {
         |_, window, cx| {
           window.handle_input(&self.focus, terminal_input_handler, cx);
 
-          for rect in &layout.rects {
+          for rect in layout.rects.iter() {
             rect.paint(origin, &layout.dimensions, window);
           }
 
@@ -458,36 +543,14 @@ impl Element for TerminalElement {
             }
           }
 
-          for batch in &layout.batched_text_runs {
+          for batch in layout.batched_text_runs.iter() {
             batch.paint(origin, &layout.dimensions, window, cx);
           }
 
-          if let Some(text_to_mark) = &marked_text_cloned
-            && !text_to_mark.is_empty()
+          if let Some(shaped_line) = &layout.ime_text
             && let Some(cursor_layout) = &original_cursor
           {
             let ime_position = cursor_layout.bounding_rect(origin).origin;
-            let mut ime_style = layout.base_text_style.clone();
-            ime_style.underline = Some(UnderlineStyle {
-              color: Some(ime_style.color),
-              thickness: px(1.0),
-              wavy: false,
-            });
-
-            let shaped_line = window.text_system().shape_line(
-              text_to_mark.clone().into(),
-              ime_style.font_size.to_pixels(window.rem_size()),
-              &[TextRun {
-                len: text_to_mark.len(),
-                font: ime_style.font(),
-                color: ime_style.color,
-                background_color: None,
-                underline: ime_style.underline,
-                strikethrough: None,
-              }],
-              None,
-            );
-
             shaped_line
               .paint(ime_position, layout.dimensions.line_height, window, cx)
               .unwrap_or_default();
@@ -639,7 +702,7 @@ impl Element for TerminalElement {
           *minimap_bounds,
           &layout.minimap_cells,
           minimap_state.visible_lines,
-          layout.dimensions.columns(),
+          layout.minimap_columns,
           minimap_state,
           theme,
           &layout.color_table,
@@ -716,18 +779,25 @@ fn desaturate_color(color: Hsla, factor: f32) -> Hsla {
   }
 }
 
-/// Apply desaturation to all colors in the layout state for inactive panes.
-fn desaturate_layout(layout: &mut LayoutState, factor: f32) {
-  layout.background_color = desaturate_color(layout.background_color, factor);
-  layout.base_text_style.color = desaturate_color(layout.base_text_style.color, factor);
-
-  for rect in &mut layout.rects {
+fn desaturate_grid(
+  rects: &mut [crate::layout_rect::LayoutRect],
+  batched_text_runs: &mut [crate::batched_text_run::BatchedTextRun],
+  factor: f32,
+) {
+  for rect in rects {
     rect.color = desaturate_color(rect.color, factor);
   }
 
-  for run in &mut layout.batched_text_runs {
+  for run in batched_text_runs {
     run.style.color = desaturate_color(run.style.color, factor);
   }
+}
+
+/// Apply desaturation to non-grid colors for inactive panes. Grid colors are
+/// cached after desaturation so they are handled separately on cache misses.
+fn desaturate_layout_chrome(layout: &mut LayoutState, factor: f32) {
+  layout.background_color = desaturate_color(layout.background_color, factor);
+  layout.base_text_style.color = desaturate_color(layout.base_text_style.color, factor);
 
   for (_, color) in &mut layout.relative_highlighted_ranges {
     *color = desaturate_color(*color, factor);

@@ -10,7 +10,7 @@ use crate::sync::FairMutex;
 use crate::term::cell::Cell;
 use crate::term::{RenderableCursor, TermMode};
 use crate::vte::ansi::{CursorStyle, Rgb};
-use crate::{Term, grid};
+use crate::{ANSI_COLOR_COUNT, Term, grid};
 
 /// A snapshot of the renderable terminal content, independent of backend.
 pub struct RenderableSnapshot {
@@ -18,7 +18,10 @@ pub struct RenderableSnapshot {
   pub mode: TermMode,
   pub display_offset: usize,
   pub cursor: RenderableCursor,
+  pub cursor_char: char,
   pub selection: Option<SelectionRange>,
+  pub history_size: usize,
+  pub colors: [Option<Rgb>; ANSI_COLOR_COUNT],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -102,6 +105,12 @@ pub trait TerminalBackend: Send + Sync {
   /// Return `false` from `f` to stop iteration.
   /// The lock is held for the duration of the callback.
   fn iter_from(&self, point: AlacPoint, f: &mut dyn FnMut(AlacPoint, &Cell) -> bool);
+
+  /// Visit selected grid lines while holding the backend lock once.
+  ///
+  /// The callback receives the selected-line index so callers can map sparse
+  /// source lines into a dense sampled representation without another lookup.
+  fn iter_selected_lines(&self, lines: &[Line], f: &mut dyn FnMut(usize, AlacPoint, &Cell));
 
   fn line_search_left(&self, point: AlacPoint) -> AlacPoint;
   fn line_search_right(&self, point: AlacPoint) -> AlacPoint;
@@ -188,12 +197,19 @@ impl<L: EventListener + Send> TerminalBackend for AlacrittyBackend<L> {
       .display_iter
       .map(|ic| (ic.point, ic.cell.clone()))
       .collect();
+    let mut colors = [None; ANSI_COLOR_COUNT];
+    for (index, color) in colors.iter_mut().enumerate() {
+      *color = term.colors()[index];
+    }
     RenderableSnapshot {
       cells,
       mode: content.mode,
       display_offset: content.display_offset,
       cursor: content.cursor,
+      cursor_char: term.grid()[content.cursor.point].c,
       selection: content.selection,
+      history_size: term.history_size(),
+      colors,
     }
   }
 
@@ -278,6 +294,24 @@ impl<L: EventListener + Send> TerminalBackend for AlacrittyBackend<L> {
     for cell in term.grid().iter_from(start) {
       if !f(cell.point, &cell.cell) {
         break;
+      }
+    }
+  }
+
+  fn iter_selected_lines(&self, lines: &[Line], f: &mut dyn FnMut(usize, AlacPoint, &Cell)) {
+    let term = self.term.lock();
+    let topmost_line = term.topmost_line();
+    let bottommost_line = term.bottommost_line();
+    let columns = term.columns();
+    let grid = term.grid();
+
+    for (selected_index, &line) in lines.iter().enumerate() {
+      if line < topmost_line || line > bottommost_line {
+        continue;
+      }
+      for column in 0..columns {
+        let point = AlacPoint::new(line, Column(column));
+        f(selected_index, point, &grid[point]);
       }
     }
   }

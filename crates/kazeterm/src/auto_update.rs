@@ -138,7 +138,7 @@ pub(crate) fn apply_prepared_update_in_context(
   prepared_update: PreparedUpdate,
   cx: &mut GpuiContext<MainWindow>,
 ) -> anyhow::Result<()> {
-  main_window.sync_ui_tree(cx);
+  main_window.sync_ui_tree_for_persistence(cx);
   main_window.ui_tree.save_workspace();
   request_restore_workspace_once()?;
   launch_update_helper(&prepared_update)?;

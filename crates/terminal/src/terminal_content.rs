@@ -1,9 +1,11 @@
 use std::ops::RangeInclusive;
 
 use terminal_kernel::{
+  ANSI_COLOR_COUNT,
   index::{Column, Line, Point as AlacPoint},
   selection::SelectionRange,
   term::{RenderableCursor, TermMode},
+  vte::ansi::Rgb,
 };
 
 use crate::{
@@ -27,6 +29,7 @@ pub struct TerminalContent {
   pub search_matches: Vec<RangeInclusive<AlacPoint>>,
   pub current_search_match_index: usize,
   pub image_placements: Vec<VisiblePlacement>,
+  pub color_table: [Option<Rgb>; ANSI_COLOR_COUNT],
 }
 
 impl Default for TerminalContent {
@@ -50,6 +53,7 @@ impl Default for TerminalContent {
       search_matches: Vec::new(),
       current_search_match_index: 0,
       image_placements: Vec::new(),
+      color_table: [None; ANSI_COLOR_COUNT],
     }
   }
 }

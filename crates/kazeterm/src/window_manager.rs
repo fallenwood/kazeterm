@@ -137,6 +137,18 @@ fn registered_windows_front_to_back(cx: &App) -> Vec<RegisteredWindow> {
   ordered
 }
 
+/// Resolve the live frontmost window for process-wide event dispatch.
+pub(crate) fn active_event_target(cx: &App) -> Option<(WeakEntity<MainWindow>, AnyWindowHandle)> {
+  registered_windows_front_to_back(cx)
+    .into_iter()
+    .find_map(|registered| {
+      registered
+        .view
+        .upgrade()
+        .map(|_| (registered.view, registered.handle))
+    })
+}
+
 pub(crate) fn mark_window_active(handle: AnyWindowHandle, cx: &mut App) {
   if cx.try_global::<WindowRegistry>().is_none() {
     return;
@@ -232,14 +244,8 @@ fn initialize_window(
   #[cfg(target_os = "linux")]
   crate::app_icon::set_x11_window_icon(window);
 
-  let main_window_weak = view.downgrade();
   cx.defer(move |cx| {
-    crate::event_system::start_event_system(
-      main_window_weak,
-      window_handle,
-      event_source_config,
-      cx,
-    );
+    crate::event_system::start_event_system(event_source_config, cx);
   });
 
   let main_window_weak = view.downgrade();

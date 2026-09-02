@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui::{TestAppContext, WindowHandle};
 use kazeterm_ui_tree::action::UIAction;
-use kazeterm_ui_tree::node::{OverlayNode, UITree};
+use kazeterm_ui_tree::node::{OverlayNode, PaneNode, UITree};
 
 use crate::components::MainWindow;
 use crate::components::terminal_window::{
@@ -76,6 +76,17 @@ fn advance_ui_transition(cx: &mut TestAppContext, frames: u32) {
   }
 }
 
+fn first_pane_metadata(main_window: &MainWindow) -> (String, Option<String>) {
+  match &main_window.ui_tree.tree().windows[0].tabs[0].pane_tree {
+    PaneNode::Terminal {
+      title,
+      working_directory,
+      ..
+    } => (title.clone(), working_directory.clone()),
+    PaneNode::Split { .. } => panic!("expected the initial tab to contain one terminal pane"),
+  }
+}
+
 #[gpui::test]
 fn main_window_creates_initial_tab_with_fake_factory(cx: &mut TestAppContext) {
   let _guard = test_lock();
@@ -90,6 +101,130 @@ fn main_window_creates_initial_tab_with_fake_factory(cx: &mut TestAppContext) {
     call_count >= 1,
     "expected MainWindow to invoke the terminal factory at least once (got {call_count})"
   );
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn ui_actions_keep_canonical_terminal_metadata_until_update_event(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  let (terminal_view, original_metadata) = window
+    .update(cx, |root, _window, cx| {
+      let terminal_view = root
+        .active_terminal()
+        .expect("the initial tab should have an active terminal");
+      let terminal = terminal_view.read(cx).terminal().clone();
+      terminal.update(cx, |terminal, _cx| {
+        terminal.title_text = "event-updated-title".to_string();
+        terminal.osc7_cwd = Some(std::path::PathBuf::from("/tmp/event-updated-cwd"));
+      });
+      (terminal_view, first_pane_metadata(root))
+    })
+    .expect("reading initial terminal metadata should succeed");
+
+  window
+    .update(cx, |root, window, cx| root.toggle_tab_bar(window, cx))
+    .expect("toggling the tab bar should succeed");
+  window
+    .root(cx)
+    .expect("window root should remain available")
+    .read_with(cx, |root, _cx| {
+      assert_eq!(first_pane_metadata(root), original_metadata);
+    });
+
+  window
+    .update(cx, |root, window, cx| {
+      MainWindow::subscribe_terminal_view_event(
+        root,
+        &terminal_view,
+        &terminal::TerminalEvent::UpdateTab,
+        window,
+        cx,
+      );
+    })
+    .expect("terminal metadata update should succeed");
+
+  window
+    .root(cx)
+    .expect("window root should remain available")
+    .read_with(cx, |root, _cx| {
+      assert_eq!(
+        first_pane_metadata(root),
+        (
+          "event-updated-title".to_string(),
+          Some("/tmp/event-updated-cwd".to_string()),
+        )
+      );
+    });
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn event_target_tracks_the_active_window(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let first = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  let second = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  let first_view = first.root(cx).expect("first window root should exist");
+  let second_view = second.root(cx).expect("second window root should exist");
+  let first_handle = first
+    .update(cx, |_root, window, cx| {
+      let handle = window.window_handle();
+      crate::window_manager::register_window(handle, &first_view, cx);
+      handle
+    })
+    .expect("first window registration should succeed");
+  let second_handle = second
+    .update(cx, |_root, window, cx| {
+      let handle = window.window_handle();
+      crate::window_manager::register_window(handle, &second_view, cx);
+      handle
+    })
+    .expect("second window registration should succeed");
+  drop(first_view);
+  drop(second_view);
+
+  first
+    .update(cx, |_root, window, _cx| window.activate_window())
+    .expect("first window activation should succeed");
+  cx.run_until_parked();
+  let active_handle = cx.update(|cx| {
+    crate::window_manager::active_event_target(cx)
+      .expect("an active event target should exist")
+      .1
+  });
+  assert!(active_handle == first_handle);
+
+  second
+    .update(cx, |_root, window, _cx| window.activate_window())
+    .expect("second window activation should succeed");
+  cx.run_until_parked();
+  let active_handle = cx.update(|cx| {
+    crate::window_manager::active_event_target(cx)
+      .expect("an active event target should exist")
+      .1
+  });
+  assert!(active_handle == second_handle);
+
+  second
+    .update(cx, |_root, window, _cx| window.remove_window())
+    .expect("second window removal should succeed");
+  cx.run_until_parked();
+  let fallback_handle = cx.update(|cx| {
+    crate::window_manager::active_event_target(cx)
+      .expect("a fallback event target should exist")
+      .1
+  });
+  assert!(fallback_handle == first_handle);
 
   clear_terminal_session_factory_for_testing();
 }
@@ -114,7 +249,7 @@ fn resize_ui_action_transitions_to_target_size(cx: &mut TestAppContext) {
   window
     .update(cx, |root, window, cx| {
       let window_id = root
-        .sync_ui_tree_and_window_id(cx)
+        .ensure_ui_tree_window_id(cx)
         .expect("UI tree should contain a window");
       root
         .dispatch_ui_action(
@@ -366,7 +501,7 @@ fn disabled_animation_applies_changes_immediately(cx: &mut TestAppContext) {
   window
     .update(cx, |root, window, cx| {
       let window_id = root
-        .sync_ui_tree_and_window_id(cx)
+        .ensure_ui_tree_window_id(cx)
         .expect("UI tree should contain a window");
       root
         .dispatch_ui_action(
@@ -842,7 +977,6 @@ fn pinned_tabs_are_ignored_by_close_tabs_to_right(cx: &mut TestAppContext) {
   window
     .update(cx, |root: &mut MainWindow, window, cx| {
       root.close_tabs_to_right(0, window, cx);
-      root.sync_ui_tree(cx);
     })
     .expect("closing tabs to the right should succeed");
   cx.run_until_parked();
@@ -895,7 +1029,6 @@ fn pinned_tabs_are_ignored_by_close_other_tabs(cx: &mut TestAppContext) {
   window
     .update(cx, |root: &mut MainWindow, window, cx| {
       root.close_other_tabs(keep_tab_index, window, cx);
-      root.sync_ui_tree(cx);
     })
     .expect("closing other tabs should succeed");
   cx.run_until_parked();

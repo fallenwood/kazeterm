@@ -1,13 +1,21 @@
 use std::sync::atomic::AtomicU32;
-use std::{cmp, collections::VecDeque, process::ExitStatus, sync::Arc};
+use std::{
+  cmp,
+  collections::VecDeque,
+  process::ExitStatus,
+  sync::Arc,
+  time::{Duration, Instant},
+};
 
 use crate::{
   TerminalBounds,
   indexed_cell::IndexedCell,
   kitty_graphics::{
-    ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage, KittyParser,
-    PlacementManager, RawGraphicsCommand,
+    GRAPHICS_BATCH_SIZE, ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage,
+    PlacementManager, PreparedGraphicsEvent, PreparedImage, RawGraphicsCommand,
+    spawn_graphics_worker,
   },
+  minimap::{MinimapCell, sampled_line_indices},
   mouse::grid_point_and_side,
   pty_info::PtyProcessInfo,
   terminal_content::TerminalContent,
@@ -18,7 +26,7 @@ use terminal_kernel::{
   SelectionDisplay, TerminalBackend,
   event::Event as AlacTermEvent,
   grid::{Dimensions as _, Scroll},
-  index::{Column as AlacColumn, Direction, Line as AlacLine, Point as AlacPoint, Side},
+  index::{Direction, Line as AlacLine, Point as AlacPoint, Side},
   selection::Selection,
 };
 use themeing::ActiveTheme;
@@ -33,6 +41,14 @@ pub use events::TerminalEventListener;
 pub use search::SearchState;
 #[allow(unused_imports)]
 pub use touch::{TouchMode, TouchState};
+
+const PROCESS_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
+
+fn process_refresh_due(last_refresh: Option<Instant>, now: Instant) -> bool {
+  last_refresh.is_none_or(|last_refresh| {
+    now.saturating_duration_since(last_refresh) >= PROCESS_REFRESH_INTERVAL
+  })
+}
 
 #[derive(Clone)]
 pub enum InternalEvent {
@@ -97,6 +113,7 @@ pub struct Terminal {
   pub previous_title_text: String,
   pub next_link_id: usize,
   pub process_changed_at: Option<std::time::Instant>,
+  last_process_refresh: Option<Instant>,
   pub scroll_velocity: f32,
   pub last_scroll_time: Option<std::time::Instant>,
   pub touch_state: Option<TouchState>,
@@ -105,7 +122,6 @@ pub struct Terminal {
   pub last_input_time: std::time::Instant,
   /// Kitty graphics protocol state.
   graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
-  graphics_parser: KittyParser,
   pub image_storage: KittyImageStorage,
   pub placement_manager: PlacementManager,
   /// Shared atomic for signaling cursor advancement to the PTY filter.
@@ -124,9 +140,12 @@ pub struct Terminal {
   last_cwd_file_check: Option<std::time::Instant>,
   /// Active search state. When set, search is re-run on content changes.
   pub search_state: Option<SearchState>,
-  /// Fingerprint of terminal content at last search execution.
-  /// Used to skip re-running the search when nothing changed.
-  search_fingerprint: (usize, AlacPoint),
+  /// Monotonic version advanced whenever the emulator grid may have changed.
+  content_revision: u64,
+  /// Content version consumed by the most recent search execution.
+  last_search_revision: u64,
+  /// Content version consumed by the most recent render snapshot.
+  last_synced_content_revision: Option<u64>,
 }
 
 impl Terminal {
@@ -160,12 +179,12 @@ impl Terminal {
       previous_title_text: "".to_string(),
       next_link_id: 0,
       process_changed_at: None,
+      last_process_refresh: None,
       scroll_velocity: 0.0,
       last_scroll_time: None,
       touch_state: None,
       last_input_time: std::time::Instant::now(),
       graphics_rx,
-      graphics_parser: KittyParser::new(),
       image_storage: KittyImageStorage::new(),
       placement_manager: PlacementManager::new(),
       pending_cnl,
@@ -176,8 +195,26 @@ impl Terminal {
       cwd_file_mtime: None,
       last_cwd_file_check: None,
       search_state: None,
-      search_fingerprint: (0, AlacPoint::new(AlacLine(0), AlacColumn(0))),
+      content_revision: 0,
+      last_search_revision: 0,
+      last_synced_content_revision: None,
     }
+  }
+
+  /// Return the latest working directory already observed by prompt detection or
+  /// process refresh, without performing any OS I/O.
+  pub fn cached_working_directory(&self) -> Option<String> {
+    self
+      .osc7_cwd
+      .as_ref()
+      .map(|cwd| cwd.to_string_lossy().into_owned())
+      .or_else(|| {
+        self
+          .pty_info
+          .current
+          .as_ref()
+          .map(|info| info.cwd.to_string_lossy().into_owned())
+      })
   }
 
   /// Force-refresh and return the current working directory of the foreground process.
@@ -224,11 +261,7 @@ impl Terminal {
 
     // Fallback: sysinfo refresh.
     self.pty_info.has_changed();
-    let cwd = self
-      .pty_info
-      .current
-      .as_ref()
-      .map(|info| info.cwd.to_string_lossy().to_string());
+    let cwd = self.cached_working_directory();
     tracing::debug!(
       "CWD from sysinfo: {:?}, pid: {:?}",
       cwd,
@@ -253,41 +286,60 @@ impl Terminal {
     &self.last_content
   }
 
-  pub fn color_table(
+  /// Collect a bounded, uniformly sampled representation of the grid.
+  pub fn collect_minimap_cells(
     &self,
-  ) -> [Option<terminal_kernel::vte::ansi::Rgb>; terminal_kernel::ANSI_COLOR_COUNT] {
-    let mut colors = [None; terminal_kernel::ANSI_COLOR_COUNT];
-    for (index, slot) in colors.iter_mut().enumerate() {
-      *slot = self.term.color_at(index);
-    }
-    colors
-  }
-
-  /// Collect all grid cells (history + visible) for minimap rendering.
-  /// Returns cells with 0-based line numbers (0 = oldest history line).
-  pub fn collect_minimap_cells(&self) -> Vec<IndexedCell> {
+    max_lines: usize,
+    max_columns: usize,
+  ) -> (Vec<MinimapCell>, usize) {
     let history_size = self.term.history_size();
     let screen_lines = self.term.screen_lines();
     let columns = self.term.columns();
     let total_lines = history_size + screen_lines;
 
-    let mut cells = Vec::new();
-    for line_idx in 0..total_lines {
-      let original_line = line_idx as i32 - history_size as i32;
-      for col_idx in 0..columns {
-        let cell = self
-          .term
-          .cell_at(AlacPoint::new(AlacLine(original_line), AlacColumn(col_idx)));
-        if cell.c != ' ' && cell.c != '\t' && cell.c != '\0' {
-          cells.push(IndexedCell {
-            point: AlacPoint::new(AlacLine(line_idx as i32), AlacColumn(col_idx)),
-            cell,
-          });
-        }
-      }
+    if total_lines == 0 || columns == 0 {
+      return (Vec::new(), 0);
     }
 
-    cells
+    let sampled_lines = sampled_line_indices(total_lines, max_lines);
+    let source_lines: Vec<_> = sampled_lines
+      .iter()
+      .map(|line| AlacLine(*line as i32 - history_size as i32))
+      .collect();
+    let sampled_columns = columns.min(max_columns.max(1));
+    let mut colors = vec![None; sampled_lines.len() * sampled_columns];
+
+    self
+      .term
+      .iter_selected_lines(&source_lines, &mut |sampled_line, point, cell| {
+        if matches!(cell.c, ' ' | '\t' | '\0') {
+          return;
+        }
+        let sampled_column = point.column.0 * sampled_columns / columns;
+        let color = if cell
+          .flags
+          .contains(terminal_kernel::term::cell::Flags::INVERSE)
+        {
+          cell.bg
+        } else {
+          cell.fg
+        };
+        colors[sampled_line * sampled_columns + sampled_column] = Some(color);
+      });
+
+    let cells = colors
+      .into_iter()
+      .enumerate()
+      .filter_map(|(index, color)| {
+        color.map(|color| MinimapCell {
+          line: index / sampled_columns,
+          column: index % sampled_columns,
+          color,
+        })
+      })
+      .collect();
+
+    (cells, sampled_columns)
   }
 
   pub fn set_size(&mut self, new_bounds: TerminalBounds) {
@@ -297,16 +349,23 @@ impl Terminal {
   }
 
   pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.start_graphics_worker(cx);
+    let mut processed_internal_event = false;
     while let Some(e) = self.events.pop_front() {
+      processed_internal_event = true;
       self.process_terminal_event(&e, window, cx)
     }
+    if !processed_internal_event && self.last_synced_content_revision == Some(self.content_revision)
+    {
+      return;
+    }
+    self.last_synced_content_revision = Some(self.content_revision);
     self.last_content = Self::make_content(&*self.term, &self.last_content);
 
     // Re-run search only when content has actually changed.
     if let Some(search_state) = &self.search_state {
-      let fingerprint = (self.term.history_size(), self.last_content.cursor.point);
-      if fingerprint != self.search_fingerprint {
-        self.search_fingerprint = fingerprint;
+      if self.content_revision != self.last_search_revision {
+        self.last_search_revision = self.content_revision;
         let old_count = self.last_content.search_matches.len();
         self.last_content.search_matches = Self::execute_search(&*self.term, search_state);
         let new_count = self.last_content.search_matches.len();
@@ -322,9 +381,6 @@ impl Terminal {
     let history_size = self.term.history_size() as i32;
     let display_offset = self.last_content.display_offset as i32;
 
-    // Process graphics commands AFTER terminal events so terminal_bounds is up to date.
-    self.process_graphics_commands();
-
     // Detect shell prompt returns and update CWD (non-blocking).
     self.process_prompt_detection(cx);
 
@@ -338,31 +394,54 @@ impl Terminal {
         .visible_placements(&self.image_storage, viewport_top, viewport_lines);
   }
 
-  fn process_graphics_commands(&mut self) {
-    // Drain all available graphics commands (non-blocking).
-    let mut raw_commands: Vec<RawGraphicsCommand> = Vec::new();
-    if let Some(rx) = &self.graphics_rx {
-      while let Ok(raw_cmd) = rx.try_recv() {
-        raw_commands.push(raw_cmd);
-      }
-    }
+  fn start_graphics_worker(&mut self, cx: &mut Context<Self>) {
+    let Some(raw_rx) = self.graphics_rx.take() else {
+      return;
+    };
+    let prepared_rx = spawn_graphics_worker(raw_rx);
 
-    for raw_cmd in raw_commands {
-      if raw_cmd.clear_all {
+    cx.spawn(async move |this, cx| {
+      while let Ok(first_event) = prepared_rx.recv().await {
+        let mut events = Vec::with_capacity(GRAPHICS_BATCH_SIZE);
+        events.push(first_event);
+        while events.len() < GRAPHICS_BATCH_SIZE {
+          let Ok(event) = prepared_rx.try_recv() else {
+            break;
+          };
+          events.push(event);
+        }
+
+        if this
+          .update(cx, |terminal, cx| {
+            for event in events {
+              terminal.apply_graphics_event(event);
+            }
+            terminal.mark_content_changed();
+            cx.notify();
+          })
+          .is_err()
+        {
+          break;
+        }
+        smol::future::yield_now().await;
+      }
+    })
+    .detach();
+  }
+
+  fn apply_graphics_event(&mut self, event: PreparedGraphicsEvent) {
+    match event {
+      PreparedGraphicsEvent::ClearAll => {
         self.placement_manager.clear();
         self.image_storage.clear();
-        continue;
       }
-      let cursor_line = raw_cmd.cursor_line;
-      let cursor_column = raw_cmd.cursor_column;
-      if let Some(cmd) = self.graphics_parser.parse(&raw_cmd.data) {
-        self.execute_graphics_command(&cmd, cursor_line, cursor_column);
-      }
+      PreparedGraphicsEvent::Command {
+        command,
+        image,
+        cursor_line,
+        cursor_column,
+      } => self.execute_graphics_command(&command, image, cursor_line, cursor_column),
     }
-    // Note: Kitty protocol responses are intentionally NOT sent back.
-    // Our architecture intercepts APC on the read side, so write_to_pty
-    // would send responses to the shell's stdin (appearing as typed text).
-    // Tools like kitten icat use q=2 (suppress all) and handle timeouts.
   }
 
   /// Detect shell prompt returns and update CWD.
@@ -427,14 +506,27 @@ impl Terminal {
     }
   }
 
-  fn execute_graphics_command(&mut self, cmd: &KittyCommand, cursor_line: i32, cursor_column: i32) {
+  fn execute_graphics_command(
+    &mut self,
+    cmd: &KittyCommand,
+    prepared_image: Option<PreparedImage>,
+    cursor_line: i32,
+    cursor_column: i32,
+  ) {
     match cmd.action {
       KittyAction::Transmit => {
-        let _ = self.image_storage.store(cmd);
+        if let Some(image) = prepared_image
+          && let Err(error) = self.image_storage.store_prepared(cmd.image_id, image)
+        {
+          tracing::warn!("Failed to store Kitty image: {error}");
+        }
       }
       KittyAction::TransmitAndDisplay => {
-        if let Ok(id) = self.image_storage.store(cmd) {
-          self.place_image(id, cmd, cursor_line, cursor_column);
+        if let Some(image) = prepared_image {
+          match self.image_storage.store_prepared(cmd.image_id, image) {
+            Ok(id) => self.place_image(id, cmd, cursor_line, cursor_column),
+            Err(error) => tracing::warn!("Failed to store Kitty image: {error}"),
+          }
         }
       }
       KittyAction::Display => {
@@ -564,7 +656,7 @@ impl Terminal {
     // Adjust search match coordinates when content has shifted.
     // When new output pushes content into scrollback, history_size increases
     // and all grid coordinates shift by the delta.
-    let current_history_size = term.history_size();
+    let current_history_size = content.history_size;
 
     TerminalContent {
       cells,
@@ -573,7 +665,7 @@ impl Terminal {
       selection_text,
       selection: content.selection,
       cursor: content.cursor,
-      cursor_char: term.cell_at(content.cursor.point).c,
+      cursor_char: content.cursor_char,
       terminal_bounds: last_content.terminal_bounds,
       last_hovered_word: last_content.last_hovered_word.clone(),
       history_size: current_history_size,
@@ -584,6 +676,7 @@ impl Terminal {
       search_matches: last_content.search_matches.clone(),
       current_search_match_index: last_content.current_search_match_index,
       image_placements: Vec::new(),
+      color_table: content.colors,
     }
   }
 
@@ -640,6 +733,7 @@ impl Terminal {
       }
       AlacTermEvent::MouseCursorDirty => {}
       AlacTermEvent::Wakeup => {
+        self.mark_content_changed();
         cx.emit(Event::Wakeup);
 
         // Run prompt detection on every wakeup so background terminals
@@ -647,12 +741,16 @@ impl Terminal {
         // still emit PromptReturned and trigger notifications.
         self.process_prompt_detection(cx);
 
-        if self.pty_info.has_changed()
-          && let Some(info) = &self.pty_info.current
-        {
-          self.title_text = info.name.clone();
-          self.process_changed_at = Some(std::time::Instant::now());
-          cx.emit(Event::TitleChanged);
+        let now = Instant::now();
+        if process_refresh_due(self.last_process_refresh, now) {
+          self.last_process_refresh = Some(now);
+          if self.pty_info.has_changed()
+            && let Some(info) = &self.pty_info.current
+          {
+            self.title_text = info.name.clone();
+            self.process_changed_at = Some(now);
+            cx.emit(Event::TitleChanged);
+          }
         }
       }
       AlacTermEvent::ColorRequest(index, format) => {
@@ -690,6 +788,7 @@ impl Terminal {
         self
           .term
           .resize(new_bounds.num_lines(), new_bounds.num_columns());
+        self.mark_content_changed();
       }
       InternalEvent::Clear => {}
       InternalEvent::Scroll(scroll) => {
@@ -795,6 +894,14 @@ impl Terminal {
       }
     }
   }
+
+  fn mark_content_changed(&mut self) {
+    self.content_revision = self.content_revision.saturating_add(1);
+  }
+
+  pub(crate) fn content_revision(&self) -> u64 {
+    self.content_revision
+  }
 }
 
 impl EventEmitter<Event> for Terminal {}
@@ -823,9 +930,46 @@ fn should_hide_mouse_cursor(
 
 #[cfg(test)]
 mod tests {
+  use std::path::PathBuf;
   use std::time::{Duration, Instant};
 
-  use super::should_hide_mouse_cursor;
+  use crate::pty_info::ProcessInfo;
+  use crate::test_support::fake_terminal_session;
+
+  use super::{PROCESS_REFRESH_INTERVAL, process_refresh_due, should_hide_mouse_cursor};
+
+  #[test]
+  fn process_refresh_is_immediate_then_throttled() {
+    let now = Instant::now();
+
+    assert!(process_refresh_due(None, now));
+    assert!(!process_refresh_due(Some(now), now));
+    assert!(process_refresh_due(
+      Some(now),
+      now + PROCESS_REFRESH_INTERVAL
+    ));
+  }
+
+  #[test]
+  fn cached_working_directory_prefers_shell_reported_path() {
+    let (mut terminal, _events, _writes, _resizes) = fake_terminal_session(80, 24);
+    terminal.pty_info.current = Some(ProcessInfo {
+      name: "shell".to_string(),
+      cwd: PathBuf::from("process-cwd"),
+      argv: Vec::new(),
+    });
+
+    assert_eq!(
+      terminal.cached_working_directory().as_deref(),
+      Some("process-cwd")
+    );
+
+    terminal.osc7_cwd = Some(PathBuf::from("osc7-cwd"));
+    assert_eq!(
+      terminal.cached_working_directory().as_deref(),
+      Some("osc7-cwd")
+    );
+  }
 
   #[test]
   fn hide_mouse_cursor_when_input_is_newer_than_mouse_activity() {

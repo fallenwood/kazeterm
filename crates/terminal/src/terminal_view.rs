@@ -180,6 +180,7 @@ pub struct TerminalView {
   /// Task for touch long-press detection
   long_press_task: Task<()>,
   suppress_enter_text_commit_until: Option<Instant>,
+  pub(crate) grid_render_cache: Option<crate::terminal_element::GridRenderCache>,
 }
 
 impl EventEmitter<TerminalEvent> for TerminalView {}
@@ -274,6 +275,7 @@ impl TerminalView {
       momentum_scroll_task: Task::ready(()),
       long_press_task: Task::ready(()),
       suppress_enter_text_commit_until: None,
+      grid_render_cache: None,
     }
   }
 
