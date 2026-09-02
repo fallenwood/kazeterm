@@ -95,6 +95,69 @@ fn main_window_creates_initial_tab_with_fake_factory(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn event_target_tracks_the_active_window(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let first = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  let second = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  let first_view = first.root(cx).expect("first window root should exist");
+  let second_view = second.root(cx).expect("second window root should exist");
+  let first_handle = first
+    .update(cx, |_root, window, cx| {
+      let handle = window.window_handle();
+      crate::window_manager::register_window(handle, &first_view, cx);
+      handle
+    })
+    .expect("first window registration should succeed");
+  let second_handle = second
+    .update(cx, |_root, window, cx| {
+      let handle = window.window_handle();
+      crate::window_manager::register_window(handle, &second_view, cx);
+      handle
+    })
+    .expect("second window registration should succeed");
+  drop(first_view);
+  drop(second_view);
+
+  first
+    .update(cx, |_root, window, _cx| window.activate_window())
+    .expect("first window activation should succeed");
+  cx.run_until_parked();
+  let active_handle = cx.update(|cx| {
+    crate::window_manager::active_event_target(cx)
+      .expect("an active event target should exist")
+      .1
+  });
+  assert!(active_handle == first_handle);
+
+  second
+    .update(cx, |_root, window, _cx| window.activate_window())
+    .expect("second window activation should succeed");
+  cx.run_until_parked();
+  let active_handle = cx.update(|cx| {
+    crate::window_manager::active_event_target(cx)
+      .expect("an active event target should exist")
+      .1
+  });
+  assert!(active_handle == second_handle);
+
+  second
+    .update(cx, |_root, window, _cx| window.remove_window())
+    .expect("second window removal should succeed");
+  cx.run_until_parked();
+  let fallback_handle = cx.update(|cx| {
+    crate::window_manager::active_event_target(cx)
+      .expect("a fallback event target should exist")
+      .1
+  });
+  assert!(fallback_handle == first_handle);
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
 fn resize_ui_action_transitions_to_target_size(cx: &mut TestAppContext) {
   let _guard = test_lock();
   crate::test_support::init_test_app(cx);

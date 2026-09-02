@@ -89,22 +89,23 @@ pub fn try_send_event(event: AppEvent) -> bool {
   }
 }
 
-/// Initialize the event system and start the event loop.
+/// Initialize the process-wide event ingress and start the event loop.
 ///
-/// This should be called once during application startup, after the target
-/// entity is created. The event loop runs in the background and dispatches
-/// events to the target via the provided [`EventBus`].
-pub fn start_event_system<T: 'static>(
-  target: WeakEntity<T>,
-  window_handle: AnyWindowHandle,
+/// `resolve_target` is evaluated for every event so multi-window applications
+/// can route commands to their current active window without coupling the
+/// process-wide channel to the lifetime of the first window.
+pub fn start_event_system<T: 'static, R>(
   source_config: EventSourceConfig,
   event_bus: EventBus<T>,
+  resolve_target: R,
   cx: &mut App,
-) {
+) where
+  R: Fn(&App) -> Option<(WeakEntity<T>, AnyWindowHandle)> + 'static,
+{
   let (sender, receiver) = unbounded::<AppEvent>();
 
   if EVENT_SENDER.set(sender.clone()).is_err() {
-    tracing::warn!("Event system already initialized");
+    tracing::debug!("Event system already initialized");
     return;
   }
 
@@ -123,24 +124,24 @@ pub fn start_event_system<T: 'static>(
   }
 
   cx.spawn(async move |cx: &mut AsyncApp| {
-    run_event_loop(target, window_handle, receiver, event_bus, cx).await;
+    run_event_loop(receiver, event_bus, resolve_target, cx).await;
   })
   .detach();
 }
 
-async fn run_event_loop<T: 'static>(
-  target: WeakEntity<T>,
-  window_handle: AnyWindowHandle,
+async fn run_event_loop<T: 'static, R>(
   receiver: Receiver<AppEvent>,
   event_bus: EventBus<T>,
+  resolve_target: R,
   cx: &mut AsyncApp,
-) {
+) where
+  R: Fn(&App) -> Option<(WeakEntity<T>, AnyWindowHandle)> + 'static,
+{
   loop {
     match receiver.recv().await {
       Ok(event) => {
-        if let Err(error) = dispatch_event(&target, window_handle, event, &event_bus, cx).await {
+        if let Err(error) = dispatch_event(event, &event_bus, &resolve_target, cx).await {
           tracing::error!("Failed to dispatch event: {}", error);
-          break;
         }
       }
       Err(error) => {
@@ -152,15 +153,18 @@ async fn run_event_loop<T: 'static>(
 }
 
 async fn dispatch_event<T: 'static>(
-  target: &WeakEntity<T>,
-  window_handle: AnyWindowHandle,
   event: AppEvent,
   event_bus: &EventBus<T>,
+  resolve_target: &impl Fn(&App) -> Option<(WeakEntity<T>, AnyWindowHandle)>,
   cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
+  let Some((target, window_handle)) = cx.update(|cx| resolve_target(cx))? else {
+    tracing::debug!("No active window available for event: {:?}", event);
+    return Ok(());
+  };
   let target = target
     .upgrade()
-    .ok_or_else(|| anyhow::anyhow!("Event target has been dropped"))?;
+    .ok_or_else(|| anyhow::anyhow!("resolved event target has been dropped"))?;
 
   cx.update_window(window_handle, |_root_view, window, cx| {
     target.update(cx, |this, cx| {
