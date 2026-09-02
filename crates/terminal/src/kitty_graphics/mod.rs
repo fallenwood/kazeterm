@@ -3,6 +3,7 @@ pub mod parser;
 pub mod placement;
 pub mod pty_filter;
 pub mod storage;
+pub mod worker;
 
 pub use command::{
   ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyFormat, KittyResponse,
@@ -14,4 +15,5 @@ pub use placement::PlacementManager;
 pub use pty_filter::GraphicsPtyFilter;
 #[cfg(not(unix))]
 pub use pty_filter::{WindowsDsrCursorFn, WindowsDsrFilter};
-pub use storage::KittyImageStorage;
+pub use storage::{KittyImageStorage, PreparedImage, prepare_image};
+pub use worker::{GRAPHICS_BATCH_SIZE, PreparedGraphicsEvent, spawn_graphics_worker};

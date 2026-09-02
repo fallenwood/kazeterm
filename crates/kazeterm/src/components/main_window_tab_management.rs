@@ -126,7 +126,7 @@ impl MainWindow {
     tab_index: usize,
     cx: &mut Context<Self>,
   ) -> Option<UIAction> {
-    let window_id = self.sync_ui_tree_and_window_id(cx)?;
+    let window_id = self.ensure_ui_tree_window_id(cx)?;
     let item = self.items.iter().find(|item| item.index == tab_index)?;
 
     let close_action = UIAction::CloseTab {
@@ -154,7 +154,7 @@ impl MainWindow {
     pinned: bool,
     cx: &mut Context<Self>,
   ) -> Option<UIAction> {
-    let window_id = self.sync_ui_tree_and_window_id(cx)?;
+    let window_id = self.ensure_ui_tree_window_id(cx)?;
     let item = self.items.iter().find(|item| item.index == tab_index)?;
 
     Some(UIAction::SetTabPinned {
@@ -194,7 +194,7 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     if !self.reconciling_ui_tree {
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       let action = Self::build_add_tab_ui_action(window_id, profile_name, working_directory, cx);
@@ -340,6 +340,7 @@ impl MainWindow {
               Self::focus_terminal(window, &terminal, cx);
             }
             this.resubscribe_tab_terminals(tab_pos, window, cx);
+            this.sync_ui_tree(cx);
             this.animate_ui_change(window, cx);
           }
         }
@@ -359,29 +360,85 @@ impl MainWindow {
         this.maybe_send_notification(&terminal_view, NotificationReason::CommandFinished, cx);
       }
       terminal::TerminalEvent::UpdateTab => {
-        // Update tab title only if no custom title is set
         let terminal_entity_id = terminal_view.entity_id();
-        if let Some(item) = this.items.iter_mut().find(|item| {
-          item
-            .split_container
-            .all_terminals()
+        let Some((tab_position, pane_id)) =
+          this
+            .items
             .iter()
-            .any(|(_, terminal)| terminal.entity_id() == terminal_entity_id)
-        }) {
-          // Skip update if user has set a custom title
-          if item.custom_title.is_some() {
-            return;
+            .enumerate()
+            .find_map(|(tab_position, item)| {
+              item
+                .split_container
+                .all_terminals()
+                .into_iter()
+                .find(|(_, terminal)| terminal.entity_id() == terminal_entity_id)
+                .map(|(pane_id, _)| (tab_position, pane_id))
+            })
+        else {
+          return;
+        };
+
+        let terminal_entity = terminal_view.read(cx).terminal().clone();
+        let (new_title, working_directory) = {
+          let terminal = terminal_entity.read(cx);
+          (
+            terminal.title_text.clone(),
+            terminal.cached_working_directory(),
+          )
+        };
+
+        let tab_id = this.items[tab_position].ui_tree_id.clone();
+        if this.items[tab_position].custom_title.is_none()
+          && this.items[tab_position].title != new_title
+        {
+          this.items[tab_position].title = new_title.clone();
+          cx.notify();
+        }
+
+        let Some(window_id) = this.ensure_ui_tree_window_id(cx) else {
+          return;
+        };
+        let pane_id = format!("pane-{}", pane_id.0);
+        let mut actions = Vec::with_capacity(2);
+        match this
+          .ui_tree
+          .tree()
+          .window(&window_id)
+          .and_then(|window| window.tab(&tab_id))
+          .and_then(|(_, tab)| tab.pane_tree.find_pane(&pane_id))
+        {
+          Some(kazeterm_ui_tree::node::PaneNode::Terminal {
+            title,
+            working_directory: stored_working_directory,
+            ..
+          }) => {
+            if title != &new_title {
+              actions.push(UIAction::UpdatePaneTitle {
+                window_id: window_id.clone(),
+                tab_id: tab_id.clone(),
+                pane_id: pane_id.clone(),
+                title: new_title,
+              });
+            }
+            if stored_working_directory != &working_directory {
+              actions.push(UIAction::UpdatePaneWorkingDirectory {
+                window_id: window_id.clone(),
+                tab_id: tab_id.clone(),
+                pane_id: pane_id.clone(),
+                working_directory,
+              });
+            }
           }
-          let new_title = terminal_view
-            .read(cx)
-            .terminal()
-            .read(cx)
-            .title_text
-            .clone();
-          if item.title != new_title {
-            item.title = new_title;
-            cx.notify();
-          }
+          _ => return,
+        }
+
+        if !actions.is_empty() {
+          this.dispatch_default_ui_action(
+            UIAction::Batch { actions },
+            "update terminal metadata",
+            window,
+            cx,
+          );
         }
       }
     }
@@ -470,6 +527,7 @@ impl MainWindow {
     if tab_ix > 0 {
       self.items.swap(tab_ix, tab_ix - 1);
       self.active_tab_ix = Some(tab_ix - 1);
+      self.sync_ui_tree(cx);
       self.animate_ui_change(window, cx);
     }
   }
@@ -483,6 +541,7 @@ impl MainWindow {
     if tab_ix + 1 < self.items.len() {
       self.items.swap(tab_ix, tab_ix + 1);
       self.active_tab_ix = Some(tab_ix + 1);
+      self.sync_ui_tree(cx);
       self.animate_ui_change(window, cx);
     }
   }
@@ -544,6 +603,7 @@ impl MainWindow {
       .iter()
       .position(|tab| tab.index == keep_tab_index)
       .or_else(|| (!self.items.is_empty()).then_some(0));
+    self.sync_ui_tree(cx);
     self.animate_ui_change(window, cx);
   }
 
@@ -561,6 +621,7 @@ impl MainWindow {
         .filter_map(|(ix, item)| (ix <= tab_ix || item.pinned).then_some(item))
         .collect();
       self.active_tab_ix = Some(tab_ix.min(self.items.len().saturating_sub(1)));
+      self.sync_ui_tree(cx);
       self.animate_ui_change(window, cx);
     }
   }
@@ -570,7 +631,7 @@ impl MainWindow {
       if ix >= self.items.len() {
         return;
       }
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       self.dispatch_default_ui_action(

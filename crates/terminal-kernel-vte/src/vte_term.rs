@@ -1439,13 +1439,17 @@ impl TerminalBackend for VteBackend {
     let selection = s
       .selection_display
       .and_then(|selection| selection_range(&s, selection));
+    let cursor_char = cell_at_state(&s, s.cursor.point).c;
 
     RenderableSnapshot {
       cells,
       mode: s.mode,
       display_offset: offset,
       cursor,
+      cursor_char,
       selection,
+      history_size: s.scrollback.len(),
+      colors: s.colors,
     }
   }
 
@@ -1691,6 +1695,23 @@ impl TerminalBackend for VteBackend {
       if col >= num_cols {
         col = 0;
         line += 1;
+      }
+    }
+  }
+
+  fn iter_selected_lines(&self, lines: &[Line], f: &mut dyn FnMut(usize, AlacPoint, &Cell)) {
+    let state = self.state.lock();
+    let topmost_line = -(state.scrollback.len() as i32);
+    let bottommost_line = state.num_lines as i32 - 1;
+
+    for (selected_index, &line) in lines.iter().enumerate() {
+      if line.0 < topmost_line || line.0 > bottommost_line {
+        continue;
+      }
+      for column in 0..state.num_cols {
+        let point = AlacPoint::new(line, Column(column));
+        let cell = cell_at_state(&state, point);
+        f(selected_index, point, &cell);
       }
     }
   }

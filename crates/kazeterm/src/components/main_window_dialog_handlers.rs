@@ -93,7 +93,7 @@ impl MainWindow {
     match event {
       CloseConfirmEvent::SaveAndClose => {
         // Save workspace state before closing
-        self.sync_ui_tree(cx);
+        self.sync_ui_tree_for_persistence(cx);
         self.ui_tree.save_workspace();
         self.close_confirm_dialog = None;
         self._close_confirm_subscription = None;

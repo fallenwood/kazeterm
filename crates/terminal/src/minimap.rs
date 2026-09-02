@@ -1,7 +1,10 @@
 use gpui::{BorderStyle, Bounds, Hsla, Pixels, Point, Window, fill, px};
-use terminal_kernel::{ANSI_COLOR_COUNT, vte::ansi::Rgb};
+use terminal_kernel::{
+  ANSI_COLOR_COUNT,
+  vte::ansi::{Color, Rgb},
+};
 
-use crate::{indexed_cell::IndexedCell, mappings::colors::resolve_terminal_color};
+use crate::mappings::colors::resolve_terminal_color;
 
 /// Minimap width in pixels
 pub const MINIMAP_WIDTH: f32 = 80.0;
@@ -11,6 +14,32 @@ const MINIMAP_LINE_HEIGHT: f32 = 2.0;
 
 /// Character width in the minimap (in pixels)
 const MINIMAP_CHAR_WIDTH: f32 = 1.0;
+
+#[derive(Clone, Copy, Debug)]
+pub struct MinimapCell {
+  pub line: usize,
+  pub column: usize,
+  pub color: Color,
+}
+
+pub(crate) fn minimap_line_capacity(height: Pixels) -> usize {
+  ((height / px(MINIMAP_LINE_HEIGHT)).floor() as usize).max(1)
+}
+
+pub(crate) fn minimap_column_capacity(width: Pixels) -> usize {
+  ((width / px(MINIMAP_CHAR_WIDTH)).floor() as usize).max(1)
+}
+
+pub(crate) fn sampled_line_indices(total_lines: usize, capacity: usize) -> Vec<usize> {
+  let sample_count = total_lines.min(capacity.max(1));
+  match sample_count {
+    0 => Vec::new(),
+    1 => vec![total_lines - 1],
+    _ => (0..sample_count)
+      .map(|sample| sample * (total_lines - 1) / (sample_count - 1))
+      .collect(),
+  }
+}
 
 /// Minimap state for rendering
 #[derive(Clone, Debug)]
@@ -84,7 +113,7 @@ impl MinimapState {
 #[allow(clippy::too_many_arguments)]
 pub fn paint_minimap(
   bounds: Bounds<Pixels>,
-  cells: &[IndexedCell],
+  cells: &[MinimapCell],
   _visible_lines: usize,
   columns: usize,
   state: &MinimapState,
@@ -97,8 +126,17 @@ pub fn paint_minimap(
   // Paint background
   window.paint_quad(fill(bounds, background_color));
 
-  // Calculate scale factors
-  let minimap_line_height = px(MINIMAP_LINE_HEIGHT);
+  // Compressed histories use every available vertical pixel. Short histories
+  // retain the normal two-pixel row height.
+  let sampled_lines = state
+    .total_lines
+    .min(minimap_line_capacity(bounds.size.height))
+    .max(1);
+  let minimap_line_height = if state.total_lines > sampled_lines {
+    bounds.size.height / sampled_lines as f32
+  } else {
+    px(MINIMAP_LINE_HEIGHT)
+  };
   let minimap_char_width = px(MINIMAP_CHAR_WIDTH);
   let max_chars_per_line = (bounds.size.width / minimap_char_width).floor() as usize;
   let scale_x = if columns > max_chars_per_line {
@@ -107,43 +145,12 @@ pub fn paint_minimap(
     1.0
   };
 
-  // Group cells by line and paint them
-  let mut current_line = i32::MIN;
-  let mut line_y = bounds.origin.y;
-
   for cell in cells {
-    let line = cell.point.line.0;
-
-    // Skip if we've exceeded the minimap height
-    if line_y >= bounds.origin.y + bounds.size.height {
-      break;
-    }
-
-    // Move to next line if needed
-    if line != current_line {
-      current_line = line;
-      line_y = bounds.origin.y + px(line as f32 * MINIMAP_LINE_HEIGHT);
-    }
-
-    // Skip whitespace and cells outside bounds
-    if cell.c == ' ' || cell.c == '\t' {
-      continue;
-    }
-
-    // Get the cell color
-    let fg = if cell
-      .flags
-      .contains(terminal_kernel::term::cell::Flags::INVERSE)
-    {
-      cell.bg
-    } else {
-      cell.fg
-    };
-
-    let color = resolve_terminal_color(&fg, theme, color_table);
+    let line_y = bounds.origin.y + cell.line as f32 * minimap_line_height;
+    let color = resolve_terminal_color(&cell.color, theme, color_table);
 
     // Calculate position in minimap
-    let col = cell.point.column.0 as f32;
+    let col = cell.column as f32;
     let x = bounds.origin.x + px(col * scale_x * MINIMAP_CHAR_WIDTH);
 
     // Paint a small rectangle for the character
@@ -203,5 +210,13 @@ mod tests {
     let state = MinimapState::new(100, 20, 80, 80);
     let (top, _height) = state.viewport_metrics(px(200.0));
     assert!(top < px(1.0)); // viewport at top
+  }
+
+  #[test]
+  fn sampled_lines_cover_the_entire_history_with_a_fixed_budget() {
+    assert_eq!(sampled_line_indices(0, 10), Vec::<usize>::new());
+    assert_eq!(sampled_line_indices(100, 1), vec![99]);
+    assert_eq!(sampled_line_indices(100, 3), vec![0, 49, 99]);
+    assert_eq!(sampled_line_indices(3, 10), vec![0, 1, 2]);
   }
 }

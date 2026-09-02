@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
 use gpui::{Pixels, Point};
@@ -12,29 +13,46 @@ use super::LayoutState;
 
 /// Merge background regions to minimize the number of rectangles.
 pub(super) fn merge_background_regions(regions: Vec<BackgroundRegion>) -> Vec<BackgroundRegion> {
-  if regions.is_empty() {
-    return regions;
+  // The renderer emits regions in row-major order. Merge horizontal runs in
+  // one pass before indexing the previous row for vertical extension.
+  let mut horizontal = Vec::<BackgroundRegion>::with_capacity(regions.len());
+  for region in regions {
+    if let Some(previous) = horizontal.last_mut()
+      && previous.start_line == region.start_line
+      && previous.end_line == region.end_line
+      && previous.end_col + 1 == region.start_col
+      && previous.color == region.color
+    {
+      previous.end_col = region.end_col;
+    } else {
+      horizontal.push(region);
+    }
   }
 
-  let mut merged = regions;
-  let mut changed = true;
+  let mut merged = Vec::<BackgroundRegion>::with_capacity(horizontal.len());
+  let mut previous_row = HashMap::<(i32, i32, gpui::Hsla), usize>::new();
+  let mut current_row = HashMap::<(i32, i32, gpui::Hsla), usize>::new();
+  let mut current_line = None;
 
-  while changed {
-    changed = false;
-    let mut i = 0;
-
-    while i < merged.len() {
-      let mut j = i + 1;
-      while j < merged.len() {
-        if merged[i].can_merge_with(&merged[j]) {
-          let other = merged.remove(j);
-          merged[i].merge_with(&other);
-          changed = true;
-        } else {
-          j += 1;
+  for region in horizontal {
+    if current_line != Some(region.start_line) {
+      if let Some(previous_line) = current_line {
+        previous_row = std::mem::take(&mut current_row);
+        if region.start_line != previous_line + 1 {
+          previous_row.clear();
         }
       }
-      i += 1;
+      current_line = Some(region.start_line);
+    }
+
+    let key = (region.start_col, region.end_col, region.color);
+    if let Some(&merged_index) = previous_row.get(&key) {
+      merged[merged_index].end_line = region.end_line;
+      current_row.insert(key, merged_index);
+    } else {
+      let merged_index = merged.len();
+      merged.push(region);
+      current_row.insert(key, merged_index);
     }
   }
 
@@ -143,4 +161,60 @@ pub(super) fn is_decorative_character(ch: char) -> bool {
       | 0xE0CC..=0xE0D1
       | 0xE0D2..=0xE0D7
   )
+}
+
+#[cfg(test)]
+mod tests {
+  use gpui::Hsla;
+
+  use super::merge_background_regions;
+  use crate::background_region::BackgroundRegion;
+
+  #[test]
+  fn merges_row_major_regions_horizontally_then_vertically() {
+    let color = Hsla::black();
+    let regions = vec![
+      BackgroundRegion::new(0, 0, color),
+      BackgroundRegion::new(0, 1, color),
+      BackgroundRegion::new(1, 0, color),
+      BackgroundRegion::new(1, 1, color),
+    ];
+
+    let merged = merge_background_regions(regions);
+
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].start_line, 0);
+    assert_eq!(merged[0].end_line, 1);
+    assert_eq!(merged[0].start_col, 0);
+    assert_eq!(merged[0].end_col, 1);
+  }
+
+  #[test]
+  fn preserves_color_boundaries_and_line_gaps() {
+    let black = Hsla::black();
+    let white = Hsla::white();
+    let regions = vec![
+      BackgroundRegion::new(0, 0, black),
+      BackgroundRegion::new(0, 1, white),
+      BackgroundRegion::new(2, 0, black),
+    ];
+
+    let merged = merge_background_regions(regions);
+
+    assert_eq!(merged.len(), 3);
+  }
+
+  #[test]
+  fn merges_long_vertical_runs_without_repeated_scans() {
+    let color = Hsla::black();
+    let regions = (0..1_000)
+      .map(|line| BackgroundRegion::new(line, 4, color))
+      .collect();
+
+    let merged = merge_background_regions(regions);
+
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].start_line, 0);
+    assert_eq!(merged[0].end_line, 999);
+  }
 }
