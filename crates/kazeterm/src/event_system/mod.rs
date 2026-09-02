@@ -240,7 +240,7 @@ fn dispatch_add_tab_event(
   window: &mut Window,
   cx: &mut Context<MainWindow>,
 ) {
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   let action = MainWindow::build_add_tab_ui_action(window_id, profile_name, working_directory, cx);
@@ -264,7 +264,7 @@ fn dispatch_tab_cycle_event(
   window: &mut Window,
   cx: &mut Context<MainWindow>,
 ) {
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   let action = if forward {
@@ -282,7 +282,7 @@ fn dispatch_activate_tab_event(
   window: &mut Window,
   cx: &mut Context<MainWindow>,
 ) {
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   dispatch_event_ui_action(
@@ -313,7 +313,7 @@ fn dispatch_split_pane_event(
 
   mw.sync_active_pane_from_focus(window, cx);
 
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   let Some((tab_id, pane_id)) = active_ui_tree_tab_and_pane_ids(mw) else {
@@ -372,7 +372,7 @@ fn dispatch_close_active_pane_event(
 
   mw.sync_active_pane_from_focus(window, cx);
 
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   let Some((tab_id, pane_id)) = active_ui_tree_tab_and_pane_ids(mw) else {
@@ -409,7 +409,7 @@ fn dispatch_cycle_pane_focus_event(
 
   mw.sync_active_pane_from_focus(window, cx);
 
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   let Some(tab_id) = active_ui_tree_tab_id(mw) else {
@@ -465,7 +465,7 @@ fn dispatch_directional_pane_focus_event(
 
   mw.sync_active_pane_from_focus(window, cx);
 
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   let Some((tab_id, pane_id)) = mw
@@ -506,7 +506,7 @@ fn dispatch_swap_panes_event(
 
   mw.sync_active_pane_from_focus(window, cx);
 
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   let Some(tab_id) = active_ui_tree_tab_id(mw) else {
@@ -527,7 +527,7 @@ fn dispatch_toggle_search_event(
   window: &mut Window,
   cx: &mut Context<MainWindow>,
 ) {
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   dispatch_event_ui_action(
@@ -544,7 +544,7 @@ fn dispatch_toggle_tab_bar_event(
   window: &mut Window,
   cx: &mut Context<MainWindow>,
 ) {
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   dispatch_event_ui_action(
@@ -563,7 +563,7 @@ fn dispatch_overlay_event(
   window: &mut Window,
   cx: &mut Context<MainWindow>,
 ) {
-  let Some(window_id) = mw.sync_ui_tree_and_window_id(cx) else {
+  let Some(window_id) = mw.ensure_ui_tree_window_id(cx) else {
     return;
   };
   dispatch_event_ui_action(

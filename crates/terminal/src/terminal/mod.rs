@@ -201,6 +201,22 @@ impl Terminal {
     }
   }
 
+  /// Return the latest working directory already observed by prompt detection or
+  /// process refresh, without performing any OS I/O.
+  pub fn cached_working_directory(&self) -> Option<String> {
+    self
+      .osc7_cwd
+      .as_ref()
+      .map(|cwd| cwd.to_string_lossy().into_owned())
+      .or_else(|| {
+        self
+          .pty_info
+          .current
+          .as_ref()
+          .map(|info| info.cwd.to_string_lossy().into_owned())
+      })
+  }
+
   /// Force-refresh and return the current working directory of the foreground process.
   pub fn current_working_directory(&mut self) -> Option<String> {
     // Prefer OSC 7 (shell-reported, most reliable on Unix).
@@ -245,11 +261,7 @@ impl Terminal {
 
     // Fallback: sysinfo refresh.
     self.pty_info.has_changed();
-    let cwd = self
-      .pty_info
-      .current
-      .as_ref()
-      .map(|info| info.cwd.to_string_lossy().to_string());
+    let cwd = self.cached_working_directory();
     tracing::debug!(
       "CWD from sysinfo: {:?}, pid: {:?}",
       cwd,
@@ -918,7 +930,11 @@ fn should_hide_mouse_cursor(
 
 #[cfg(test)]
 mod tests {
+  use std::path::PathBuf;
   use std::time::{Duration, Instant};
+
+  use crate::pty_info::ProcessInfo;
+  use crate::test_support::fake_terminal_session;
 
   use super::{PROCESS_REFRESH_INTERVAL, process_refresh_due, should_hide_mouse_cursor};
 
@@ -932,6 +948,27 @@ mod tests {
       Some(now),
       now + PROCESS_REFRESH_INTERVAL
     ));
+  }
+
+  #[test]
+  fn cached_working_directory_prefers_shell_reported_path() {
+    let (mut terminal, _events, _writes, _resizes) = fake_terminal_session(80, 24);
+    terminal.pty_info.current = Some(ProcessInfo {
+      name: "shell".to_string(),
+      cwd: PathBuf::from("process-cwd"),
+      argv: Vec::new(),
+    });
+
+    assert_eq!(
+      terminal.cached_working_directory().as_deref(),
+      Some("process-cwd")
+    );
+
+    terminal.osc7_cwd = Some(PathBuf::from("osc7-cwd"));
+    assert_eq!(
+      terminal.cached_working_directory().as_deref(),
+      Some("osc7-cwd")
+    );
   }
 
   #[test]

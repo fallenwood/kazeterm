@@ -123,6 +123,7 @@ impl UITreeStore {
   pub fn capture_from_main_window(
     &mut self,
     main_window: &MainWindow,
+    refresh_working_directories: bool,
     cx: &mut Context<MainWindow>,
   ) {
     let win_id = self
@@ -151,6 +152,7 @@ impl UITreeStore {
       let pane_tree = capture_split_pane(
         &item.split_container.root,
         item.split_container.active_pane_id,
+        refresh_working_directories,
         cx,
       );
       tabs.push(TabNode {
@@ -428,13 +430,25 @@ impl Reconciler for UITreeStore {
 fn capture_split_pane(
   pane: &crate::components::SplitPane,
   active_pane_id: Option<PaneId>,
+  refresh_working_directories: bool,
   cx: &mut Context<MainWindow>,
 ) -> PaneNode {
   match pane {
     crate::components::SplitPane::Terminal { id, terminal } => {
       let terminal_entity = terminal.read(cx).terminal().clone();
-      let title = terminal_entity.read(cx).title_text.clone();
-      let cwd = terminal_entity.update(cx, |t, _cx| t.current_working_directory());
+      let (title, cwd) = if refresh_working_directories {
+        terminal_entity.update(cx, |terminal, _cx| {
+          let title = terminal.title_text.clone();
+          let cwd = terminal.current_working_directory();
+          (title, cwd)
+        })
+      } else {
+        let terminal = terminal_entity.read(cx);
+        (
+          terminal.title_text.clone(),
+          terminal.cached_working_directory(),
+        )
+      };
       PaneNode::Terminal {
         id: format!("pane-{}", id.0),
         working_directory: cwd,
@@ -453,8 +467,18 @@ fn capture_split_pane(
         SplitDirection::Vertical => kazeterm_ui_tree::node::SplitDirection::Vertical,
       },
       ratio: *ratio,
-      first: Box::new(capture_split_pane(first, active_pane_id, cx)),
-      second: Box::new(capture_split_pane(second, active_pane_id, cx)),
+      first: Box::new(capture_split_pane(
+        first,
+        active_pane_id,
+        refresh_working_directories,
+        cx,
+      )),
+      second: Box::new(capture_split_pane(
+        second,
+        active_pane_id,
+        refresh_working_directories,
+        cx,
+      )),
     },
   }
 }

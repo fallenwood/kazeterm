@@ -10,13 +10,37 @@ impl MainWindow {
   /// OS focus. This keeps the split-container state in sync with user clicks
   /// so that split / close / swap act on the pane the user is looking at.
   pub(crate) fn sync_active_pane_from_focus(&mut self, window: &Window, cx: &gpui::App) {
-    if let Some(item) = self.active_tab_item_mut() {
-      for (id, terminal) in item.split_container.all_terminals() {
-        if terminal.read(cx).focus_handle.is_focused(window) {
-          item.split_container.set_active_pane(id);
-          return;
-        }
-      }
+    let focused_pane = self.active_tab_item_mut().and_then(|item| {
+      let pane_id = item
+        .split_container
+        .all_terminals()
+        .into_iter()
+        .find(|(_, terminal)| terminal.read(cx).focus_handle.is_focused(window))
+        .map(|(pane_id, _)| pane_id)?;
+      item.split_container.set_active_pane(pane_id);
+      Some((item.ui_tree_id.clone(), format!("pane-{}", pane_id.0)))
+    });
+    let Some((tab_id, pane_id)) = focused_pane else {
+      return;
+    };
+    let Some(window_id) = self.ui_tree.window_id().map(ToOwned::to_owned) else {
+      return;
+    };
+    let focus_is_current = self
+      .ui_tree
+      .tree()
+      .window(&window_id)
+      .and_then(|window| window.tab(&tab_id))
+      .and_then(|(_, tab)| tab.pane_tree.focused_pane_id())
+      == Some(pane_id.as_str());
+    if !focus_is_current
+      && let Err(err) = self.ui_tree.apply_action(UIAction::FocusPane {
+        window_id,
+        tab_id,
+        pane_id,
+      })
+    {
+      tracing::error!("Failed to synchronize focused pane with UITree: {err}");
     }
   }
 
@@ -32,7 +56,7 @@ impl MainWindow {
   pub fn split_pane_horizontal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
       self.sync_active_pane_from_focus(window, cx);
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       let Some((tab_id, pane_id)) = self.active_ui_tree_tab_and_pane_ids() else {
@@ -66,7 +90,7 @@ impl MainWindow {
   pub fn split_pane_vertical(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
       self.sync_active_pane_from_focus(window, cx);
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       let Some((tab_id, pane_id)) = self.active_ui_tree_tab_and_pane_ids() else {
@@ -148,6 +172,9 @@ impl MainWindow {
 
     // Focus the new terminal
     Self::focus_terminal(window, &new_terminal, cx);
+    if !self.reconciling_ui_tree {
+      self.sync_ui_tree(cx);
+    }
     self.animate_ui_change(window, cx);
   }
 
@@ -161,7 +188,7 @@ impl MainWindow {
         return;
       }
       self.sync_active_pane_from_focus(window, cx);
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       let Some((tab_id, pane_id)) = self.active_ui_tree_tab_and_pane_ids() else {
@@ -189,6 +216,9 @@ impl MainWindow {
 
     if pane_closed {
       self.focus_active_terminal(window, cx);
+      if !self.reconciling_ui_tree {
+        self.sync_ui_tree(cx);
+      }
       self.animate_ui_change(window, cx);
     }
   }
@@ -233,7 +263,7 @@ impl MainWindow {
   pub fn focus_next_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
       self.sync_active_pane_from_focus(window, cx);
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       let Some((tab_id, _)) = self.active_ui_tree_tab_and_pane_ids() else {
@@ -250,18 +280,20 @@ impl MainWindow {
 
     self.sync_active_pane_from_focus(window, cx);
 
-    if let Some(item) = self.active_tab_item_mut() {
-      if let Some(terminal) = item.split_container.focus_next_pane() {
-        Self::focus_terminal(window, &terminal, cx);
-        self.animate_ui_change(window, cx);
-      }
+    let terminal = self
+      .active_tab_item_mut()
+      .and_then(|item| item.split_container.focus_next_pane());
+    if let Some(terminal) = terminal {
+      Self::focus_terminal(window, &terminal, cx);
+      self.sync_active_pane_from_focus(window, cx);
+      self.animate_ui_change(window, cx);
     }
   }
 
   pub fn focus_prev_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
       self.sync_active_pane_from_focus(window, cx);
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       let Some((tab_id, _)) = self.active_ui_tree_tab_and_pane_ids() else {
@@ -278,11 +310,13 @@ impl MainWindow {
 
     self.sync_active_pane_from_focus(window, cx);
 
-    if let Some(item) = self.active_tab_item_mut() {
-      if let Some(terminal) = item.split_container.focus_prev_pane() {
-        Self::focus_terminal(window, &terminal, cx);
-        self.animate_ui_change(window, cx);
-      }
+    let terminal = self
+      .active_tab_item_mut()
+      .and_then(|item| item.split_container.focus_prev_pane());
+    if let Some(terminal) = terminal {
+      Self::focus_terminal(window, &terminal, cx);
+      self.sync_active_pane_from_focus(window, cx);
+      self.animate_ui_change(window, cx);
     }
   }
 
@@ -294,11 +328,13 @@ impl MainWindow {
   ) {
     self.sync_active_pane_from_focus(window, cx);
 
-    if let Some(item) = self.active_tab_item_mut() {
-      if let Some(terminal) = item.split_container.focus_pane_in_direction(direction) {
-        Self::focus_terminal(window, &terminal, cx);
-        self.animate_ui_change(window, cx);
-      }
+    let terminal = self
+      .active_tab_item_mut()
+      .and_then(|item| item.split_container.focus_pane_in_direction(direction));
+    if let Some(terminal) = terminal {
+      Self::focus_terminal(window, &terminal, cx);
+      self.sync_active_pane_from_focus(window, cx);
+      self.animate_ui_change(window, cx);
     }
   }
 
@@ -321,7 +357,7 @@ impl MainWindow {
   pub fn swap_split_panes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree && !self.active_tab_has_hidden_panes() {
       self.sync_active_pane_from_focus(window, cx);
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       let Some((tab_id, _)) = self.active_ui_tree_tab_and_pane_ids() else {
@@ -338,10 +374,14 @@ impl MainWindow {
 
     self.sync_active_pane_from_focus(window, cx);
 
-    if let Some(item) = self.active_tab_item_mut() {
-      if item.split_container.swap_panes() {
-        self.animate_ui_change(window, cx);
+    let swapped = self
+      .active_tab_item_mut()
+      .is_some_and(|item| item.split_container.swap_panes());
+    if swapped {
+      if !self.reconciling_ui_tree {
+        self.sync_ui_tree(cx);
       }
+      self.animate_ui_change(window, cx);
     }
   }
 }

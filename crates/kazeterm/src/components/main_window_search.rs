@@ -17,7 +17,7 @@ impl MainWindow {
 
   pub(crate) fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree {
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       self.dispatch_default_ui_action(
@@ -72,7 +72,7 @@ impl MainWindow {
 
   pub(crate) fn toggle_tab_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     if !self.reconciling_ui_tree {
-      let Some(window_id) = self.sync_ui_tree_and_window_id(cx) else {
+      let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
         return;
       };
       self.dispatch_default_ui_action(

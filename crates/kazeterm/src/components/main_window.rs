@@ -294,14 +294,29 @@ impl MainWindow {
   /// Capture the current GPUI state into the UI tree.
   /// Call this before snapshotting or after external changes to sync state.
   pub fn sync_ui_tree(&mut self, cx: &mut Context<Self>) {
+    self.sync_ui_tree_with_cwd_refresh(false, cx);
+  }
+
+  /// Capture live state while force-refreshing terminal working directories.
+  /// This is reserved for persistence boundaries where freshness matters more
+  /// than avoiding synchronous process and filesystem queries.
+  pub(crate) fn sync_ui_tree_for_persistence(&mut self, cx: &mut Context<Self>) {
+    self.sync_ui_tree_with_cwd_refresh(true, cx);
+  }
+
+  fn sync_ui_tree_with_cwd_refresh(
+    &mut self,
+    refresh_working_directories: bool,
+    cx: &mut Context<Self>,
+  ) {
     let mut tree_store = std::mem::replace(&mut self.ui_tree, UITreeStore::new());
-    tree_store.capture_from_main_window(self, cx);
+    tree_store.capture_from_main_window(self, refresh_working_directories, cx);
     self.ui_tree = tree_store;
   }
 
   /// Dump the current UI tree as a JSON string.
   pub fn snapshot_ui_tree(&mut self, cx: &mut Context<Self>) -> Result<String, serde_json::Error> {
-    self.sync_ui_tree(cx);
+    self.sync_ui_tree_for_persistence(cx);
     self.ui_tree.to_json()
   }
 
@@ -310,7 +325,7 @@ impl MainWindow {
     &mut self,
     cx: &mut Context<Self>,
   ) -> Result<serde_json::Value, serde_json::Error> {
-    self.sync_ui_tree(cx);
+    self.sync_ui_tree_for_persistence(cx);
     self.ui_tree.to_json_value()
   }
 
@@ -340,8 +355,10 @@ impl MainWindow {
     Ok(())
   }
 
-  pub(crate) fn sync_ui_tree_and_window_id(&mut self, cx: &mut Context<Self>) -> Option<String> {
-    self.sync_ui_tree(cx);
+  pub(crate) fn ensure_ui_tree_window_id(&mut self, cx: &mut Context<Self>) -> Option<String> {
+    if self.ui_tree.window_id().is_none() {
+      self.sync_ui_tree(cx);
+    }
     self.ui_tree.window_id().map(ToOwned::to_owned)
   }
 
