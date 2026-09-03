@@ -435,8 +435,8 @@ fn structural_change_uses_configured_animation_parameters(cx: &mut TestAppContex
   cx.run_until_parked();
 
   window
-    .update(cx, |root, window, cx| root.insert_new_tab(window, cx))
-    .expect("adding a tab should succeed");
+    .update(cx, |root, window, cx| root.toggle_tab_bar(window, cx))
+    .expect("toggling the tab bar should succeed");
   let initial_opacity = window
     .update(cx, |root, _window, _cx| root.ui_transition_opacity)
     .expect("reading initial transition opacity should succeed");
@@ -458,6 +458,33 @@ fn structural_change_uses_configured_animation_parameters(cx: &mut TestAppContex
     .update(cx, |root, _window, _cx| root.ui_transition_opacity)
     .expect("reading final transition opacity should succeed");
   assert_eq!(final_opacity, 1.0);
+
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn adding_a_tab_does_not_fade_the_window(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  window
+    .update(cx, |root, window, cx| root.insert_new_tab(window, cx))
+    .expect("adding a tab should succeed");
+  let opacity = window
+    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
+    .expect("reading transition opacity should succeed");
+  assert_eq!(opacity, 1.0);
+
+  cx.run_until_parked();
+  advance_ui_transition(cx, 1);
+  let opacity_after_frame = window
+    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
+    .expect("reading transition opacity after a frame should succeed");
+  assert_eq!(opacity_after_frame, 1.0);
 
   clear_terminal_session_factory_for_testing();
 }

@@ -251,12 +251,7 @@ impl MainWindow {
 
     // Mark that we need to scroll tabs to the end after next render
     this.scroll_tabs_to_end = true;
-
-    if this.items.len() == 1 {
-      cx.notify();
-    } else {
-      this.animate_ui_change(window, cx);
-    }
+    cx.notify();
   }
 
   pub(crate) fn active_terminal(&self) -> Option<gpui::Entity<TerminalView>> {

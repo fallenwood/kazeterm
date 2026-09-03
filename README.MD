@@ -62,8 +62,8 @@ key_debug_mode = true
 
 ### Transition animations
 
-All structural UI changes share one transition configuration. Set `enabled = false`
-to apply changes immediately.
+Structural UI changes share one transition configuration. Creating or switching
+tabs does not fade the terminal. Set `enabled = false` to apply changes immediately.
 
 ```toml
 [animation]

@@ -385,7 +385,7 @@ impl UITreeStore {
       && diffs
         .iter()
         .any(|diff| matches!(diff, TreeDiff::TabAdded { .. }));
-    if !is_initial_content && diffs.iter().any(tree_diff_changes_visible_ui) {
+    if !is_initial_content && diffs.iter().any(tree_diff_fades_window) {
       main_window.animate_ui_change(window, cx);
     }
   }
@@ -407,7 +407,7 @@ impl UITreeStore {
   }
 }
 
-fn tree_diff_changes_visible_ui(diff: &TreeDiff) -> bool {
+fn tree_diff_fades_window(diff: &TreeDiff) -> bool {
   !matches!(
     diff,
     TreeDiff::WindowAdded { .. }
@@ -415,6 +415,9 @@ fn tree_diff_changes_visible_ui(diff: &TreeDiff) -> bool {
       | TreeDiff::PaneWorkingDirectoryChanged { .. }
       | TreeDiff::SearchQueryChanged { .. }
       | TreeDiff::SearchFlagsChanged { .. }
+      // Creating or switching tabs must not fade the terminal contents.
+      | TreeDiff::TabAdded { .. }
+      | TreeDiff::ActiveTabChanged { .. }
   )
 }
 

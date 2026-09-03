@@ -83,7 +83,7 @@ The transition implementation is task-based, globally configurable, and shared b
 - `set_tab_bar_visible()` and configuration reloads animate `vertical_tabbar_render_width`. Rendering derives tab-bar opacity from rendered/preferred width, so geometry and fade move together.
 - A user drag cancels the vertical tab-bar task by replacing it with `Task::ready(())`, then updates preferred and rendered width immediately.
 - `animate_ui_change()` resets `ui_transition_opacity` to the configured fade start and advances it to 1.0; `main_window_render.rs` applies that value to the root element. Configuration/theme refresh, dialog show/hide, tab switcher, direct tab reorders/transfers, hidden-pane/directional-focus changes, and workspace replacement call this path.
-- After reconciliation, `tree_diff_changes_visible_ui()` fades semantic UI changes except initial tab creation and nonvisual window add/remove, working-directory, search-query, and search-flag diffs.
+- After reconciliation, `tree_diff_fades_window()` fades semantic UI changes except tab add/activate (so new tabs do not fade the terminal), initial tab creation, and nonvisual window add/remove, working-directory, search-query, and search-flag diffs.
 - `MainWindow` retains task handles so replacing a task cancels an in-flight transition. Window resize consumes the same `TransitionSpec` and interpolation helpers from `reconciler.rs`.
 - When animation is disabled, width, opacity, and window-size paths cancel their retained task, apply the final target immediately, and notify as needed.
 
