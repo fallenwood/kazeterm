@@ -31,9 +31,6 @@ jobs:
           - os: macos-latest
             arch: ARM64
             target: aarch64-apple-darwin
-          - os: macos-latest
-            arch: X64
-            target: x86_64-apple-darwin
     permissions:
       contents: write
     steps:
