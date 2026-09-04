@@ -1,6 +1,6 @@
 use gpui::*;
-use gpui_component::ActiveTheme;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use themeing::SettingsStore;
 
 #[derive(Clone)]
@@ -16,7 +16,7 @@ impl EventEmitter<ShellErrorCloseEvent> for ShellErrorDialog {}
 impl ShellErrorDialog {
   pub fn new(error_message: String, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let focus_handle = cx.focus_handle();
-    window.focus(&focus_handle);
+    window.focus(&focus_handle, cx);
     Self {
       focus_handle,
       error_message,
@@ -84,7 +84,7 @@ impl Render for ShellErrorDialog {
                   .child(self.error_message.clone()),
               )
               .child(
-                gpui_component::h_flex().gap_2().justify_end().child(
+                gpui_kit::component::h_flex().gap_2().justify_end().child(
                   Button::new("ok")
                     .primary()
                     .label("OK")

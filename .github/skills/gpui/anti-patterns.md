@@ -1,11 +1,11 @@
 # Common Anti-Patterns in GPUI
 
-## Anti-Pattern 1: Forgetting `gpui_component::init()`
+## Anti-Pattern 1: Forgetting `gpui_kit::init()`
 
 ### Wrong
 ```rust
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    gpui_kit::application().run(|cx: &mut App| {
         cx.open_window(opts, |window, cx| { ... });  // Missing init!
     });
 }
@@ -14,8 +14,8 @@ fn main() {
 ### Correct
 ```rust
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        gpui_component::init(cx);  // Initialize first!
+    gpui_kit::application().run(|cx: &mut App| {
+        gpui_kit::init(cx);  // Initialize first!
         cx.open_window(opts, |window, cx| { ... });
     });
 }
@@ -225,7 +225,7 @@ GPUI is GPU-accelerated - element creation is cheap, no diffing overhead.
 
 | Don't | Do |
 |-------|-----|
-| Forget `gpui_component::init(cx)` | Initialize before opening windows |
+| Forget `gpui_kit::init(cx)` | Initialize before opening windows |
 | Skip `Root` wrapper | Always wrap top-level view in `Root` |
 | Look for `useState` | Put state in struct fields |
 | Forget `cx.notify()` | Call after every state mutation |

@@ -30,7 +30,7 @@ pub(crate) fn open_kazeterm_window(event_source_config: EventSourceConfig, cx: &
     cx.open_window(options, |window, cx| {
       let view = MainWindow::view_with_event_source(window, event_source_config.clone(), cx);
       initialize_window(&view, event_source_config, window, cx);
-      cx.new(|cx| gpui_component::Root::new(view, window, cx))
+      cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
     })?;
 
     Ok::<_, anyhow::Error>(())
@@ -58,7 +58,7 @@ pub(crate) fn open_detached_tab_window(dragged: DraggedTab, bounds: Bounds<Pixel
     if did_accept {
       initialize_window(&view, event_source_config, window, cx);
     }
-    cx.new(|cx| gpui_component::Root::new(view, window, cx))
+    cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
   });
 
   match result {

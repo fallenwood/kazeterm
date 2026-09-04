@@ -493,14 +493,13 @@ impl Element for TerminalElement {
           .read(cx)
           .should_hide_mouse_cursor(hide_mouse_when_typing);
 
-      if hide_mouse_cursor {
-        window.set_cursor_style(gpui::CursorStyle::None, &layout.hitbox);
-      } else if window.modifiers().secondary()
+      if !hide_mouse_cursor
+        && window.modifiers().secondary()
         && bounds.contains(&window.mouse_position())
         && self.terminal_view.read(cx).hover.is_some()
       {
         window.set_cursor_style(gpui::CursorStyle::PointingHand, &layout.hitbox);
-      } else {
+      } else if !hide_mouse_cursor {
         window.set_cursor_style(gpui::CursorStyle::IBeam, &layout.hitbox);
       }
 
@@ -552,7 +551,14 @@ impl Element for TerminalElement {
           {
             let ime_position = cursor_layout.bounding_rect(origin).origin;
             shaped_line
-              .paint(ime_position, layout.dimensions.line_height, window, cx)
+              .paint(
+                ime_position,
+                layout.dimensions.line_height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+              )
               .unwrap_or_default();
           }
 
@@ -758,6 +764,7 @@ fn paint_image_placement(
   );
 
   let _ = window.paint_image(
+    img_bounds,
     img_bounds,
     gpui::Corners::default(),
     placement.render_image.clone(),

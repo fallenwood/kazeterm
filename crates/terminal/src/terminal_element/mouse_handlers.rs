@@ -16,7 +16,7 @@ impl TerminalElement {
   ) -> impl Fn(&E, &mut Window, &mut App) {
     move |event, window, cx| {
       if steal_focus {
-        window.focus(&focus_handle);
+        window.focus(&focus_handle, cx);
       } else if !focus_handle.is_focused(window) {
         return;
       }
@@ -57,7 +57,7 @@ impl TerminalElement {
           return;
         }
 
-        window.focus(&focus);
+        window.focus(&focus, cx);
 
         if is_mouse_from_touch() {
           terminal.update(cx, |terminal, _| {
@@ -144,7 +144,7 @@ impl TerminalElement {
             .unwrap_or(true);
 
           if hovered_now && focus_terminal_on_hover && !focus.is_focused(window) {
-            window.focus(&focus);
+            window.focus(&focus, cx);
           }
 
           terminal_view.update(cx, |view, cx| {

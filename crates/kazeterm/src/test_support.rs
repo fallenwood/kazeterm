@@ -26,7 +26,7 @@ use gpui::TestAppContext;
 use themeing::SettingsStore;
 
 /// Install the globals every Kazeterm view expects: a default [`Config`] and a
-/// [`SettingsStore`] built from it, plus `gpui_component::init` so theme
+/// [`SettingsStore`] built from it, plus `gpui_kit::init` so theme
 /// lookups resolve.
 ///
 /// Safe to call multiple times per test context; later calls overwrite the
@@ -38,7 +38,7 @@ pub fn init_test_app(cx: &mut TestAppContext) {
     ::config::register_embedded_theme_loader(crate::assets::embedded_theme_loader);
     ::config::register_embedded_theme_lister(crate::assets::embedded_theme_lister);
 
-    gpui_component::init(cx);
+    gpui_kit::init(cx);
 
     let mut config = Config::default();
     // Disable workspace-restore so `MainWindow::new` always creates a fresh
@@ -49,7 +49,7 @@ pub fn init_test_app(cx: &mut TestAppContext) {
     cx.set_global(settings);
     cx.set_global(config.clone());
 
-    SettingsStore::init_gpui_component_theme(cx);
+    SettingsStore::init_gpui_kit_theme(cx);
 
     // Register terminal keybindings + ZoomState global so TerminalView/Element
     // can paint without panicking during e2e tests.

@@ -1,6 +1,6 @@
 use config::KeybindingList;
 use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
   Icon, IconName,
   menu::{PopupMenu, PopupMenuItem},
 };

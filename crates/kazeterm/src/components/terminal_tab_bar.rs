@@ -1,9 +1,9 @@
-//! Terminal tab bar component - custom implementation replacing gpui_component::tab
+//! Terminal tab bar component - custom implementation replacing the component tab.
 //! Based on zTerm's tab_bar.rs implementation
 
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::{h_flex, v_flex};
+use gpui_kit::component::{h_flex, v_flex};
 
 type MouseDownHandler = Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>;
 

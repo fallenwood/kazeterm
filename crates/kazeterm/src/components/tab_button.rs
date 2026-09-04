@@ -5,7 +5,7 @@ use gpui::{
   ParentElement, RenderOnce, StatefulInteractiveElement, Styled, Window, div,
   prelude::FluentBuilder,
 };
-use gpui_component::{Icon, IconName, Sizable};
+use gpui_kit::component::{Icon, IconName, Sizable};
 use themeing::SettingsStore;
 
 type TabButtonClickHandler = Rc<dyn Fn(&TabButtonClickEvent, &mut Window, &mut App)>;

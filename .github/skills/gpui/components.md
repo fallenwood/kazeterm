@@ -1,4 +1,4 @@
-# Component Patterns in gpui-component
+# Component Patterns in GPUI Kit
 
 ## Stateless vs Stateful Components
 
@@ -7,7 +7,7 @@
 Simple, predictable building blocks that don't maintain internal state.
 
 ```rust
-use gpui_component::prelude::*;
+use gpui_kit::component::prelude::*;
 
 // Button - configurable via builder pattern
 Button::new("save-btn").primary().label("Save")

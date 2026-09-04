@@ -272,7 +272,7 @@ impl MainWindow {
     terminal: &gpui::Entity<TerminalView>,
     cx: &mut Context<Self>,
   ) {
-    window.focus(&terminal.focus_handle(cx));
+    window.focus(&terminal.focus_handle(cx), cx);
     terminal.update(cx, |terminal_view, cx| {
       terminal_view.activate_cursor_blinking(window, cx);
     });
