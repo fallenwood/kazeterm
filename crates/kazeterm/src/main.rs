@@ -287,6 +287,7 @@ fn main() {
             MenuItem::separator(),
             MenuItem::action("Quit Kazeterm", Quit),
           ],
+          disabled: false,
         },
         Menu {
           name: "Window".into(),
@@ -296,6 +297,7 @@ fn main() {
             MenuItem::separator(),
             MenuItem::action("New Window", NewWindow),
           ],
+          disabled: false,
         },
       ]);
     }
