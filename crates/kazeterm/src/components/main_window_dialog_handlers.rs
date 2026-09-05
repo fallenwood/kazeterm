@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use gpui::{AppContext, Context, Entity, PathPromptOptions, Window};
+use gpui::{AppContext, Context, Entity, Focusable, PathPromptOptions, Window};
 
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent, AboutDialogEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
 use crate::components::import_alacritty_dialog::{ImportAlacrittyDialog, ImportAlacrittyEvent};
+use crate::components::settings_page::{SettingsCloseEvent, SettingsPage};
 use crate::components::shell_error_dialog::{ShellErrorCloseEvent, ShellErrorDialog};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
 use crate::components::update_confirm_dialog::{UpdateConfirmDialog, UpdateConfirmEvent};
@@ -14,6 +15,44 @@ const UI_TREE_JSON_FILENAME: &str = "kazeterm-ui-tree.json";
 const UI_TREE_JSON_LOAD_PROMPT: &str = "Load UI Tree JSON";
 
 impl MainWindow {
+  pub(crate) fn show_settings_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(page) = &self.settings_page {
+      window.focus(&page.focus_handle(cx), cx);
+      return;
+    }
+    self.tab_switcher_visible = false;
+    self.tab_switcher = None;
+    let page = cx.new(|cx| SettingsPage::new(window, cx));
+    self.attach_settings_page(page.clone(), window, cx);
+    page.update(cx, |page, cx| page.load(window, cx));
+  }
+
+  pub(crate) fn attach_settings_page(
+    &mut self,
+    page: Entity<SettingsPage>,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    self._settings_subscription =
+      Some(
+        cx.subscribe_in(&page, window, |this, _, event, window, cx| {
+          this.settings_page = None;
+          this._settings_subscription = None;
+          if matches!(event, SettingsCloseEvent::CloseWindow) {
+            this.show_close_confirm_dialog(window, cx);
+          } else if this.items.is_empty() {
+            this.insert_new_tab(window, cx);
+          } else {
+            this.refocus_active_terminal(window, cx);
+          }
+          cx.notify();
+        }),
+      );
+    window.focus(&page.focus_handle(cx), cx);
+    self.settings_page = Some(page);
+    cx.notify();
+  }
+
   /// Show rename dialog for a tab
   pub(crate) fn show_rename_dialog(
     &mut self,
@@ -40,7 +79,7 @@ impl MainWindow {
 
     self.rename_dialog = Some(dialog);
     self._rename_dialog_subscription = Some(subscription);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn on_rename_dialog_event(
@@ -64,13 +103,17 @@ impl MainWindow {
 
     // Refocus the terminal
     self.refocus_active_terminal(window, cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   /// Show close confirmation dialog
   pub fn show_close_confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     // Don't show if already visible
     if self.close_confirm_dialog.is_some() {
+      return;
+    }
+    if let Some(page) = &self.settings_page {
+      page.update(cx, |page, cx| page.request_window_close(window, cx));
       return;
     }
 
@@ -80,7 +123,7 @@ impl MainWindow {
 
     self.close_confirm_dialog = Some(dialog);
     self._close_confirm_subscription = Some(subscription);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn on_close_confirm_event(
@@ -112,7 +155,7 @@ impl MainWindow {
 
         // Refocus the terminal
         self.refocus_active_terminal(window, cx);
-        self.animate_ui_change(window, cx);
+        cx.notify();
       }
     }
   }
@@ -136,7 +179,7 @@ impl MainWindow {
     self.about_dialog = Some(dialog);
     self._about_dialog_subscription = Some(subscription);
     self._about_dialog_event_subscription = Some(event_subscription);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn on_about_dialog_event(
@@ -153,7 +196,7 @@ impl MainWindow {
 
     // Refocus the terminal
     self.refocus_active_terminal(window, cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn on_about_dialog_action_event(
@@ -243,7 +286,7 @@ impl MainWindow {
     self.pending_update = Some(prepared_update);
     self.update_confirm_dialog = Some(dialog);
     self._update_confirm_subscription = Some(subscription);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn on_update_confirm_event(
@@ -261,7 +304,7 @@ impl MainWindow {
         let Some(prepared_update) = self.pending_update.take() else {
           tracing::warn!("Update was confirmed but no prepared update was pending");
           self.refocus_active_terminal(window, cx);
-          self.animate_ui_change(window, cx);
+          cx.notify();
           return;
         };
         let release_tag = prepared_update.release_tag().to_string();
@@ -282,7 +325,7 @@ impl MainWindow {
             });
           }
           self.refocus_active_terminal(window, cx);
-          self.animate_ui_change(window, cx);
+          cx.notify();
         }
       }
       UpdateConfirmEvent::Cancel => {
@@ -298,7 +341,7 @@ impl MainWindow {
           }
         }
         self.refocus_active_terminal(window, cx);
-        self.animate_ui_change(window, cx);
+        cx.notify();
       }
     }
   }
@@ -318,7 +361,7 @@ impl MainWindow {
 
     self.import_alacritty_dialog = Some(dialog);
     self._import_alacritty_subscription = Some(subscription);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub fn prompt_dump_ui_tree_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -438,7 +481,7 @@ impl MainWindow {
     self.import_alacritty_dialog = None;
     self._import_alacritty_subscription = None;
     self.refocus_active_terminal(window, cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   fn handle_dump_ui_tree_prompt_result(
@@ -507,7 +550,7 @@ impl MainWindow {
 
     self.shell_error_dialog = Some(dialog);
     self._shell_error_subscription = Some(subscription);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn on_shell_error_event(
@@ -520,6 +563,6 @@ impl MainWindow {
     self.shell_error_dialog = None;
     self._shell_error_subscription = None;
     self.refocus_active_terminal(window, cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 }

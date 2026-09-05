@@ -34,8 +34,8 @@ pub use shell::{DetectedShell, detect_shells, get_default_shell};
 mod theme;
 pub use theme::{
   EmbeddedThemeLister, EmbeddedThemeLoader, ThemeColors, ThemeFile, ThemeMode,
-  get_custom_themes_path, list_available_themes, load_theme, load_theme_from_assets,
-  parse_hex_color, parse_theme_content, register_embedded_theme_lister,
+  clear_custom_themes_path, get_custom_themes_path, list_available_themes, load_theme,
+  load_theme_from_assets, parse_hex_color, parse_theme_content, register_embedded_theme_lister,
   register_embedded_theme_loader, set_custom_themes_path,
 };
 
@@ -49,6 +49,9 @@ pub mod alacritty_import;
 
 mod profiles;
 pub use profiles::Profile;
+
+mod editor;
+pub use editor::ConfigFile;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -119,10 +122,8 @@ pub struct AnimationConfig {
   pub duration_ms: u64,
   /// Requested delay between rendered animation frames in milliseconds.
   pub frame_interval_ms: u64,
-  /// Easing curve used for geometry and opacity interpolation.
+  /// Easing curve used for geometry interpolation.
   pub easing: AnimationEasing,
-  /// Starting opacity for content fade-in transitions.
-  pub fade_start_opacity: f32,
 }
 
 impl Default for AnimationConfig {
@@ -132,7 +133,6 @@ impl Default for AnimationConfig {
       duration_ms: 180,
       frame_interval_ms: 15,
       easing: AnimationEasing::EaseInOut,
-      fade_start_opacity: 0.82,
     }
   }
 }
@@ -175,14 +175,6 @@ impl AnimationConfig {
       return std::time::Duration::ZERO;
     }
     self.get_duration().div_f32(frames as f32)
-  }
-
-  pub fn get_fade_start_opacity(&self) -> f32 {
-    if self.fade_start_opacity.is_finite() {
-      self.fade_start_opacity.clamp(0.0, 1.0)
-    } else {
-      Self::default().fade_start_opacity
-    }
   }
 }
 
@@ -579,7 +571,7 @@ impl Default for AutoUpdateConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(default)]
+#[serde(default = "Config::file_defaults")]
 pub struct Config {
   /// Config file version in YYYYMMDD.Rev format (e.g., "20260220.1")
   pub version: String,
@@ -609,6 +601,17 @@ pub struct Config {
 impl Default for Config {
   fn default() -> Self {
     Self {
+      profiles: profiles::default_profiles(),
+      container_profiles: profiles::detect_container_profiles(),
+      ..Self::file_defaults()
+    }
+  }
+}
+
+impl Config {
+  // Deserializing settings must not discover shells or start container processes.
+  fn file_defaults() -> Self {
+    Self {
       version: CURRENT_CONFIG_VERSION.to_string(),
       imports: Vec::new(),
       colors: ColorsConfig::default(),
@@ -622,14 +625,12 @@ impl Default for Config {
       cursor: CursorConfig::default(),
       notification: NotificationConfig::default(),
       auto_update: AutoUpdateConfig::default(),
-      profiles: profiles::default_profiles(),
+      profiles: Vec::new(),
       keybindings: KeybindingConfig::default(),
-      container_profiles: profiles::detect_container_profiles(),
+      container_profiles: Vec::new(),
     }
   }
-}
 
-impl Config {
   pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
     let config_path = Self::get_config_file_path_impl();
 
@@ -716,43 +717,35 @@ impl Config {
     unreachable!("Could not determine config file path because home/data directory is not found");
   }
 
-  /// Serialize a value to a pretty TOML string with 2-space indentation.
+  /// Serialize a value without altering whitespace inside multiline strings.
   fn to_toml_pretty(value: &impl Serialize) -> Result<String, toml::ser::Error> {
-    let raw = toml::to_string_pretty(value)?;
-    // toml::to_string_pretty uses 4-space indent; collapse to 2-space.
-    Ok(
-      raw
-        .lines()
-        .map(|line| {
-          let stripped = line.trim_start_matches(' ');
-          let spaces = line.len() - stripped.len();
-          if spaces > 0 {
-            format!("{}{}", " ".repeat(spaces / 2), stripped)
-          } else {
-            line.to_string()
-          }
-        })
-        .collect::<Vec<_>>()
-        .join("\n"),
-    )
+    toml::to_string_pretty(value)
   }
 
   /// Create a default config file at the specified path
   #[allow(unused)]
   fn create_default_config(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    Self::create_config_file(path, &Self::default())
+  }
+
+  fn create_config_file(path: &Path, config: &Self) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write as _;
+
     // Create parent directories if they don't exist
     if let Some(parent) = path.parent() {
       std::fs::create_dir_all(parent)?;
     }
 
-    // Generate config from default
-    let default_config = Self::default();
-    let config_str = Self::to_toml_pretty(&default_config)?;
+    let config_str = Self::to_toml_pretty(config)?;
 
     // Add header comment
     let content = format!("{}{}", GENERATED_CONFIG_HEADER, config_str);
 
-    std::fs::write(path, content)?;
+    let mut file = std::fs::OpenOptions::new()
+      .write(true)
+      .create_new(true)
+      .open(path)?;
+    file.write_all(content.as_bytes())?;
     Ok(())
   }
 
@@ -1166,20 +1159,15 @@ mod tests {
   }
 
   #[test]
-  fn animation_config_clamps_timing_and_opacity() {
+  fn animation_config_clamps_timing() {
     let config = AnimationConfig {
       duration_ms: 10_000,
       frame_interval_ms: 1,
-      fade_start_opacity: f32::NAN,
       ..Default::default()
     };
 
     assert_eq!(config.get_duration(), std::time::Duration::from_secs(5));
     assert_eq!(config.get_frame_count(), 600);
-    assert_eq!(
-      config.get_fade_start_opacity(),
-      AnimationConfig::default().fade_start_opacity
-    );
   }
 
   #[test]

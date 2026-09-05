@@ -13,7 +13,6 @@ pub(crate) struct TransitionSpec {
   pub(crate) frames: u32,
   pub(crate) frame_duration: Duration,
   easing: ::config::AnimationEasing,
-  pub(crate) fade_start_opacity: f32,
 }
 
 impl TransitionSpec {
@@ -23,18 +22,12 @@ impl TransitionSpec {
       frames,
       frame_duration: config.get_frame_duration(),
       easing: config.easing,
-      fade_start_opacity: config.get_fade_start_opacity(),
     })
   }
 
   pub(crate) fn progress(self, frame: u32) -> f32 {
     self.easing.apply(frame as f32 / self.frames as f32)
   }
-}
-
-pub(crate) fn interpolate_f32(start: f32, target: f32, progress: f32) -> f32 {
-  let progress = progress.clamp(0.0, 1.0);
-  start + (target - start) * progress
 }
 
 pub(crate) fn interpolate_pixels(start: Pixels, target: Pixels, progress: f32) -> Pixels {
@@ -77,14 +70,12 @@ mod tests {
       duration_ms: 200,
       frame_interval_ms: 20,
       easing: ::config::AnimationEasing::EaseIn,
-      fade_start_opacity: 0.5,
       ..Default::default()
     };
     let transition = TransitionSpec::from_config(&config).unwrap();
 
     assert_eq!(transition.frames, 10);
     assert_eq!(transition.frame_duration, Duration::from_millis(20));
-    assert_eq!(transition.fade_start_opacity, 0.5);
     assert_eq!(transition.progress(5), 0.25);
   }
 

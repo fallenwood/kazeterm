@@ -8,6 +8,36 @@ use themeing::SettingsStore;
 use super::main_window::MainWindow;
 use super::shell_icon::ShellIcon;
 
+#[cfg(test)]
+#[path = "menu_builder_tests.rs"]
+mod tests;
+
+pub(super) fn scrollable_menu(
+  menu: PopupMenu,
+  window: &mut Window,
+  cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+  let viewport = window.viewport_size();
+  // Leave room for the popup's window-edge margins and border.
+  let max_height = (viewport.height - px(20.0)).max(Pixels::ZERO);
+
+  // PopupMenu fixes explicit sizes at creation; dismiss on resize to avoid stale bounds.
+  let bounds_subscription = cx.observe_window_bounds(window, move |menu, window, cx| {
+    if window.viewport_size() != viewport {
+      let focus = menu.focus_handle(cx);
+      window.defer(cx, move |window, cx| {
+        if focus.contains_focused(window, cx) {
+          focus.dispatch_action(&gpui_kit::base::actions::Cancel, window, cx);
+        }
+      });
+    }
+  });
+  cx.on_release(move |_, _| drop(bounds_subscription))
+    .detach();
+
+  menu.scrollable(true).max_h(max_height)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_tab_context_menu(
   menu: PopupMenu,
@@ -25,6 +55,8 @@ pub(super) fn build_tab_context_menu(
   move_next_icon: IconName,
   has_hidden_panes: bool,
   can_toggle_hidden_panes: bool,
+  window: &mut Window,
+  cx: &mut Context<PopupMenu>,
 ) -> PopupMenu {
   let view_rename = view.clone();
   let view_duplicate = view.clone();
@@ -48,7 +80,7 @@ pub(super) fn build_tab_context_menu(
   };
   let pin_tab_label = if is_pinned { "Unpin Tab" } else { "Pin Tab" };
 
-  menu
+  scrollable_menu(menu, window, cx)
     .item(
       PopupMenuItem::new("Rename Tab")
         .icon(Icon::empty().path("icons/pencil.svg"))
@@ -198,14 +230,19 @@ pub(super) fn build_tab_context_menu(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_new_tab_menu(
-  mut menu: PopupMenu,
+  menu: PopupMenu,
   view: Entity<MainWindow>,
   local_profiles: &[(String, String)],
   container_profiles: &[(String, String)],
   ssh_hosts: &[String],
   profile_shortcuts: &[String],
+  window: &mut Window,
+  cx: &mut Context<PopupMenu>,
 ) -> PopupMenu {
+  let mut menu = scrollable_menu(menu, window, cx);
+
   // Local profiles
   for (idx, (name, shell_path)) in local_profiles.iter().enumerate() {
     let profile_name = name.clone();
@@ -324,8 +361,32 @@ pub(super) fn build_new_tab_menu(
     }
   }
 
-  // Config & About
+  // Settings & config
   menu = menu.separator();
+  let view_settings = view.clone();
+  menu = menu.item(
+    PopupMenuItem::element(|_window, _cx| {
+      h_flex()
+        .gap_2()
+        .items_center()
+        .child(
+          div()
+            .w(px(16.0))
+            .h(px(16.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(Icon::empty().path("icons/settings.svg").size_4()),
+        )
+        .child("Settings")
+        .into_any_element()
+    })
+    .on_click(move |_, window, cx| {
+      view_settings.update(cx, |this, cx| {
+        this.show_settings_page(window, cx);
+      });
+    }),
+  );
   menu = menu.item(
     PopupMenuItem::element(|_window, _cx| {
       h_flex()

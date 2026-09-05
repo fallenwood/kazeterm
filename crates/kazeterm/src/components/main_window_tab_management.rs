@@ -268,10 +268,18 @@ impl MainWindow {
   }
 
   pub(crate) fn focus_terminal(
+    &self,
     window: &mut Window,
     terminal: &gpui::Entity<TerminalView>,
     cx: &mut Context<Self>,
   ) {
+    if let Some(page) = &self.settings_page {
+      let focus = page.focus_handle(cx);
+      if !focus.contains_focused(window, cx) {
+        window.focus(&focus, cx);
+      }
+      return;
+    }
     window.focus(&terminal.focus_handle(cx), cx);
     terminal.update(cx, |terminal_view, cx| {
       terminal_view.activate_cursor_blinking(window, cx);
@@ -280,7 +288,7 @@ impl MainWindow {
 
   pub(crate) fn focus_active_terminal(&self, window: &mut Window, cx: &mut Context<Self>) {
     if let Some(terminal) = self.active_terminal() {
-      Self::focus_terminal(window, &terminal, cx);
+      self.focus_terminal(window, &terminal, cx);
     }
   }
 
@@ -337,11 +345,11 @@ impl MainWindow {
             // Successfully closed a pane (but not the last one)
             // Focus the newly active terminal
             if let Some(terminal) = this.items[tab_pos].split_container.get_active_terminal() {
-              Self::focus_terminal(window, &terminal, cx);
+              this.focus_terminal(window, &terminal, cx);
             }
             this.resubscribe_tab_terminals(tab_pos, window, cx);
             this.sync_ui_tree(cx);
-            this.animate_ui_change(window, cx);
+            cx.notify();
           }
         }
       }
@@ -485,6 +493,12 @@ impl MainWindow {
 
       // If no tabs left, either close the window or insert a new tab
       if self.items.is_empty() {
+        self.active_tab_ix = None;
+        // A background shell exiting must not discard an open settings draft.
+        if self.settings_page.is_some() {
+          cx.notify();
+          return;
+        }
         let config = cx.global::<::config::Config>();
         if config.tab.close_on_last {
           crate::window_manager::close_window(window, cx);
@@ -515,34 +529,34 @@ impl MainWindow {
       self.set_active_tab(new_active_ix, window, cx);
     }
 
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn move_tab_left(
     &mut self,
     tab_ix: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if tab_ix > 0 {
       self.items.swap(tab_ix, tab_ix - 1);
       self.active_tab_ix = Some(tab_ix - 1);
       self.sync_ui_tree(cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
   pub(crate) fn move_tab_right(
     &mut self,
     tab_ix: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if tab_ix + 1 < self.items.len() {
       self.items.swap(tab_ix, tab_ix + 1);
       self.active_tab_ix = Some(tab_ix + 1);
       self.sync_ui_tree(cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -580,14 +594,14 @@ impl MainWindow {
 
     if let Some(item) = self.items.iter_mut().find(|item| item.index == tab_index) {
       item.pinned = pinned;
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
   pub(crate) fn close_other_tabs(
     &mut self,
     keep_tab_index: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if self.items.len() <= 1 {
@@ -604,13 +618,13 @@ impl MainWindow {
       .position(|tab| tab.index == keep_tab_index)
       .or_else(|| (!self.items.is_empty()).then_some(0));
     self.sync_ui_tree(cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn close_tabs_to_right(
     &mut self,
     tab_ix: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     let right_ix = tab_ix + 1;
@@ -622,7 +636,7 @@ impl MainWindow {
         .collect();
       self.active_tab_ix = Some(tab_ix.min(self.items.len().saturating_sub(1)));
       self.sync_ui_tree(cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -680,8 +694,8 @@ impl MainWindow {
         search_bar.restore_state(&new_state, window, cx);
       });
 
-      if !self.search_visible {
-        Self::focus_terminal(window, &terminal, cx);
+      if !self.search_visible || self.settings_page.is_some() {
+        self.focus_terminal(window, &terminal, cx);
       } else {
         self.search_bar.update(cx, |search_bar, cx| {
           search_bar.focus(window, cx);

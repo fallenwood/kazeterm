@@ -8,6 +8,7 @@ use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
 use crate::components::import_alacritty_dialog::ImportAlacrittyDialog;
 use crate::components::search_bar::SearchBar;
+use crate::components::settings_page::SettingsPage;
 use crate::components::shell_error_dialog::ShellErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
@@ -55,6 +56,8 @@ pub struct MainWindow {
   pub(crate) search_visible: bool,
   pub(crate) search_bar: Entity<SearchBar>,
   pub(crate) _search_bar_subscription: gpui::Subscription,
+  pub(crate) settings_page: Option<Entity<SettingsPage>>,
+  pub(crate) _settings_subscription: Option<gpui::Subscription>,
   pub(crate) tab_scroll_handle: gpui::ScrollHandle,
   pub(crate) scroll_tabs_to_end: bool,
   pub(crate) scroll_to_active_tab: bool,
@@ -67,9 +70,6 @@ pub struct MainWindow {
   /// Current width while the vertical tab bar transitions.
   pub(crate) vertical_tabbar_render_width: Pixels,
   pub(crate) vertical_tabbar_animation: Task<()>,
-  /// Applied to the root view while structural UI changes fade in.
-  pub(crate) ui_transition_opacity: f32,
-  pub(crate) ui_transition_animation: Task<()>,
   pub(crate) key_debug_modifiers: KeyDebugModifiers,
   pub(crate) key_debug_pressed_keys: Vec<KeyDebugPressedKey>,
   pub(crate) key_debug_recent_keys: Vec<KeyDebugRecentKey>,
@@ -228,6 +228,8 @@ impl MainWindow {
       search_visible: false,
       search_bar,
       _search_bar_subscription: search_bar_subscription,
+      settings_page: None,
+      _settings_subscription: None,
       tab_scroll_handle: gpui::ScrollHandle::new(),
       scroll_tabs_to_end: false,
       scroll_to_active_tab: false,
@@ -238,8 +240,6 @@ impl MainWindow {
       vertical_tabbar_width,
       vertical_tabbar_render_width,
       vertical_tabbar_animation: Task::ready(()),
-      ui_transition_opacity: 1.0,
-      ui_transition_animation: Task::ready(()),
       key_debug_modifiers: KeyDebugModifiers::default(),
       key_debug_pressed_keys: Vec::new(),
       key_debug_recent_keys: Vec::new(),

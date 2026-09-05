@@ -7,6 +7,7 @@ use gpui_kit::component::{
 use terminal::TerminalView;
 
 use super::main_window::MainWindow;
+use super::menu_builder::scrollable_menu;
 
 /// Format configured keybindings for display in menu items.
 fn kb_hint(keybinding: &KeybindingList) -> String {
@@ -40,7 +41,7 @@ pub(super) fn build_terminal_context_menu(
   let copy_hint = kb_hint(&kb.copy);
   let paste_hint = kb_hint(&kb.paste);
 
-  let menu = menu
+  let menu = scrollable_menu(menu, window, cx)
     .item(
       PopupMenuItem::new(format!("Copy ({})", copy_hint))
         .icon(IconName::Copy)
@@ -111,7 +112,7 @@ pub(super) fn build_terminal_context_menu(
   let swap_hint = kb_hint(&kb.swap_split_panes);
   let toggle_hidden_hint = kb_hint(&kb.toggle_hidden_panes);
 
-  let menu = menu.submenu("Split Panes", window, cx, move |menu, _window, _cx| {
+  let menu = menu.submenu("Split Panes", window, cx, move |menu, window, cx| {
     let mw_split_h = mw_split_h.clone();
     let mw_split_v = mw_split_v.clone();
     let mw_close_pane = mw_close_pane.clone();
@@ -120,7 +121,7 @@ pub(super) fn build_terminal_context_menu(
     let mw_swap = mw_swap.clone();
     let mw_toggle_hidden = mw_toggle_hidden.clone();
 
-    menu
+    scrollable_menu(menu, window, cx)
       .item(
         PopupMenuItem::new(format!("Split Horizontal ({})", split_h_hint))
           .icon(Icon::empty().path("icons/columns-2.svg"))
@@ -201,13 +202,13 @@ pub(super) fn build_terminal_context_menu(
   let mw_rename_tab = main_window.clone();
   let mw_close_tab = main_window.clone();
 
-  let menu = menu.submenu("Tabs", window, cx, move |menu, _window, _cx| {
+  let menu = menu.submenu("Tabs", window, cx, move |menu, window, cx| {
     let mw_new_tab = mw_new_tab.clone();
     let mw_dup_tab = mw_dup_tab.clone();
     let mw_rename_tab = mw_rename_tab.clone();
     let mw_close_tab = mw_close_tab.clone();
 
-    menu
+    scrollable_menu(menu, window, cx)
       .item(
         PopupMenuItem::new("New Tab")
           .icon(IconName::Plus)
@@ -264,11 +265,11 @@ pub(super) fn build_terminal_context_menu(
   let zoom_out_hint = kb_hint(&kb.zoom_out);
   let zoom_reset_hint = kb_hint(&kb.zoom_reset);
 
-  let menu = menu.submenu("Window", window, cx, move |menu, _window, _cx| {
+  let menu = menu.submenu("Window", window, cx, move |menu, window, cx| {
     let mw_fullscreen = mw_fullscreen.clone();
     let mw_close_window = mw_close_window.clone();
 
-    menu
+    scrollable_menu(menu, window, cx)
       .item(
         PopupMenuItem::new("New Window")
           .icon(IconName::Plus)
@@ -326,11 +327,11 @@ pub(super) fn build_terminal_context_menu(
   #[allow(unused)]
   let mw_import = main_window.clone();
 
-  let menu = menu.submenu("Configuration", window, cx, move |menu, _window, _cx| {
+  let menu = menu.submenu("Configuration", window, cx, move |menu, window, cx| {
     #[allow(unused)]
     let mw_import = mw_import.clone();
 
-    menu
+    scrollable_menu(menu, window, cx)
       .item(
         PopupMenuItem::new("Open Config Path")
           .icon(IconName::Folder)
