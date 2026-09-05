@@ -8,6 +8,7 @@ use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
 use crate::components::import_alacritty_dialog::ImportAlacrittyDialog;
 use crate::components::search_bar::SearchBar;
+use crate::components::settings_page::SettingsPage;
 use crate::components::shell_error_dialog::ShellErrorDialog;
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
@@ -55,6 +56,8 @@ pub struct MainWindow {
   pub(crate) search_visible: bool,
   pub(crate) search_bar: Entity<SearchBar>,
   pub(crate) _search_bar_subscription: gpui::Subscription,
+  pub(crate) settings_page: Option<Entity<SettingsPage>>,
+  pub(crate) _settings_subscription: Option<gpui::Subscription>,
   pub(crate) tab_scroll_handle: gpui::ScrollHandle,
   pub(crate) scroll_tabs_to_end: bool,
   pub(crate) scroll_to_active_tab: bool,
@@ -228,6 +231,8 @@ impl MainWindow {
       search_visible: false,
       search_bar,
       _search_bar_subscription: search_bar_subscription,
+      settings_page: None,
+      _settings_subscription: None,
       tab_scroll_handle: gpui::ScrollHandle::new(),
       scroll_tabs_to_end: false,
       scroll_to_active_tab: false,

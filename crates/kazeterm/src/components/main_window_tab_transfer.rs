@@ -171,7 +171,7 @@ impl MainWindow {
     };
 
     self.resubscribe_tab_terminals(target_tab_ix, window, cx);
-    let search_visible = self.search_visible;
+    let search_visible = self.search_visible && self.settings_page.is_none();
     let terminal_for_search = new_active_terminal.clone();
     self.search_bar.update(cx, |search_bar, cx| {
       search_bar.set_terminal_view(terminal_for_search);
@@ -180,7 +180,7 @@ impl MainWindow {
       }
     });
     if !search_visible {
-      Self::focus_terminal(window, &new_active_terminal, cx);
+      self.focus_terminal(window, &new_active_terminal, cx);
     }
 
     self.sync_ui_tree(cx);

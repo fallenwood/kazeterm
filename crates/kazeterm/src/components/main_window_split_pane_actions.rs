@@ -171,7 +171,7 @@ impl MainWindow {
     }
 
     // Focus the new terminal
-    Self::focus_terminal(window, &new_terminal, cx);
+    self.focus_terminal(window, &new_terminal, cx);
     if !self.reconciling_ui_tree {
       self.sync_ui_tree(cx);
     }
@@ -284,7 +284,7 @@ impl MainWindow {
       .active_tab_item_mut()
       .and_then(|item| item.split_container.focus_next_pane());
     if let Some(terminal) = terminal {
-      Self::focus_terminal(window, &terminal, cx);
+      self.focus_terminal(window, &terminal, cx);
       self.sync_active_pane_from_focus(window, cx);
       self.animate_ui_change(window, cx);
     }
@@ -314,7 +314,7 @@ impl MainWindow {
       .active_tab_item_mut()
       .and_then(|item| item.split_container.focus_prev_pane());
     if let Some(terminal) = terminal {
-      Self::focus_terminal(window, &terminal, cx);
+      self.focus_terminal(window, &terminal, cx);
       self.sync_active_pane_from_focus(window, cx);
       self.animate_ui_change(window, cx);
     }
@@ -332,7 +332,7 @@ impl MainWindow {
       .active_tab_item_mut()
       .and_then(|item| item.split_container.focus_pane_in_direction(direction));
     if let Some(terminal) = terminal {
-      Self::focus_terminal(window, &terminal, cx);
+      self.focus_terminal(window, &terminal, cx);
       self.sync_active_pane_from_focus(window, cx);
       self.animate_ui_change(window, cx);
     }

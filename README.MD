@@ -11,6 +11,31 @@ A lightweight cross-platform terminal app based on Alacritty, inspired by Window
 ## Documentation
 More details can be found at [wiki](https://github.com/fallenwood/kazeterm/wiki "")
 
+## Visual settings
+
+Choose **Settings** in the new-tab dropdown menu to open the settings page in the
+current window. The sidebar groups startup, appearance, fonts, tabs, panes,
+terminal, cursor, notifications, animation, and update settings. Profiles,
+shortcuts, environment variables, and ordered config imports also have visual
+editors. Running terminal sessions stay alive while you edit.
+
+Use **Save** (Ctrl+S / Cmd+S) to write changes and immediately apply them through
+the same hot-reload path used for external config edits, without closing the
+settings page or restarting terminals. Use **Revert changes** to discard the
+draft, or **Back to terminal** to return. Leaving with unsaved changes asks for
+confirmation. **Reload file** reads external edits; saving refuses to overwrite
+a file that changed since it was loaded. **Open TOML file** remains available.
+Numeric fields reject invalid characters while typing or pasting, allowing whole
+numbers or decimals as appropriate. Completed values are range-checked on save.
+Dropdown lists and menus grow with their content up to the available window
+height, leaving a small edge margin. They scroll only when the content does not fit.
+
+The editor shows the **base file**, not the merged configuration. Imported files
+keep their higher priority and are never modified by the editor. Theme, fonts,
+keybindings, and other live settings update in all open windows after saving.
+Settings explicitly marked for new windows/sessions retain that behavior.
+Saving normalizes TOML formatting and does not preserve comments.
+
 ## Config Overlays
 
 Kazeterm loads `kazeterm.toml` as the base config and can merge extra TOML files listed in `imports`.
@@ -229,4 +254,3 @@ This produces `coverage/lcov.info`.
 - The bundled Cascadia Code fonts follow the SIL Open Font License.
 
 - The bundled lucide icons follows original MIT license.
-

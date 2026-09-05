@@ -268,10 +268,18 @@ impl MainWindow {
   }
 
   pub(crate) fn focus_terminal(
+    &self,
     window: &mut Window,
     terminal: &gpui::Entity<TerminalView>,
     cx: &mut Context<Self>,
   ) {
+    if let Some(page) = &self.settings_page {
+      let focus = page.focus_handle(cx);
+      if !focus.contains_focused(window, cx) {
+        window.focus(&focus, cx);
+      }
+      return;
+    }
     window.focus(&terminal.focus_handle(cx), cx);
     terminal.update(cx, |terminal_view, cx| {
       terminal_view.activate_cursor_blinking(window, cx);
@@ -280,7 +288,7 @@ impl MainWindow {
 
   pub(crate) fn focus_active_terminal(&self, window: &mut Window, cx: &mut Context<Self>) {
     if let Some(terminal) = self.active_terminal() {
-      Self::focus_terminal(window, &terminal, cx);
+      self.focus_terminal(window, &terminal, cx);
     }
   }
 
@@ -337,7 +345,7 @@ impl MainWindow {
             // Successfully closed a pane (but not the last one)
             // Focus the newly active terminal
             if let Some(terminal) = this.items[tab_pos].split_container.get_active_terminal() {
-              Self::focus_terminal(window, &terminal, cx);
+              this.focus_terminal(window, &terminal, cx);
             }
             this.resubscribe_tab_terminals(tab_pos, window, cx);
             this.sync_ui_tree(cx);
@@ -485,6 +493,12 @@ impl MainWindow {
 
       // If no tabs left, either close the window or insert a new tab
       if self.items.is_empty() {
+        self.active_tab_ix = None;
+        // A background shell exiting must not discard an open settings draft.
+        if self.settings_page.is_some() {
+          cx.notify();
+          return;
+        }
         let config = cx.global::<::config::Config>();
         if config.tab.close_on_last {
           crate::window_manager::close_window(window, cx);
@@ -680,8 +694,8 @@ impl MainWindow {
         search_bar.restore_state(&new_state, window, cx);
       });
 
-      if !self.search_visible {
-        Self::focus_terminal(window, &terminal, cx);
+      if !self.search_visible || self.settings_page.is_some() {
+        self.focus_terminal(window, &terminal, cx);
       } else {
         self.search_bar.update(cx, |search_bar, cx| {
           search_bar.focus(window, cx);

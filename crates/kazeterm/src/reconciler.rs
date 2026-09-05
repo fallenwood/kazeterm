@@ -293,7 +293,7 @@ impl UITreeStore {
               if let Some(item) = main_window.items.get_mut(tab_ix) {
                 item.split_container.set_active_pane(target_pane_id);
                 if let Some(terminal) = item.split_container.get_active_terminal() {
-                  MainWindow::focus_terminal(window, &terminal, cx);
+                  main_window.focus_terminal(window, &terminal, cx);
                 }
               }
             } else {

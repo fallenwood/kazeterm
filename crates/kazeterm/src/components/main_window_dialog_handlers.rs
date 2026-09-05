@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use gpui::{AppContext, Context, Entity, PathPromptOptions, Window};
+use gpui::{AppContext, Context, Entity, Focusable, PathPromptOptions, Window};
 
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent, AboutDialogEvent};
 use crate::components::close_confirm_dialog::{CloseConfirmDialog, CloseConfirmEvent};
 use crate::components::import_alacritty_dialog::{ImportAlacrittyDialog, ImportAlacrittyEvent};
+use crate::components::settings_page::{SettingsCloseEvent, SettingsPage};
 use crate::components::shell_error_dialog::{ShellErrorCloseEvent, ShellErrorDialog};
 use crate::components::tab_rename_dialog::{TabRenameDialog, TabRenameEvent};
 use crate::components::update_confirm_dialog::{UpdateConfirmDialog, UpdateConfirmEvent};
@@ -14,6 +15,44 @@ const UI_TREE_JSON_FILENAME: &str = "kazeterm-ui-tree.json";
 const UI_TREE_JSON_LOAD_PROMPT: &str = "Load UI Tree JSON";
 
 impl MainWindow {
+  pub(crate) fn show_settings_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(page) = &self.settings_page {
+      window.focus(&page.focus_handle(cx), cx);
+      return;
+    }
+    self.tab_switcher_visible = false;
+    self.tab_switcher = None;
+    let page = cx.new(|cx| SettingsPage::new(window, cx));
+    self.attach_settings_page(page.clone(), window, cx);
+    page.update(cx, |page, cx| page.load(window, cx));
+  }
+
+  pub(crate) fn attach_settings_page(
+    &mut self,
+    page: Entity<SettingsPage>,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    self._settings_subscription =
+      Some(
+        cx.subscribe_in(&page, window, |this, _, event, window, cx| {
+          this.settings_page = None;
+          this._settings_subscription = None;
+          if matches!(event, SettingsCloseEvent::CloseWindow) {
+            this.show_close_confirm_dialog(window, cx);
+          } else if this.items.is_empty() {
+            this.insert_new_tab(window, cx);
+          } else {
+            this.refocus_active_terminal(window, cx);
+          }
+          cx.notify();
+        }),
+      );
+    window.focus(&page.focus_handle(cx), cx);
+    self.settings_page = Some(page);
+    cx.notify();
+  }
+
   /// Show rename dialog for a tab
   pub(crate) fn show_rename_dialog(
     &mut self,
@@ -71,6 +110,10 @@ impl MainWindow {
   pub fn show_close_confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     // Don't show if already visible
     if self.close_confirm_dialog.is_some() {
+      return;
+    }
+    if let Some(page) = &self.settings_page {
+      page.update(cx, |page, cx| page.request_window_close(window, cx));
       return;
     }
 
