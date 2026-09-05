@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
   ActiveTheme, Icon, IconName, Sizable, StyledExt, TITLE_BAR_HEIGHT, TitleBar,
   button::{Button, ButtonVariants},
   h_flex,
@@ -666,13 +666,12 @@ impl Render for MainWindow {
         cx.update(|_cx| {
           let max_offset = scroll_handle.max_offset();
           let offset = if vertical_tabs {
-            gpui::point(px(0.0), -max_offset.height)
+            gpui::point(px(0.0), -max_offset.y)
           } else {
-            gpui::point(-max_offset.width, px(0.0))
+            gpui::point(-max_offset.x, px(0.0))
           };
           scroll_handle.set_offset(offset);
-        })
-        .ok();
+        });
       })
       .detach();
     }
@@ -690,14 +689,13 @@ impl Render for MainWindow {
             let max_offset = scroll_handle.max_offset();
             let scroll_ratio = active_tab_ix as f32 / total_tabs.max(1) as f32;
             let offset = if vertical_tabs {
-              gpui::point(px(0.0), -max_offset.height * scroll_ratio)
+              gpui::point(px(0.0), -max_offset.y * scroll_ratio)
             } else {
-              gpui::point(-max_offset.width * scroll_ratio, px(0.0))
+              gpui::point(-max_offset.x * scroll_ratio, px(0.0))
             };
             scroll_handle.set_offset(offset);
           }
-        })
-        .ok();
+        });
       })
       .detach();
     }

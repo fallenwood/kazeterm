@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 anyhow.workspace = true
 gpui = { workspace = true, default-features = false }
-gpui-macros.workspace = true
 itertools.workspace = true
 futures.workspace = true
 regex.workspace = true

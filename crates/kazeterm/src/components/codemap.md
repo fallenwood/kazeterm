@@ -93,4 +93,4 @@ The transition implementation is task-based, globally configurable, and shared b
 - `config::Config` supplies profiles, shells, tab geometry/orientation, pane divider/inactive styling, keybindings, notification thresholds, terminal kernel, theme, transparency, workspace behavior, and global animation policy/parameters.
 - `terminal::TerminalView` is the leaf entity rendered in every pane and the source of terminal lifecycle events.
 - `kazeterm_ui_tree` supplies `UIAction`, stable serializable nodes, and workspace representation.
-- `gpui`/`gpui-component` supply entities, focus/subscriptions, tasks/timers, rendering primitives, drag/drop, menus, dialogs, and window operations.
+- `gpui`/`gpui-kit` supply entities, focus/subscriptions, tasks/timers, rendering primitives, drag/drop, menus, dialogs, and window operations.

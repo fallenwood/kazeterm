@@ -76,7 +76,14 @@ impl CursorLayout {
 
     if let Some(block_text) = &self.block_text {
       block_text
-        .paint(self.origin + origin, self.line_height, window, cx)
+        .paint(
+          self.origin + origin,
+          self.line_height,
+          gpui::TextAlign::Left,
+          None,
+          window,
+          cx,
+        )
         .unwrap();
     }
   }

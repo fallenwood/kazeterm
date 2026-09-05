@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicUsize;
 
 use gpui::*;
-use gpui_component::Size;
+use gpui_kit::component::Size;
 use kazeterm_ui_tree::action::UIAction;
 
 use crate::components::about_dialog::AboutDialog;
@@ -209,7 +209,7 @@ impl MainWindow {
         );
         let settings = crate::config::create_settings_store(&config, is_dark);
         cx.set_global(settings);
-        themeing::SettingsStore::init_gpui_component_theme(cx);
+        themeing::SettingsStore::init_gpui_kit_theme(cx);
       }
     });
     let window_activation_subscription =

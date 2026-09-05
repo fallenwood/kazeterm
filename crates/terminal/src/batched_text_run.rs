@@ -69,7 +69,14 @@ impl BatchedTextRun {
     );
 
     if let Some(shaped_line) = &self.shaped_line {
-      let _ = shaped_line.paint(pos, dimensions.line_height, window, cx);
+      let _ = shaped_line.paint(
+        pos,
+        dimensions.line_height,
+        gpui::TextAlign::Left,
+        None,
+        window,
+        cx,
+      );
     }
   }
 }

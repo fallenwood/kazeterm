@@ -39,8 +39,8 @@ crates/
 
 ### Key Technologies
 
-- **GPUI 0.2.2**: UI framework from Zed (reactive, GPU-accelerated)
-- **gpui-component 0.5.1**: Higher-level UI components (buttons, tabs, dialogs, etc.)
+- **GPUI Kit 0.6.0**: Application facade and higher-level UI components
+- **GPUI 0.3.x**: GPU-accelerated runtime, consumed through `gpui-pre`
 - **alacritty_terminal 0.25.1**: ANSI terminal emulation and parsing
 - **Platform-specific**: Uses Windows APIs directly on Windows, XCB on Linux
 
@@ -226,9 +226,9 @@ kazeterm-event-system/src/
 2. Init tracing
 3. `Config::load()`
 4. Init theme system (register loaders, set custom path)
-5. Create GPUI `Application` with embedded assets
-6. In `app.run()`: load fonts, init gpui-component, init terminal crate, set globals (Config, SettingsStore), start config watcher, set platform icon, register actions, open first window
-7. Window creation: build `WindowOptions` (size, titlebar, background appearance), open window, create `MainWindow::view()`, wrap in `gpui_component::Root`, start event system
+5. Create the application through `gpui_kit::application()` with embedded assets
+6. In `app.run()`: load fonts, init GPUI Kit, init terminal crate, set globals (Config, SettingsStore), start config watcher, set platform icon, register actions, open first window
+7. Window creation: build `WindowOptions` (size, titlebar, background appearance), open window, create `MainWindow::view()`, wrap in `gpui_kit::component::Root`, start event system
 
 ### Component Patterns
 
@@ -361,8 +361,8 @@ Bridges config `Palette` to GPUI's theme system.
 ### Key Functions
 
 - `create_settings_store()` (in kazeterm/config.rs) — builds SettingsStore from Config + Palette
-- `SettingsStore::init_gpui_component_theme(cx)` — applies palette to gpui-component's theme system
-- Color conversion: `Palette` → gpui-component `ColorScheme` mappings
+- `SettingsStore::init_gpui_kit_theme(cx)` — applies the palette to GPUI Kit's component and base themes
+- Color conversion: `Palette` → GPUI Kit component theme mappings
 
 ---
 

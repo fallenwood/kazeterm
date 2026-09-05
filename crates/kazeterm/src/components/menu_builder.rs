@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
   Icon, IconName, h_flex,
   menu::{PopupMenu, PopupMenuItem},
 };

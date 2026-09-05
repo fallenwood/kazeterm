@@ -5,12 +5,12 @@
 **Critical**: Your app must wrap content in `Root` for theming to work.
 
 ```rust
-use gpui::{App, Application, WindowOptions};
-use gpui_component::Root;
+use gpui_kit::component::Root;
+use gpui_kit::{App, WindowOptions};
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        gpui_component::init(cx);  // Required
+    gpui_kit::application().run(|cx: &mut App| {
+        gpui_kit::init(cx);  // Required
         
         cx.open_window(WindowOptions::default(), |window, cx| {
             let view = cx.new(|_| MyView::new());
@@ -26,7 +26,7 @@ Without `Root`: No theming, components may panic.
 
 ```rust
 use gpui::{div, prelude::*, Context, IntoElement, Render, Window};
-use gpui_component::ActiveTheme;
+use gpui_kit::component::ActiveTheme;
 
 struct ThemedView;
 

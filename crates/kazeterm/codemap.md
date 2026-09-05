@@ -22,7 +22,7 @@ The `kazeterm` binary crate is the desktop application composition layer for the
 
 ## Design
 
-- **Composition root and global stores:** startup creates a GPUI `Application`, installs a global `config::Config` and `themeing::SettingsStore`, and initializes `terminal` and `gpui-component` against those stores.
+- **Composition root and global stores:** startup creates the application through GPUI Kit, installs a global `config::Config` and `themeing::SettingsStore`, and initializes `terminal` and GPUI Kit against those stores.
 - **Tree-backed presentation model:** `MainWindow` owns live GPUI entities while `UITreeStore` holds a serializable `kazeterm_ui_tree::UITree`. Most high-level mutations go through `UIAction -> TreeDiff -> reconcile` before concrete component methods update the live view.
 - **Observer/event-driven UI:** GPUI subscriptions, terminal events, configuration file notifications, and the shared event bus all converge on `MainWindow` updates and `Context::notify()` rerenders.
 - **Platform adapters:** icons, native notifications/bell sounds, window backgrounds, terminal-kernel selection, packaging metadata, and update helper scripts are selected with target-specific implementations.
@@ -33,7 +33,7 @@ The `kazeterm` binary crate is the desktop application composition layer for the
 1. `main()` parses `--event-source`/`--event-socket`, initializes tracing, and loads `config::Config`.
 2. Embedded and optional custom themes are registered, then GPUI starts with embedded assets.
 3. The application callback loads fonts, initializes shared UI/terminal services, publishes configuration and theme globals, starts the configuration watcher, and registers application/menu actions.
-4. `window_manager::open_kazeterm_window()` builds `WindowOptions` from the current configuration and creates a `MainWindow` inside `gpui_component::Root`.
+4. `window_manager::open_kazeterm_window()` builds `WindowOptions` from the current configuration and creates a `MainWindow` inside `gpui_kit::component::Root`.
 5. Window initialization registers the window for cross-window tab drops/config transitions, then defers external event-system and auto-update startup.
 6. `MainWindow` restores a saved UI tree when requested, otherwise creates an initial terminal tab. Terminal session creation is delegated to the configured kernel crate.
 7. Keyboard, menu, mouse/drag, terminal, and external events mutate the UI. Tree-backed operations generate diffs which `reconciler` applies to GPUI entities; direct presentation changes call `cx.notify()`.
@@ -57,5 +57,5 @@ The transition state and tasks live on `MainWindow`, configuration reload fan-ou
 - **Terminal runtime:** `terminal`, `terminal-kernel`, `terminal-kernel-alacritty`, and Linux `terminal-kernel-vte`.
 - **UI state/actions:** `kazeterm-ui-tree` supplies nodes, actions, diffs, and serialization.
 - **External automation:** `kazeterm-event-system` supplies event types, bus, stdio/socket sources, and send APIs.
-- **Desktop framework:** `gpui` and `gpui-component` provide entities, rendering, focus, windows, menus, tasks, and input dispatch.
+- **Desktop framework:** `gpui` and `gpui-kit` provide entities, rendering, focus, windows, menus, tasks, and input dispatch.
 - **Operating system:** Win32, Objective-C/macOS APIs, X11/Linux desktop conventions, and platform update/extraction commands.

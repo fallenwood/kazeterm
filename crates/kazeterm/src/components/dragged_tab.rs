@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use gpui::*;
-use gpui_component::{h_flex, label::Label};
+use gpui_kit::component::{h_flex, label::Label};
 use themeing::SettingsStore;
 
 use super::main_window::MainWindow;

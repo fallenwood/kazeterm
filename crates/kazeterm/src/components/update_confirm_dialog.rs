@@ -1,6 +1,6 @@
 use gpui::*;
-use gpui_component::ActiveTheme;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use themeing::SettingsStore;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,7 +37,7 @@ impl EventEmitter<UpdateConfirmEvent> for UpdateConfirmDialog {}
 impl UpdateConfirmDialog {
   pub fn new(release_tag: String, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let focus_handle = cx.focus_handle();
-    window.focus(&focus_handle);
+    window.focus(&focus_handle, cx);
     Self {
       focus_handle,
       content: UpdateConfirmContent::new(release_tag),
@@ -111,7 +111,7 @@ impl Render for UpdateConfirmDialog {
                   .child(self.content.description()),
               )
               .child(
-                gpui_component::h_flex()
+                gpui_kit::component::h_flex()
                   .gap_2()
                   .justify_end()
                   .child(

@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 config = { path = "../config" }
 gpui = { workspace = true, default-features = false }
-gpui-component.workspace = true
+gpui-kit.workspace = true
