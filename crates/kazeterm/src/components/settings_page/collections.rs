@@ -267,12 +267,7 @@ impl SettingsPage {
           let args = profile.args.iter().enumerate().map(|(arg_ix, arg)| {
             h_flex()
               .gap_2()
-              .child(
-                div()
-                  .flex_1()
-                  .min_w_0()
-                  .child(arg.render("Argument (one value per row)", busy)),
-              )
+              .child(div().flex_1().min_w_0().child(arg.render("Argument", busy)))
               .child(
                 Button::new(SharedString::from(format!(
                   "settings-remove-arg-{id}-{arg_ix}"
@@ -327,11 +322,7 @@ impl SettingsPage {
                 busy,
                 cx,
               ))
-              .child(
-                div()
-                  .text_sm()
-                  .child("Arguments (one value per row; no shell quoting required)"),
-              )
+              .child(div().text_sm().child("Arguments"))
               .children(args)
               .child(
                 Button::new(("settings-add-arg", id))
@@ -375,13 +366,9 @@ impl SettingsPage {
             }))
             .into_any_element(),
         );
-        rows.push(div().text_sm().text_color(cx.theme().muted_foreground)
-          .child("Container and SSH profiles are discovered automatically. The default profile is selected under Startup.").into_any_element());
       }
       Section::Keybindings => {
         let action_names = actions();
-        rows.push(div().text_sm().text_color(cx.theme().muted_foreground)
-          .child("Each shortcut maps to an action. Removing or changing a shortcut disables its old assignment; noop explicitly disables a shortcut.").into_any_element());
         for (ix, binding) in form.bindings.iter().enumerate() {
           let actions = action_names.clone();
           let view = cx.entity().downgrade();
@@ -504,8 +491,6 @@ impl SettingsPage {
         );
       }
       Section::Imports => {
-        rows.push(div().text_sm().text_color(cx.theme().muted_foreground)
-          .child("Paths are relative to the main config file, or absolute. Imports override the main file; later entries have higher priority. Imported files are never edited here.").into_any_element());
         for (ix, entry) in form.imports.iter().enumerate() {
           rows.push(
             v_flex()

@@ -17,7 +17,8 @@ Choose **Settings** in the new-tab dropdown menu to open the settings page in th
 current window. The sidebar groups startup, appearance, fonts, tabs, panes,
 terminal, cursor, notifications, animation, and update settings. Profiles,
 shortcuts, environment variables, and ordered config imports also have visual
-editors. Running terminal sessions stay alive while you edit.
+editors. The page uses the configured UI font and compact labeled controls.
+Running terminal sessions stay alive while you edit.
 
 Use **Save** (Ctrl+S / Cmd+S) to write changes and immediately apply them through
 the same hot-reload path used for external config edits, without closing the
@@ -33,7 +34,7 @@ height, leaving a small edge margin. They scroll only when the content does not 
 The editor shows the **base file**, not the merged configuration. Imported files
 keep their higher priority and are never modified by the editor. Theme, fonts,
 keybindings, and other live settings update in all open windows after saving.
-Settings explicitly marked for new windows/sessions retain that behavior.
+Window and session defaults apply when new windows or terminals are created.
 Saving normalizes TOML formatting and does not preserve comments.
 
 ## Config Overlays
@@ -97,7 +98,7 @@ duration_ms = 180
 frame_interval_ms = 15
 # Supported values: "linear", "ease_in", "ease_out", "ease_in_out"
 easing = "ease_in_out"
-fade_start_opacity = 0.82
+fade_start_opacity = 1.0
 ```
 
 `duration_ms` is capped at 5000 ms, `frame_interval_ms` is clamped to 4–1000 ms,

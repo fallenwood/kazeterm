@@ -191,7 +191,7 @@ impl SettingsPage {
         self.dirty = false;
         self.pending = None;
         self.error = None;
-        self.status = "Save to apply changes immediately through config hot reload.".into();
+        self.status.clear();
         cx.notify();
       }
       Err(error) => self.show_error(error, cx),
@@ -310,8 +310,7 @@ impl SettingsPage {
           Some(Ok(config)) => {
             // Applying configuration updates all windows; defer until this window update ends.
             cx.defer(move |cx| crate::config_watcher::apply_loaded_config(config, cx));
-            this.status =
-              "Saved and applied. Settings marked for new sessions apply when they start.".into();
+            this.status = "Saved and applied.".into();
             if let Some(action @ (PendingAction::Close | PendingAction::CloseWindow)) = pending {
               this.perform(action, window, cx);
             }
@@ -444,18 +443,13 @@ impl SettingsPage {
           _ => input.render(spec.label, self.busy).into_any_element(),
         };
         v_flex()
+          .debug_selector(move || format!("settings-field-{}-{}", spec.table, spec.key))
           .gap_2()
           .p_4()
           .rounded_md()
           .border_1()
           .border_color(cx.theme().border)
           .child(div().font_weight(FontWeight::SEMIBOLD).child(spec.label))
-          .child(
-            div()
-              .text_sm()
-              .text_color(cx.theme().muted_foreground)
-              .child(spec.description),
-          )
           .child(div().w_full().child(control))
           .into_any_element()
       })
@@ -611,8 +605,8 @@ impl Focusable for SettingsPage {
   }
 }
 
-impl Render for SettingsPage {
-  fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl SettingsPage {
+  fn render_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
     let query = self.search.read(cx).value().trim().to_lowercase();
     let mut content = self.render_fields(&query, window, cx);
     if query.is_empty() {
@@ -641,7 +635,13 @@ impl Render for SettingsPage {
       }
     }
     let no_results = content.is_empty() && self.form.is_some();
-    v_flex().size_full().min_h_0().bg(cx.theme().background).text_color(cx.theme().foreground)
+    v_flex()
+      .size_full()
+      .min_h_0()
+      .bg(cx.theme().background)
+      .text_color(cx.theme().foreground)
+      .font_family(cx.theme().font_family.clone())
+      .text_size(cx.theme().font_size)
       .track_focus(&self.focus_handle)
       .key_context("Settings")
       .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
@@ -655,65 +655,166 @@ impl Render for SettingsPage {
             this.request_close(window, cx);
           }
           cx.stop_propagation();
-        } else if key == "s" && (modifiers.control || modifiers.platform) && !modifiers.alt && !modifiers.shift {
+        } else if key == "s"
+          && (modifiers.control || modifiers.platform)
+          && !modifiers.alt
+          && !modifiers.shift
+        {
           this.save(window, cx);
           cx.stop_propagation();
         } else {
           let bindings = &cx.global::<Config>().keybindings;
           if bindings.toggle_fullscreen.matches(
-            modifiers.control, modifiers.shift, modifiers.alt, modifiers.platform, &key,
+            modifiers.control,
+            modifiers.shift,
+            modifiers.alt,
+            modifiers.platform,
+            &key,
           ) {
             window.toggle_fullscreen();
             cx.stop_propagation();
           } else if bindings.quit.matches(
-            modifiers.control, modifiers.shift, modifiers.alt, modifiers.platform, &key,
+            modifiers.control,
+            modifiers.shift,
+            modifiers.alt,
+            modifiers.platform,
+            &key,
           ) {
             this.request_window_close(window, cx);
             cx.stop_propagation();
           }
         }
       }))
-      .child(h_flex().gap_3().p_3().border_b_1().border_color(cx.theme().border)
-        .child(Button::new("settings-back").icon(IconName::ArrowLeft).label("Back to terminal").ghost()
-          .disabled(self.busy).on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))))
-        .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child("Settings")))
-      .child(h_flex().flex_1().min_h_0().min_w_0()
-        .child(v_flex().w(px(180.0)).flex_shrink_0().h_full().p_2().gap_1().border_r_1().border_color(cx.theme().border)
-          .child(div().id("settings-navigation").flex_1().min_h_0().overflow_y_scroll().children(
-            Section::ALL.into_iter().map(|section| {
-              Button::new(("settings-section", section as usize)).label(section.label()).ghost().w_full()
-                .when(section == self.section, |button| button.primary())
-                .on_click(cx.listener(move |this, _, window, cx| {
-                  this.section = section;
-                  this.search.update(cx, |input, cx| input.set_value("", window, cx));
-                  this.scroll.set_offset(point(px(0.0), px(0.0)));
-                  cx.notify();
-                }))
-            })
-          ))
-          .child(Button::new("settings-open-toml").label("Open TOML file").ghost().small()
-            .on_click(cx.listener(|this, _, _, cx| {
-              if let Some(file) = &this.file {
-                cx.open_url(&format!("file://{}", file.path().display()));
-              } else if let Some(path) = Config::get_config_file_path() {
-                cx.open_url(&format!("file://{}", path.display()));
-              }
-            }))))
-        .child(v_flex().flex_1().h_full().min_w_0().min_h_0()
-          .child(div().debug_selector(|| "settings-search".into()).p_3().child(Input::new(&self.search).aria_label("Search settings").w_full()))
-          .child(v_flex().id("settings-content").flex_1().min_h_0().overflow_y_scroll()
-            .track_scroll(&self.scroll).p_4().gap_3()
-            .child(div().text_xl().font_weight(FontWeight::SEMIBOLD)
-              .child(if query.is_empty() { self.section.label() } else { "Search results" }))
-            .when(query.is_empty(), |body| body.child(
-              div().text_sm().text_color(cx.theme().muted_foreground).child(self.section.description())
-            ))
-            .when(self.form.as_ref().is_some_and(|form| !form.imports.is_empty()), |body| body.child(
-              div().p_3().rounded_md().bg(cx.theme().muted).text_sm()
-                .child("Editing the main config file. Imported files override these values; later imports win. Manage them under Imports.")
-            ))
-            .children(content)
-            .when(no_results, |body| body.child("No matching settings.")))
-          .child(self.render_footer(cx))))
+      .child(
+        h_flex()
+          .gap_3()
+          .p_3()
+          .border_b_1()
+          .border_color(cx.theme().border)
+          .child(
+            Button::new("settings-back")
+              .icon(IconName::ArrowLeft)
+              .label("Back to terminal")
+              .ghost()
+              .disabled(self.busy)
+              .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))),
+          )
+          .child(
+            div()
+              .text_lg()
+              .font_weight(FontWeight::SEMIBOLD)
+              .child("Settings"),
+          ),
+      )
+      .child(
+        h_flex()
+          .flex_1()
+          .min_h_0()
+          .min_w_0()
+          .child(
+            v_flex()
+              .w(px(180.0))
+              .flex_shrink_0()
+              .h_full()
+              .p_2()
+              .gap_1()
+              .border_r_1()
+              .border_color(cx.theme().border)
+              .child(
+                div()
+                  .id("settings-navigation")
+                  .flex_1()
+                  .min_h_0()
+                  .overflow_y_scroll()
+                  .children(Section::ALL.into_iter().map(|section| {
+                    Button::new(("settings-section", section as usize))
+                      .label(section.label())
+                      .ghost()
+                      .w_full()
+                      .when(section == self.section, |button| button.primary())
+                      .on_click(cx.listener(move |this, _, window, cx| {
+                        this.section = section;
+                        this
+                          .search
+                          .update(cx, |input, cx| input.set_value("", window, cx));
+                        this.scroll.set_offset(point(px(0.0), px(0.0)));
+                        cx.notify();
+                      }))
+                  })),
+              )
+              .child(
+                Button::new("settings-open-toml")
+                  .label("Open TOML file")
+                  .ghost()
+                  .small()
+                  .on_click(cx.listener(|this, _, _, cx| {
+                    if let Some(file) = &this.file {
+                      cx.open_url(&format!("file://{}", file.path().display()));
+                    } else if let Some(path) = Config::get_config_file_path() {
+                      cx.open_url(&format!("file://{}", path.display()));
+                    }
+                  })),
+              ),
+          )
+          .child(
+            v_flex()
+              .flex_1()
+              .h_full()
+              .min_w_0()
+              .min_h_0()
+              .child(
+                div()
+                  .debug_selector(|| "settings-search".into())
+                  .p_3()
+                  .child(
+                    Input::new(&self.search)
+                      .aria_label("Search settings")
+                      .w_full(),
+                  ),
+              )
+              .child(
+                v_flex()
+                  .id("settings-content")
+                  .flex_1()
+                  .min_h_0()
+                  .overflow_y_scroll()
+                  .track_scroll(&self.scroll)
+                  .p_4()
+                  .gap_3()
+                  .child(div().text_xl().font_weight(FontWeight::SEMIBOLD).child(
+                    if query.is_empty() {
+                      self.section.label()
+                    } else {
+                      "Search results"
+                    },
+                  ))
+                  .when(
+                    self
+                      .form
+                      .as_ref()
+                      .is_some_and(|form| !form.imports.is_empty()),
+                    |body| {
+                      body.child(
+                        div()
+                          .p_3()
+                          .rounded_md()
+                          .bg(cx.theme().muted)
+                          .text_sm()
+                          .child("Imported files may override these settings."),
+                      )
+                    },
+                  )
+                  .children(content)
+                  .when(no_results, |body| body.child("No matching settings.")),
+              )
+              .child(self.render_footer(cx)),
+          ),
+      )
+  }
+}
+
+impl Render for SettingsPage {
+  fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    self.render_page(window, cx)
   }
 }

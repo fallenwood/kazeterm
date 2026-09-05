@@ -384,7 +384,7 @@ fn migrated_config_deserializes_to_config_struct() {
   assert_eq!(config.animation.duration_ms, 180);
   assert_eq!(config.animation.frame_interval_ms, 15);
   assert_eq!(config.animation.easing, crate::AnimationEasing::EaseInOut);
-  assert!((config.animation.fade_start_opacity - 0.82).abs() < 0.001);
+  assert!((config.animation.fade_start_opacity - 1.0).abs() < 0.001);
   assert!((config.pane.inactive_opacity - 0.6).abs() < 0.001);
   assert_eq!(config.tab.label_min_width, 60.0);
   assert_eq!(config.tab.label_max_width, 200.0);
@@ -447,7 +447,7 @@ background_opacity = 0.9
       .unwrap()
       .as_float()
       .unwrap()
-      - 0.82)
+      - 1.0)
       .abs()
       < 0.001
   );

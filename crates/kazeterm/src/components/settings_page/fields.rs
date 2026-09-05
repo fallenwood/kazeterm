@@ -52,27 +52,6 @@ impl Section {
       Self::Imports => "Imports",
     }
   }
-
-  pub(super) fn description(self) -> &'static str {
-    match self {
-      Self::Startup => {
-        "Window and shell defaults for new sessions and the next application launch."
-      }
-      Self::Appearance => "Theme, colors, transparency, and window diagnostics.",
-      Self::Font => "Terminal and interface font families and sizes.",
-      Self::Tabs => "Tab layout, labels, switching, and closing behavior.",
-      Self::Panes => "Split pane dividers and inactive pane visibility.",
-      Self::Terminal => "Terminal behavior; backend and session defaults apply to new terminals.",
-      Self::Cursor => "Cursor appearance and blinking; the default shape applies to new terminals.",
-      Self::Notifications => "Idle-time and frequency limits for desktop notifications.",
-      Self::Animation => "Timing and easing for interface transitions.",
-      Self::Updates => "Automatic update checks on launch and the updater's proxy.",
-      Self::Profiles => "Shell commands and working directories for new terminals.",
-      Self::Keybindings => "Keyboard shortcuts for terminal and application actions.",
-      Self::Environment => "Additional environment variables for new terminal processes.",
-      Self::Imports => "Additional configuration files; later imports override earlier settings.",
-    }
-  }
 }
 
 #[derive(Clone, Copy)]
@@ -993,12 +972,11 @@ mod tests {
     assert_eq!(field("pane", "inactive_opacity").value(&original), "0.6");
     assert_eq!(
       field("animation", "fade_start_opacity").value(&original),
-      "0.82"
+      "1.0"
     );
     for (index, section) in Section::ALL.iter().enumerate() {
       assert!(!Section::ALL[..index].contains(section));
       assert!(!section.label().is_empty());
-      assert!(!section.description().is_empty());
     }
   }
 }

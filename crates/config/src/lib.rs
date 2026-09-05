@@ -135,7 +135,7 @@ impl Default for AnimationConfig {
       duration_ms: 180,
       frame_interval_ms: 15,
       easing: AnimationEasing::EaseInOut,
-      fade_start_opacity: 0.82,
+      fade_start_opacity: 1.0,
     }
   }
 }

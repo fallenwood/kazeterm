@@ -78,7 +78,7 @@ Only the active pane renders the shared `SearchBar`. Switching tabs saves the ol
 
 The transition implementation is task-based, globally configurable, and shared by tree-backed and direct presentation changes:
 
-- Top-level `Config::animation` exposes `enabled`, `duration_ms`, `frame_interval_ms`, `easing` (`linear`, `ease_in`, `ease_out`, or `ease_in_out`), and `fade_start_opacity`. Defaults are enabled/180 ms/15 ms/ease-in-out/0.82.
+- Top-level `Config::animation` exposes `enabled`, `duration_ms`, `frame_interval_ms`, `easing` (`linear`, `ease_in`, `ease_out`, or `ease_in_out`), and `fade_start_opacity`. Defaults are enabled/180 ms/15 ms/ease-in-out/1.0.
 - `TransitionSpec::from_config()` returns `None` when disabled or duration is zero. Otherwise it uses the config crate's bounded frame count and exact effective frame duration, carries the selected easing curve, and clamps fade opacity.
 - `set_tab_bar_visible()` and configuration reloads animate `vertical_tabbar_render_width`. Rendering derives tab-bar opacity from rendered/preferred width, so geometry and fade move together.
 - A user drag cancels the vertical tab-bar task by replacing it with `Task::ready(())`, then updates preferred and rendered width immediately.

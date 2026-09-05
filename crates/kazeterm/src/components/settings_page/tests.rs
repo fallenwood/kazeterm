@@ -354,6 +354,79 @@ fn page_with_defaults(cx: &mut TestAppContext) -> WindowHandle<SettingsPage> {
 }
 
 #[gpui::test]
+fn settings_page_uses_ui_font_and_compact_forms(cx: &mut TestAppContext) {
+  use gpui::Styled;
+
+  struct SettingsTest {
+    page: gpui::Entity<SettingsPage>,
+  }
+
+  impl gpui::Render for SettingsTest {
+    fn render(
+      &mut self,
+      window: &mut gpui::Window,
+      cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+      self.page.update(cx, |page, cx| {
+        let mut root = page.render_page(window, cx);
+        let text = &root.style().text;
+        let font = &cx.global::<Config>().font;
+        assert_eq!(text.font_family.as_deref(), Some(font.ui_family.as_str()));
+        assert_eq!(text.font_size, Some(gpui::px(font.ui_size).into()));
+
+        let form = page.form.as_ref().unwrap();
+        let counts = [
+          (Section::Profiles, form.profiles.len()),
+          (Section::Keybindings, form.bindings.len()),
+          (Section::Environment, form.environment.len()),
+          (Section::Imports, form.imports.len()),
+        ];
+        let original_section = page.section;
+        for (section, count) in counts {
+          page.section = section;
+          assert_eq!(
+            page.render_collections(window, cx).len(),
+            count + 1,
+            "{section:?}: only entry forms and the add button should be rendered",
+          );
+        }
+        page.section = original_section;
+        root
+      })
+    }
+  }
+
+  crate::test_support::init_test_app(cx);
+  let window = cx.add_window(|window, cx| {
+    let page = cx.new(|cx| {
+      let mut page = SettingsPage::new(window, cx);
+      let config = cx.global::<Config>().clone();
+      page.form = Some(page.make_form(&config, window, cx).unwrap());
+      page
+    });
+    SettingsTest { page }
+  });
+  cx.simulate_window_resize(window.into(), gpui::size(gpui::px(800.0), gpui::px(600.0)));
+  for (family, size) in [("Segoe UI", 18.0), ("Arial", 22.0)] {
+    window
+      .update(cx, |_, _, cx| {
+        let config = cx.global_mut::<Config>();
+        config.font.ui_family = family.into();
+        config.font.ui_size = size;
+        config.font.family = "Consolas".into();
+        config.font.size = 32.0;
+        themeing::SettingsStore::init_gpui_kit_theme(cx);
+        cx.notify();
+      })
+      .unwrap();
+    cx.run_until_parked();
+    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+    let field = visual.debug_bounds("settings-field-window-width").unwrap();
+    assert!(field.size.height <= gpui::px(120.0), "{field:?}");
+  }
+}
+
+#[gpui::test]
 fn settings_numeric_inputs_reject_invalid_edits_and_allow_partial_numbers(cx: &mut TestAppContext) {
   let window = page_with_defaults(cx);
   window
