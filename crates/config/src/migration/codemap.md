@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Upgrades historical Kazeterm configuration documents in place at the raw TOML boundary so the current typed `Config` only needs to understand schema version `20260901.1`.
+Upgrades historical Kazeterm configuration documents in place at the raw TOML boundary so the current typed `Config` only needs to understand schema version `20260905.1`.
 
 ## Design
 

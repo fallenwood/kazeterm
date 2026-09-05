@@ -175,7 +175,7 @@ impl MainWindow {
     if !self.reconciling_ui_tree {
       self.sync_ui_tree(cx);
     }
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -219,7 +219,7 @@ impl MainWindow {
       if !self.reconciling_ui_tree {
         self.sync_ui_tree(cx);
       }
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -256,7 +256,7 @@ impl MainWindow {
 
     if toggled {
       self.focus_active_terminal(window, cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -286,7 +286,7 @@ impl MainWindow {
     if let Some(terminal) = terminal {
       self.focus_terminal(window, &terminal, cx);
       self.sync_active_pane_from_focus(window, cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -316,7 +316,7 @@ impl MainWindow {
     if let Some(terminal) = terminal {
       self.focus_terminal(window, &terminal, cx);
       self.sync_active_pane_from_focus(window, cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -334,7 +334,7 @@ impl MainWindow {
     if let Some(terminal) = terminal {
       self.focus_terminal(window, &terminal, cx);
       self.sync_active_pane_from_focus(window, cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -381,7 +381,7 @@ impl MainWindow {
       if !self.reconciling_ui_tree {
         self.sync_ui_tree(cx);
       }
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 }

@@ -43,13 +43,12 @@ The `kazeterm` binary crate is the desktop application composition layer for the
 
 Transition mechanics are centralized under `src/components/transitions.rs` and driven by the top-level `[animation]` configuration:
 
-- `enabled` globally switches intermediate animation frames on/off; `duration_ms`, `frame_interval_ms`, `easing`, and `fade_start_opacity` control their behavior.
-- Defaults are enabled, 180 ms total, a requested 15 ms frame interval, `ease_in_out`, and 1.0 fade-start opacity. Timing/frame count and opacity are clamped by `AnimationConfig`; disabled or zero-duration transitions apply their final state immediately.
+- `enabled` globally switches intermediate animation frames on/off; `duration_ms`, `frame_interval_ms`, and `easing` control their behavior.
+- Defaults are enabled, 180 ms total, a requested 15 ms frame interval, and `ease_in_out`. Timing and frame count are bounded by `AnimationConfig`; disabled or zero-duration transitions apply their final state immediately.
 - Vertical tab-bar show/hide and orientation changes interpolate rendered width between zero and the remembered expanded width.
-- Visible UI-tree diffs and direct presentation changes (dialogs, tab switcher/reorder/transfer, hidden-pane/focus changes, workspace replacement) fade the full `MainWindow` root toward opacity `1.0`; initial content creation is not faded.
 - `TreeDiff::WindowResized` interpolates the native window size.
 
-The transition state and tasks live on `MainWindow`, configuration reload fan-out is in `config_watcher.rs`/`window_manager.rs`, and `TransitionSpec` converts validated config into per-frame loops in `components/main_window_transitions.rs` and `reconciler.rs`. The config migration to version `20260901.1` adds the default `[animation]` table to existing files.
+The geometry transition tasks live on `MainWindow`, configuration reload fan-out is in `config_watcher.rs`/`window_manager.rs`, and `TransitionSpec` converts validated config into per-frame loops in `components/main_window_transitions.rs` and `reconciler.rs`. Config migration `20260905.1` removes the obsolete root fade setting.
 
 ## Integration
 

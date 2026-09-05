@@ -122,10 +122,8 @@ pub struct AnimationConfig {
   pub duration_ms: u64,
   /// Requested delay between rendered animation frames in milliseconds.
   pub frame_interval_ms: u64,
-  /// Easing curve used for geometry and opacity interpolation.
+  /// Easing curve used for geometry interpolation.
   pub easing: AnimationEasing,
-  /// Starting opacity for content fade-in transitions.
-  pub fade_start_opacity: f32,
 }
 
 impl Default for AnimationConfig {
@@ -135,7 +133,6 @@ impl Default for AnimationConfig {
       duration_ms: 180,
       frame_interval_ms: 15,
       easing: AnimationEasing::EaseInOut,
-      fade_start_opacity: 1.0,
     }
   }
 }
@@ -178,14 +175,6 @@ impl AnimationConfig {
       return std::time::Duration::ZERO;
     }
     self.get_duration().div_f32(frames as f32)
-  }
-
-  pub fn get_fade_start_opacity(&self) -> f32 {
-    if self.fade_start_opacity.is_finite() {
-      self.fade_start_opacity.clamp(0.0, 1.0)
-    } else {
-      Self::default().fade_start_opacity
-    }
   }
 }
 
@@ -1170,20 +1159,15 @@ mod tests {
   }
 
   #[test]
-  fn animation_config_clamps_timing_and_opacity() {
+  fn animation_config_clamps_timing() {
     let config = AnimationConfig {
       duration_ms: 10_000,
       frame_interval_ms: 1,
-      fade_start_opacity: f32::NAN,
       ..Default::default()
     };
 
     assert_eq!(config.get_duration(), std::time::Duration::from_secs(5));
     assert_eq!(config.get_frame_count(), 600);
-    assert_eq!(
-      config.get_fade_start_opacity(),
-      AnimationConfig::default().fade_start_opacity
-    );
   }
 
   #[test]

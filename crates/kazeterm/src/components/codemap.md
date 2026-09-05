@@ -52,7 +52,7 @@ Dialogs are focused GPUI entities implementing `EventEmitter<T>`. `main_window_d
 
 1. `main_window_render.rs` reads global `Config` and `SettingsStore`, derives layout/profile/keybinding data, and builds horizontal or vertical tab UI plus the active `SplitContainer`.
 2. Key, menu, click, context-menu, and drop handlers call a `MainWindow` operation.
-3. Structural operations usually flow through `UIAction -> UITreeStore -> TreeDiff`; reconciliation updates tabs/panes/search/overlays and starts the configured root fade for non-initial visible changes.
+3. Structural operations usually flow through `UIAction -> UITreeStore -> TreeDiff`; reconciliation updates tabs/panes/search/overlays and notifies GPUI after applying diffs.
 4. Rerender reads the updated entities. The active terminal is focused unless search or a modal owns focus.
 
 ### Tab and terminal lifecycle
@@ -76,16 +76,14 @@ Only the active pane renders the shared `SearchBar`. Switching tabs saves the ol
 
 ## Transition and Change Handling
 
-The transition implementation is task-based, globally configurable, and shared by tree-backed and direct presentation changes:
+The transition implementation is task-based and globally configurable:
 
-- Top-level `Config::animation` exposes `enabled`, `duration_ms`, `frame_interval_ms`, `easing` (`linear`, `ease_in`, `ease_out`, or `ease_in_out`), and `fade_start_opacity`. Defaults are enabled/180 ms/15 ms/ease-in-out/1.0.
-- `TransitionSpec::from_config()` returns `None` when disabled or duration is zero. Otherwise it uses the config crate's bounded frame count and exact effective frame duration, carries the selected easing curve, and clamps fade opacity.
+- Top-level `Config::animation` exposes `enabled`, `duration_ms`, `frame_interval_ms`, and `easing` (`linear`, `ease_in`, `ease_out`, or `ease_in_out`). Defaults are enabled/180 ms/15 ms/ease-in-out.
+- `TransitionSpec::from_config()` returns `None` when disabled or duration is zero. Otherwise it uses the config crate's bounded frame count and exact effective frame duration and carries the selected easing curve.
 - `set_tab_bar_visible()` and configuration reloads animate `vertical_tabbar_render_width`. Rendering derives tab-bar opacity from rendered/preferred width, so geometry and fade move together.
 - A user drag cancels the vertical tab-bar task by replacing it with `Task::ready(())`, then updates preferred and rendered width immediately.
-- `animate_ui_change()` resets `ui_transition_opacity` to the configured fade start and advances it to 1.0; `main_window_render.rs` applies that value to the root element. Configuration/theme refresh, dialog show/hide, tab switcher, direct tab reorders/transfers, hidden-pane/directional-focus changes, and workspace replacement call this path.
-- After reconciliation, `tree_diff_fades_window()` fades semantic UI changes except tab add/activate (so new tabs do not fade the terminal), initial tab creation, and nonvisual window add/remove, working-directory, search-query, and search-flag diffs.
 - `MainWindow` retains task handles so replacing a task cancels an in-flight transition. Window resize consumes the same `TransitionSpec` and interpolation helpers from `reconciler.rs`.
-- When animation is disabled, width, opacity, and window-size paths cancel their retained task, apply the final target immediately, and notify as needed.
+- When animation is disabled, width and window-size paths cancel their retained task, apply the final target immediately, and notify as needed.
 
 ## Integration Points
 

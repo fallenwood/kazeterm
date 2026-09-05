@@ -1,7 +1,7 @@
 use gpui::{Context, Pixels, Task, Window, px};
 
 use super::main_window::MainWindow;
-use super::transitions::{TransitionSpec, interpolate_f32, interpolate_pixels};
+use super::transitions::{TransitionSpec, interpolate_pixels};
 
 impl MainWindow {
   pub(crate) fn set_tab_bar_visible(
@@ -33,7 +33,6 @@ impl MainWindow {
 
     let target_width = self.vertical_tabbar_target_width(config.tab.vertical);
     self.animate_vertical_tabbar_to(target_width, &config.animation, window, cx);
-    self.animate_ui_change_with_config(&config.animation, window, cx);
   }
 
   fn vertical_tabbar_target_width(&self, vertical_tabs: bool) -> Pixels {
@@ -77,49 +76,6 @@ impl MainWindow {
         if this
           .update(cx, |main_window, cx| {
             main_window.vertical_tabbar_render_width = next_width;
-            cx.notify();
-          })
-          .is_err()
-        {
-          return;
-        }
-      }
-    });
-  }
-
-  pub(crate) fn animate_ui_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    let animation = cx.global::<::config::Config>().animation;
-    self.animate_ui_change_with_config(&animation, window, cx);
-  }
-
-  fn animate_ui_change_with_config(
-    &mut self,
-    animation: &::config::AnimationConfig,
-    window: &mut Window,
-    cx: &mut Context<Self>,
-  ) {
-    let Some(transition) = TransitionSpec::from_config(animation) else {
-      self.ui_transition_animation = Task::ready(());
-      self.ui_transition_opacity = 1.0;
-      cx.notify();
-      return;
-    };
-
-    let start_opacity = transition.fade_start_opacity;
-    self.ui_transition_opacity = start_opacity;
-    cx.notify();
-
-    self.ui_transition_animation = cx.spawn_in(window, async move |this, cx| {
-      for frame in 1..=transition.frames {
-        cx.background_executor()
-          .timer(transition.frame_duration)
-          .await;
-
-        let progress = transition.progress(frame);
-        let opacity = interpolate_f32(start_opacity, 1.0, progress);
-        if this
-          .update(cx, |main_window, cx| {
-            main_window.ui_transition_opacity = opacity;
             cx.notify();
           })
           .is_err()

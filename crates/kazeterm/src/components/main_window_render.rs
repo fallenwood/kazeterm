@@ -744,7 +744,6 @@ impl Render for MainWindow {
       .flex()
       .flex_col()
       .size_full()
-      .opacity(self.ui_transition_opacity)
       .key_context("MainWindow")
       .on_key_down(cx.listener(move |this, e: &KeyDownEvent, window, cx| {
         let key_debug_modifiers = KeyDebugModifiers {

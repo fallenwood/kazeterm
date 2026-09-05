@@ -349,7 +349,7 @@ fn vertical_sidebar_visibility_transitions_in_both_directions(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn configuration_change_fades_ui_and_expands_vertical_sidebar(cx: &mut TestAppContext) {
+fn configuration_change_expands_vertical_sidebar(cx: &mut TestAppContext) {
   let _guard = test_lock();
   crate::test_support::init_test_app(cx);
   install_fake_factory();
@@ -375,50 +375,35 @@ fn configuration_change_fades_ui_and_expands_vertical_sidebar(cx: &mut TestAppCo
     crate::window_manager::transition_configuration_change(&config, cx);
   });
 
-  let (initial_opacity, initial_width, target_width) = window
+  let (initial_width, target_width) = window
     .update(cx, |root, _window, _cx| {
       (
-        root.ui_transition_opacity,
         root.vertical_tabbar_render_width,
         root.vertical_tabbar_width,
       )
     })
     .expect("reading initial configuration transition should succeed");
-  assert!(initial_opacity < 1.0);
   assert_eq!(initial_width, gpui::Pixels::ZERO);
 
   cx.run_until_parked();
   advance_ui_transition(cx, 1);
-  let (intermediate_opacity, intermediate_width) = window
-    .update(cx, |root, _window, _cx| {
-      (
-        root.ui_transition_opacity,
-        root.vertical_tabbar_render_width,
-      )
-    })
+  let intermediate_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
     .expect("reading intermediate configuration transition should succeed");
-  assert!(intermediate_opacity > initial_opacity);
-  assert!(intermediate_opacity < 1.0);
   assert!(intermediate_width > gpui::Pixels::ZERO);
   assert!(intermediate_width < target_width);
 
   advance_ui_transition(cx, UI_TRANSITION_FRAMES - 1);
-  let (final_opacity, final_width) = window
-    .update(cx, |root, _window, _cx| {
-      (
-        root.ui_transition_opacity,
-        root.vertical_tabbar_render_width,
-      )
-    })
+  let final_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
     .expect("reading completed configuration transition should succeed");
-  assert_eq!(final_opacity, 1.0);
   assert_eq!(final_width, target_width);
 
   clear_terminal_session_factory_for_testing();
 }
 
 #[gpui::test]
-fn structural_change_uses_configured_animation_parameters(cx: &mut TestAppContext) {
+fn vertical_sidebar_uses_configured_animation_parameters(cx: &mut TestAppContext) {
   let _guard = test_lock();
   crate::test_support::init_test_app(cx);
   cx.update(|cx| {
@@ -426,7 +411,7 @@ fn structural_change_uses_configured_animation_parameters(cx: &mut TestAppContex
     config.animation.duration_ms = 60;
     config.animation.frame_interval_ms = 20;
     config.animation.easing = ::config::AnimationEasing::Linear;
-    config.animation.fade_start_opacity = 0.4;
+    config.tab.vertical = true;
     cx.set_global(config);
   });
   install_fake_factory();
@@ -437,54 +422,28 @@ fn structural_change_uses_configured_animation_parameters(cx: &mut TestAppContex
   window
     .update(cx, |root, window, cx| root.toggle_tab_bar(window, cx))
     .expect("toggling the tab bar should succeed");
-  let initial_opacity = window
-    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
-    .expect("reading initial transition opacity should succeed");
-  assert!((initial_opacity - 0.4).abs() < 0.001);
+  let initial_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading initial sidebar width should succeed");
+  assert!(initial_width > gpui::Pixels::ZERO);
 
   cx.run_until_parked();
   cx.executor().advance_clock(Duration::from_millis(20));
   cx.run_until_parked();
-  let first_frame_opacity = window
-    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
-    .expect("reading intermediate transition opacity should succeed");
-  assert!((first_frame_opacity - 0.6).abs() < 0.001);
+  let first_frame_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading intermediate sidebar width should succeed");
+  let expected_width = f32::from(initial_width) * (2.0 / 3.0);
+  assert!((f32::from(first_frame_width) - expected_width).abs() < 0.001);
 
   for _ in 0..2 {
     cx.executor().advance_clock(Duration::from_millis(20));
     cx.run_until_parked();
   }
-  let final_opacity = window
-    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
-    .expect("reading final transition opacity should succeed");
-  assert_eq!(final_opacity, 1.0);
-
-  clear_terminal_session_factory_for_testing();
-}
-
-#[gpui::test]
-fn adding_a_tab_does_not_fade_the_window(cx: &mut TestAppContext) {
-  let _guard = test_lock();
-  crate::test_support::init_test_app(cx);
-  install_fake_factory();
-
-  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
-  cx.run_until_parked();
-
-  window
-    .update(cx, |root, window, cx| root.insert_new_tab(window, cx))
-    .expect("adding a tab should succeed");
-  let opacity = window
-    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
-    .expect("reading transition opacity should succeed");
-  assert_eq!(opacity, 1.0);
-
-  cx.run_until_parked();
-  advance_ui_transition(cx, 1);
-  let opacity_after_frame = window
-    .update(cx, |root, _window, _cx| root.ui_transition_opacity)
-    .expect("reading transition opacity after a frame should succeed");
-  assert_eq!(opacity_after_frame, 1.0);
+  let final_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
+    .expect("reading final sidebar width should succeed");
+  assert_eq!(final_width, gpui::Pixels::ZERO);
 
   clear_terminal_session_factory_for_testing();
 }
@@ -507,16 +466,10 @@ fn disabled_animation_applies_changes_immediately(cx: &mut TestAppContext) {
   window
     .update(cx, |root, window, cx| root.toggle_tab_bar(window, cx))
     .expect("hiding the tab bar should succeed");
-  let (sidebar_width, opacity) = window
-    .update(cx, |root, _window, _cx| {
-      (
-        root.vertical_tabbar_render_width,
-        root.ui_transition_opacity,
-      )
-    })
+  let sidebar_width = window
+    .update(cx, |root, _window, _cx| root.vertical_tabbar_render_width)
     .expect("reading immediate transition state should succeed");
   assert_eq!(sidebar_width, gpui::Pixels::ZERO);
-  assert_eq!(opacity, 1.0);
 
   let initial_size = window
     .update(cx, |_root, window, _cx| window.bounds().size)

@@ -44,6 +44,7 @@ Contains the adjacent, chronological raw-TOML transformations used by the migrat
 | `20260421.1 → 20260422.1` | Adds the default `toggle_hidden_panes` binding in key-first form. |
 | `20260422.1 → 20260512.1` | Creates/populates `[auto_update]` with `check = "never"` and the one-shot restore flag. |
 | `20260512.1 → 20260901.1` | Creates/populates `[animation]` without overwriting existing values: `enabled = true`, `duration_ms = 180`, `frame_interval_ms = 15`, `easing = "ease_in_out"`, and `fade_start_opacity =1.0`. |
+| `20260901.1 → 20260905.1` | Removes obsolete `animation.fade_start_opacity`; transitions now animate geometry only. |
 
 ## Flow
 

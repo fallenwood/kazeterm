@@ -520,20 +520,8 @@ pub(super) const FIELDS: &[FieldSpec] = &[
     table: "animation",
     key: "easing",
     label: "Easing",
-    description: "Curve used to interpolate transition geometry and opacity.",
+    description: "Curve used to interpolate transition geometry.",
     kind: FieldKind::Choice(&["linear", "ease_in", "ease_out", "ease_in_out"]),
-  },
-  FieldSpec {
-    section: Section::Animation,
-    table: "animation",
-    key: "fade_start_opacity",
-    label: "Fade-in starting opacity",
-    description: "Initial content opacity for fade-in transitions, from 0 to 1.",
-    kind: FieldKind::Number {
-      min: 0.0,
-      max: 1.0,
-      integer: false,
-    },
   },
   FieldSpec {
     section: Section::Updates,
@@ -780,7 +768,6 @@ mod tests {
       ("colors", "minimum_contrast", 0.0, f32::MAX as f64),
       ("animation", "duration_ms", 0.0, 5_000.0),
       ("animation", "frame_interval_ms", 4.0, 1_000.0),
-      ("animation", "fade_start_opacity", 0.0, 1.0),
       ("tab", "title_change_delay_ms", 0.0, 5_000.0),
       ("tab", "label_min_width", 24.0, 480.0),
       ("tab", "label_max_width", 24.0, 480.0),
@@ -970,10 +957,6 @@ mod tests {
       }
     }
     assert_eq!(field("pane", "inactive_opacity").value(&original), "0.6");
-    assert_eq!(
-      field("animation", "fade_start_opacity").value(&original),
-      "1.0"
-    );
     for (index, section) in Section::ALL.iter().enumerate() {
       assert!(!Section::ALL[..index].contains(section));
       assert!(!section.label().is_empty());

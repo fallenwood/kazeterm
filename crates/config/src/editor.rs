@@ -341,10 +341,6 @@ fn validate_edited(config: &Config) -> Result<(), String> {
       "appearance.background_opacity",
       config.appearance.background_opacity,
     ),
-    (
-      "animation.fade_start_opacity",
-      config.animation.fade_start_opacity,
-    ),
     ("pane.inactive_opacity", config.pane.inactive_opacity),
   ] {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {

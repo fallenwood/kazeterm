@@ -387,7 +387,6 @@ fn editor_validates_edits_before_writing() {
     |config| config.window.width = f32::INFINITY,
     |config| config.appearance.background_opacity = 1.1,
     |config| config.pane.inactive_opacity = -0.1,
-    |config| config.animation.fade_start_opacity = f32::NAN,
     |config| config.colors.minimum_contrast = -1.0,
     |config| config.font.family.clear(),
     |config| config.cursor.shape = "unknown".into(),

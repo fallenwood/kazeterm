@@ -349,7 +349,7 @@ impl MainWindow {
             }
             this.resubscribe_tab_terminals(tab_pos, window, cx);
             this.sync_ui_tree(cx);
-            this.animate_ui_change(window, cx);
+            cx.notify();
           }
         }
       }
@@ -529,34 +529,34 @@ impl MainWindow {
       self.set_active_tab(new_active_ix, window, cx);
     }
 
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn move_tab_left(
     &mut self,
     tab_ix: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if tab_ix > 0 {
       self.items.swap(tab_ix, tab_ix - 1);
       self.active_tab_ix = Some(tab_ix - 1);
       self.sync_ui_tree(cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
   pub(crate) fn move_tab_right(
     &mut self,
     tab_ix: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if tab_ix + 1 < self.items.len() {
       self.items.swap(tab_ix, tab_ix + 1);
       self.active_tab_ix = Some(tab_ix + 1);
       self.sync_ui_tree(cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
@@ -594,14 +594,14 @@ impl MainWindow {
 
     if let Some(item) = self.items.iter_mut().find(|item| item.index == tab_index) {
       item.pinned = pinned;
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 
   pub(crate) fn close_other_tabs(
     &mut self,
     keep_tab_index: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if self.items.len() <= 1 {
@@ -618,13 +618,13 @@ impl MainWindow {
       .position(|tab| tab.index == keep_tab_index)
       .or_else(|| (!self.items.is_empty()).then_some(0));
     self.sync_ui_tree(cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   pub(crate) fn close_tabs_to_right(
     &mut self,
     tab_ix: usize,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     let right_ix = tab_ix + 1;
@@ -636,7 +636,7 @@ impl MainWindow {
         .collect();
       self.active_tab_ix = Some(tab_ix.min(self.items.len().saturating_sub(1)));
       self.sync_ui_tree(cx);
-      self.animate_ui_change(window, cx);
+      cx.notify();
     }
   }
 

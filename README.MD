@@ -88,8 +88,8 @@ key_debug_mode = true
 
 ### Transition animations
 
-Structural UI changes share one transition configuration. Creating or switching
-tabs does not fade the terminal. Set `enabled = false` to apply changes immediately.
+Geometry changes such as vertical tab-bar transitions and window resizing share
+one transition configuration. Set `enabled = false` to apply changes immediately.
 
 ```toml
 [animation]
@@ -98,11 +98,10 @@ duration_ms = 180
 frame_interval_ms = 15
 # Supported values: "linear", "ease_in", "ease_out", "ease_in_out"
 easing = "ease_in_out"
-fade_start_opacity = 1.0
 ```
 
-`duration_ms` is capped at 5000 ms, `frame_interval_ms` is clamped to 4–1000 ms,
-and `fade_start_opacity` is clamped to 0–1.
+`duration_ms` is capped at 5000 ms and `frame_interval_ms` is clamped to
+4–1000 ms.
 
 ### Auto update
 

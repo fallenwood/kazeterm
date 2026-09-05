@@ -59,14 +59,14 @@ This directory implements the executable's application/service layer around the 
 1. `notify` event -> `FileChangeType::{Config, Theme}` -> debounce.
 2. A config reload calls `Config::load()`, rebuilds both globals, rebinds terminal keys, and recalculates native background appearance. A theme-only reload reuses the current config and rebuilds only theme state.
 3. `window_manager::transition_configuration_change()` invokes every `MainWindow` so dimensions/orientation-dependent presentation can settle and fade into the new settings.
-4. `TransitionSpec::from_config()` derives bounded frame count/duration, easing, and fade start from `Config::animation`. Vertical tab-bar width moves to its new target and root opacity rises to 1.0; disabled or zero-duration animation snaps both to their target state.
+4. `TransitionSpec::from_config()` derives bounded frame count/duration and easing from `Config::animation`. Vertical tab-bar width moves to its new target; disabled or zero-duration animation snaps it to the target state.
 
 ### UI action reconciliation
 
 1. Before the first action, live state is captured into `UITree` and assigned stable `win-*`, `tab-*`, and `pane-*` IDs.
 2. `UITree::apply()` changes the serializable model; `diff_trees()` emits semantic `TreeDiff`s.
 3. `reconcile()` maps tab/pane/search/tab-bar/overlay/focus changes to `MainWindow` methods. Pane tree diffs rebuild the affected split tree while reusing terminal entities whose pane IDs remain present.
-4. After non-initial visible diffs, reconciliation starts the configured root fade. `TreeDiff::WindowResized` additionally starts the configured native resize task; disabled animation applies the final size immediately.
+4. `TreeDiff::WindowResized` starts the configured native resize task; disabled animation applies the final size immediately. Other diffs notify the GPUI context directly.
 5. Workspace save and JSON snapshot serialize this same tree. Restore recreates terminals and split containers, restores active tab/search/tab-bar state, adopts the loaded tree as canonical, and transitions a user-requested tree replacement.
 
 ### Update lifecycle
