@@ -1,6 +1,6 @@
 [package]
 name = "terminal-kernel-vte"
-version = "0.1.0"
+version.workspace = true
 publish.workspace = true
 edition.workspace = true
 
@@ -8,10 +8,10 @@ edition.workspace = true
 config = { path = "../config" }
 futures.workspace = true
 libc.workspace = true
-parking_lot = "0.12"
+parking_lot.workspace = true
 terminal = { path = "../terminal" }
 terminal-kernel = { path = "../terminal-kernel" }
-vte = "0.15"
+vte.workspace = true
 
 [lints]
 workspace = true

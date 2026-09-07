@@ -10,8 +10,6 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 rustflags = [
   "-C",
   "symbol-mangling-version=v0",
-  "-C",
-  "link-arg=-fuse-ld=rust-lld",
   "--cfg",
   "tokio_unstable",
   "--cfg",

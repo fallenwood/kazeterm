@@ -138,7 +138,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bda177466b9524d59f1b12f0dd30b68696788e9992a7e959021c4a0ed96fcf59"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bitflags 2.13.1",
  "home",
  "libc",
@@ -655,6 +655,12 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bincode"
@@ -1199,9 +1205,9 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
- "dirs 6.0.0",
+ "dirs 7.0.0",
  "gpui-pre",
  "serde",
  "serde_json",
@@ -1463,9 +1469,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-deque"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5181e0de7b61eb03a81e347d6dd8797bae9da5146707b51077e2d71a54ec0ceb"
+checksum = "622f3fc73690be383c7214310406f28a90e6edeadc3cea882f9d71e495b9711a"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
@@ -1473,27 +1479,27 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.20"
+version = "0.9.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f"
+checksum = "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d"
 dependencies = [
  "crossbeam-utils",
 ]
 
 [[package]]
 name = "crossbeam-queue"
-version = "0.3.13"
+version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "803d13fb3b09d88be9f4dbc29062c66b19bf7170867ceb746d2a8689bf6c7a26"
+checksum = "03e8bd762f7479489c70ed6c768ddca99d7296857de437a68dcb2a94365b3fae"
 dependencies = [
  "crossbeam-utils",
 ]
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.22"
+version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17"
+checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crunchy"
@@ -1607,6 +1613,15 @@ name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys 0.5.0",
+]
+
+[[package]]
+name = "dirs"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d57d423b3c82e89b9a24ca3091fee61f456a26edbd28d26c65906f4bc1dcd8f"
 dependencies = [
  "dirs-sys 0.5.0",
 ]
@@ -2776,7 +2791,7 @@ dependencies = [
  "wayland-protocols-plasma",
  "wayland-protocols-wlr",
  "x11-clipboard",
- "x11rb",
+ "x11rb 0.13.2",
  "xkbcommon",
  "zed-scap",
  "zed-xim",
@@ -2897,7 +2912,7 @@ version = "0.12.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05be23908e707966824f8c51a609904b7f30739e8d915e120a53c1b995ba964c"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -3612,9 +3627,9 @@ checksum = "6e44b0a4eaa4c82f441d50a963f2d5f05a787240aeee097597033e72accfd22f"
 
 [[package]]
 name = "indexmap"
-version = "2.14.1"
+version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
@@ -3721,9 +3736,9 @@ dependencies = [
 
 [[package]]
 name = "ipnet"
-version = "2.12.1"
+version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
+checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "is-docker"
@@ -3773,6 +3788,15 @@ name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
 dependencies = [
  "either",
 ]
@@ -3864,12 +3888,12 @@ dependencies = [
 
 [[package]]
 name = "kazeterm"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "clap",
  "config",
- "dirs 6.0.0",
+ "dirs 7.0.0",
  "futures",
  "gpui-kit",
  "gpui-pre",
@@ -3900,12 +3924,12 @@ dependencies = [
  "which",
  "windows 0.62.2",
  "winresource",
- "x11rb",
+ "x11rb 0.14.0",
 ]
 
 [[package]]
 name = "kazeterm-event-system"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "gpui-pre",
@@ -3918,7 +3942,7 @@ dependencies = [
 
 [[package]]
 name = "kazeterm-ui-tree"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -4194,9 +4218,9 @@ dependencies = [
 
 [[package]]
 name = "lyon_tessellation"
-version = "1.0.21"
+version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dabea159dc6eea9171a541b458134b70ca95e3162d068132b2b3b9bc01aad06e"
+checksum = "43b8dcf906637ecef61b3c0740c7a4e7f27caeb31257cfac0cc579ce15be6005"
 dependencies = [
  "float_next_after",
  "lyon_path",
@@ -5005,6 +5029,17 @@ dependencies = [
  "bitflags 2.13.1",
  "block2 0.6.2",
  "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "objc2-open-directory"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb82bed227edf5201dfedf072bba4015a33d3d4a98519837295a90f0a23f676d"
+dependencies = [
+ "objc2 0.6.4",
+ "objc2-core-foundation",
  "objc2-foundation 0.3.2",
 ]
 
@@ -6515,7 +6550,7 @@ checksum = "7bd22781911de0ca6debda95f073c8f18bec65d1a94f1fa9573f3102e514cea4"
 dependencies = [
  "ahash",
  "annotate-snippets",
- "base64",
+ "base64 0.22.1",
  "encoding_rs_io",
  "getrandom 0.3.4",
  "granit-parser",
@@ -7152,15 +7187,16 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.38.4"
+version = "0.39.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92ab6a2f8bfe508deb3c6406578252e491d299cbbf3bc0529ecc3313aee4a52f"
+checksum = "d2071df9448915b71c4fe6d25deaf1c22f12bd234f01540b77312bb8e41361e6"
 dependencies = [
  "libc",
  "memchr",
  "ntapi",
  "objc2-core-foundation",
  "objc2-io-kit",
+ "objc2-open-directory",
  "windows 0.62.2",
 ]
 
@@ -7255,21 +7291,21 @@ dependencies = [
 
 [[package]]
 name = "terminal"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
- "base64",
+ "base64 0.23.1",
  "config",
  "futures",
  "gpui-pre",
  "image",
  "insta",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "libc",
  "polling",
  "regex",
  "smol",
- "sysinfo 0.38.4",
+ "sysinfo 0.39.6",
  "terminal-kernel",
  "themeing",
  "tracing",
@@ -7280,7 +7316,7 @@ dependencies = [
 
 [[package]]
 name = "terminal-kernel"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "alacritty_terminal",
  "futures",
@@ -7289,7 +7325,7 @@ dependencies = [
 
 [[package]]
 name = "terminal-kernel-alacritty"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "alacritty_terminal",
  "config",
@@ -7300,14 +7336,14 @@ dependencies = [
 
 [[package]]
 name = "terminal-kernel-unix-bundle"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "terminal-kernel-vte",
 ]
 
 [[package]]
 name = "terminal-kernel-vte"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "config",
  "futures",
@@ -7320,7 +7356,7 @@ dependencies = [
 
 [[package]]
 name = "themeing"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "config",
  "gpui-kit",
@@ -7863,7 +7899,7 @@ version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80be9b06fbae3b8b303400ab20778c80bbaf338f563afe567cf3c9eea17b47ef"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "data-url",
  "flate2",
  "fontdb",
@@ -7890,7 +7926,7 @@ version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e419dff010bb12512b0ae9e3d2f318dfbdf0167fde7eb05465134d4e8756076f"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "data-url",
  "flate2",
  "fontdb",
@@ -9201,7 +9237,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "662d74b3d77e396b8e5beb00b9cad6a9eccf40b2ef68cc858784b14c41d535a3"
 dependencies = [
  "libc",
- "x11rb",
+ "x11rb 0.13.2",
 ]
 
 [[package]]
@@ -9214,8 +9250,19 @@ dependencies = [
  "gethostname",
  "libc",
  "rustix",
- "x11rb-protocol",
+ "x11rb-protocol 0.13.2",
  "xcursor",
+]
+
+[[package]]
+name = "x11rb"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a8885a854a8bfdf87a301e53e41b17c5f8f33639903131338b997b1eb614f44"
+dependencies = [
+ "gethostname",
+ "rustix",
+ "x11rb-protocol 0.14.0",
 ]
 
 [[package]]
@@ -9223,6 +9270,12 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
+
+[[package]]
+name = "x11rb-protocol"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acf4d1bc32aa46eec18caa634ec3cf4c05bfa151f12b93b510b15190f69a1ca8"
 
 [[package]]
 name = "xcb"
@@ -9509,7 +9562,7 @@ dependencies = [
  "ahash",
  "hashbrown 0.14.5",
  "log",
- "x11rb",
+ "x11rb 0.13.2",
  "xim-ctext",
  "xim-parser",
 ]

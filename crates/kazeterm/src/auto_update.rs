@@ -1196,13 +1196,13 @@ last_check_unix_secs = 42
   fn pinned_build_ignores_wip_and_uses_latest_pinned_tag() {
     let releases = vec![
       release("wip", "2222222", "2026-05-12T00:00:00Z"),
-      release("0.2.0", "3333333", "2026-05-10T00:00:00Z"),
+      release("0.3.1", "3333333", "2026-05-10T00:00:00Z"),
       release("0.1.5", "4444444", "2026-05-01T00:00:00Z"),
     ];
 
     let selected = select_update_release(&current("0.1.0"), &releases).unwrap();
 
-    assert_eq!(selected.tag_name, "0.2.0");
+    assert_eq!(selected.tag_name, "0.3.1");
   }
 
   #[test]
@@ -1250,16 +1250,16 @@ last_check_unix_secs = 42
 
   #[test]
   fn asset_selection_prefers_current_platform_package_over_dmg() {
-    let mut release = release("0.2.0", "3333333", "2026-05-10T00:00:00Z");
+    let mut release = release("0.3.1", "3333333", "2026-05-10T00:00:00Z");
     release.assets = vec![
-      asset("kazeterm-macos-arm64-0.2.0-dmg.tar.gz"),
-      asset("kazeterm-windows-x64-0.2.0.7z"),
-      asset("kazeterm-windows-x64-0.2.0.zip"),
+      asset("kazeterm-macos-arm64-0.3.1-dmg.tar.gz"),
+      asset("kazeterm-windows-x64-0.3.1.7z"),
+      asset("kazeterm-windows-x64-0.3.1.zip"),
     ];
 
     let selected = select_asset_for_target(&release, "x86_64-pc-windows-msvc").unwrap();
 
-    assert_eq!(selected.name, "kazeterm-windows-x64-0.2.0.zip");
+    assert_eq!(selected.name, "kazeterm-windows-x64-0.3.1.zip");
   }
 
   #[test]
