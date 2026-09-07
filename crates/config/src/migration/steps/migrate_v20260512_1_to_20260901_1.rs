@@ -22,7 +22,7 @@ pub(crate) fn migrate_v20260512_1_to_20260901_1(value: &mut Value) {
         .or_insert_with(|| Value::String("ease_in_out".to_string()));
       animation
         .entry("fade_start_opacity".to_string())
-        .or_insert_with(|| Value::Float(0.82));
+        .or_insert_with(|| Value::Float(1.0));
     }
 
     table.insert(

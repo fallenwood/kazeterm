@@ -40,7 +40,7 @@ This module is Kazeterm's application adapter for the shared `kazeterm-event-sys
 - `ReloadConfig` calls `config_watcher::reload_config_and_theme_from_event()`, so external reloads use the same global replacement, keybinding rebind, native background update, and per-window transition fan-out as filesystem changes.
 - `ToggleTabBar` is tree-backed. Its `TreeDiff::TabBarVisibilityChanged` reaches `MainWindow::toggle_tab_bar()` under the reconciliation guard, which starts the configured vertical tab-bar width/opacity transition when vertical tabs are enabled.
 - Arbitrary `DispatchUIAction` can request `WindowResized`; reconciliation starts the configured native window-size transition.
-- The adapter does not duplicate animation logic. After handler-generated actions reconcile, the reconciler identifies visible diffs and invokes `MainWindow::animate_ui_change()`, which reads the global `AnimationConfig`. Disabled or zero-duration animation applies final states immediately.
+- The adapter does not duplicate animation logic. Geometry transitions read the global `AnimationConfig`; disabled or zero-duration animation applies final states immediately.
 
 ## Integration Points
 

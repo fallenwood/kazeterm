@@ -18,6 +18,7 @@ mod main_window_window_lifecycle_tests;
 mod menu_builder;
 mod notifications;
 mod search_bar;
+mod settings_page;
 mod shell_error_dialog;
 mod shell_icon;
 mod split_pane;

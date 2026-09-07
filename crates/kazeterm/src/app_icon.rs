@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::assets::Assets;
 
 /// Set the application icon in the macOS Dock.

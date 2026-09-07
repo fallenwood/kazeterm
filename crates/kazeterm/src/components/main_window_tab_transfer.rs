@@ -171,7 +171,7 @@ impl MainWindow {
     };
 
     self.resubscribe_tab_terminals(target_tab_ix, window, cx);
-    let search_visible = self.search_visible;
+    let search_visible = self.search_visible && self.settings_page.is_none();
     let terminal_for_search = new_active_terminal.clone();
     self.search_bar.update(cx, |search_bar, cx| {
       search_bar.set_terminal_view(terminal_for_search);
@@ -180,11 +180,11 @@ impl MainWindow {
       }
     });
     if !search_visible {
-      Self::focus_terminal(window, &new_active_terminal, cx);
+      self.focus_terminal(window, &new_active_terminal, cx);
     }
 
     self.sync_ui_tree(cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
     if taken.close_source {
       Self::close_empty_source(dragged.clone(), cx);
     }
@@ -208,7 +208,7 @@ impl MainWindow {
     &mut self,
     tab_index: usize,
     target_ix: Option<usize>,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     let Some(from_ix) = self.items.iter().position(|item| item.index == tab_index) else {
@@ -232,7 +232,7 @@ impl MainWindow {
     }
 
     self.sync_ui_tree(cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   fn take_external_tab(
@@ -288,7 +288,7 @@ impl MainWindow {
     }
 
     self.sync_ui_tree(cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
     Some((item, self.items.is_empty()))
   }
 
@@ -311,7 +311,7 @@ impl MainWindow {
     self.set_active_tab_direct(target_ix, window, cx);
     self.scroll_to_active_tab = true;
     self.sync_ui_tree(cx);
-    self.animate_ui_change(window, cx);
+    cx.notify();
   }
 
   fn prepare_transferred_terminals(

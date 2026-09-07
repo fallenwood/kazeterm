@@ -1,6 +1,6 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{h_flex, menu::ContextMenuExt, v_flex};
+use gpui_kit::component::{h_flex, menu::ContextMenuExt, v_flex};
 use terminal::TerminalView;
 use themeing::SettingsStore;
 

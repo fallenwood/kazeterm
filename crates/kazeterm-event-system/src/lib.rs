@@ -158,7 +158,7 @@ async fn dispatch_event<T: 'static>(
   resolve_target: &impl Fn(&App) -> Option<(WeakEntity<T>, AnyWindowHandle)>,
   cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
-  let Some((target, window_handle)) = cx.update(|cx| resolve_target(cx))? else {
+  let Some((target, window_handle)) = cx.update(|cx| resolve_target(cx)) else {
     tracing::debug!("No active window available for event: {:?}", event);
     return Ok(());
   };

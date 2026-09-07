@@ -18,10 +18,10 @@ GPUI is a hybrid immediate/retained mode, GPU-accelerated UI framework for Rust 
 ### Entry Point Pattern
 
 ```rust
-use gpui::{Application, App};
+use gpui_kit::App;
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    gpui_kit::application().run(|cx: &mut App| {
         // Application is now running
         // cx is your App context - use it to:
         // - Open windows
@@ -31,16 +31,16 @@ fn main() {
 }
 ```
 
-### With GPUI-Component Library
+### With GPUI Kit Components
 
 ```rust
-use gpui::{Application, App};
-use gpui_component::Root;
+use gpui_kit::component::Root;
+use gpui_kit::App;
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        // MUST call init first when using gpui-component
-        gpui_component::init(cx);
+    gpui_kit::application().run(|cx: &mut App| {
+        // MUST call init first when using GPUI Kit components
+        gpui_kit::init(cx);
         
         // Then open windows...
     });
@@ -50,10 +50,10 @@ fn main() {
 ## Window Creation
 
 ```rust
-use gpui::{App, Application, Context, Window, WindowOptions, WindowBounds, Bounds, size, px};
+use gpui_kit::{App, Bounds, Context, Window, WindowBounds, WindowOptions, px, size};
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    gpui_kit::application().run(|cx: &mut App| {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
@@ -146,8 +146,8 @@ fn build_ui() -> impl IntoElement {
 ## Complete Counter Example
 
 ```rust
-use gpui::{
-    div, prelude::*, px, rgb, size, App, Application, Bounds,
+use gpui_kit::{
+    div, prelude::*, px, rgb, size, App, Bounds,
     Context, IntoElement, Render, SharedString, Window,
     WindowBounds, WindowOptions,
 };
@@ -194,7 +194,7 @@ impl Render for CounterApp {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    gpui_kit::application().run(|cx: &mut App| {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
@@ -217,8 +217,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gpui = "0.2.2"
-gpui-component = "0.6.0-preview0"  # Optional
+gpui-kit = "0.6"
 ```
 
 ## Common Patterns to Avoid

@@ -270,8 +270,8 @@ impl SettingsStore {
     &self.active_theme
   }
 
-  pub fn init_gpui_component_theme(cx: &mut App) {
-    gpui_component::Theme::update_global(cx, |theme, app| {
+  pub fn init_gpui_kit_theme(cx: &mut App) {
+    gpui_kit::component::Theme::update_global(cx, |theme, app| {
       let settings = app.global::<SettingsStore>();
 
       let colors = settings.theme().colors();
@@ -279,7 +279,6 @@ impl SettingsStore {
       theme.accent = colors.text_accent;
       theme.accent_foreground = colors.terminal_foreground;
       theme.accordion = colors.element_background;
-      theme.accordion_hover = colors.element_hover;
 
       theme.blue = colors.terminal_ansi_blue;
       theme.blue_light = colors.terminal_ansi_bright_blue;
@@ -297,6 +296,10 @@ impl SettingsStore {
       theme.primary = colors.text_accent;
       theme.primary_hover = colors.element_hover;
       theme.primary_active = colors.element_active;
+      theme.button_primary = colors.text_accent;
+      theme.button_primary_foreground = colors.terminal_foreground;
+      theme.button_primary_hover = colors.element_hover;
+      theme.button_primary_active = colors.element_active;
 
       theme.title_bar = colors.title_bar_background;
       theme.title_bar_border = colors.border;
@@ -326,7 +329,7 @@ impl SettingsStore {
       theme.popover_foreground = colors.text;
 
       // List styling (for dropdown items, menus)
-      theme.list = colors.elevated_surface_background;
+      theme.colors.list = colors.elevated_surface_background;
       theme.list_active = colors.element_selected;
       theme.list_active_border = colors.border_focused;
       theme.list_hover = colors.element_hover;
@@ -345,7 +348,10 @@ impl SettingsStore {
       theme.font_size = gpui::px(config.font.ui_size);
       theme.mono_font_family = config.font.family.clone().into();
       theme.mono_font_size = gpui::px(config.font.size);
+
+      theme.tokens = gpui_kit::component::ThemeTokens::from(theme.colors);
     });
+    gpui_kit::component::Theme::sync_base(cx);
   }
 }
 

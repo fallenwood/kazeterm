@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
   ActiveTheme, Icon, IconName, Sizable, StyledExt, TITLE_BAR_HEIGHT, TitleBar,
   button::{Button, ButtonVariants},
   h_flex,
@@ -599,6 +599,42 @@ fn render_key_debug_overlay(
 
 impl Render for MainWindow {
   fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    if let Some(page) = &self.settings_page {
+      let view = cx.entity();
+      let titlebar = if window.is_fullscreen() {
+        div()
+          .h(TITLE_BAR_HEIGHT)
+          .bg(cx.theme().title_bar)
+          .into_any_element()
+      } else {
+        TitleBar::new()
+          .on_close_window(move |_, window, cx| {
+            view.update(cx, |this, cx| this.show_close_confirm_dialog(window, cx));
+          })
+          .child("Settings")
+          .into_any_element()
+      };
+      // Keep the terminal entities alive, but remove their input handlers and layout from this page.
+      return div()
+        .flex()
+        .flex_col()
+        .size_full()
+        .child(titlebar)
+        .child(
+          div()
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .child(page.clone())
+            .children(self.close_confirm_dialog.clone())
+            .children(self.about_dialog.clone())
+            .children(self.rename_dialog.clone())
+            .children(self.import_alacritty_dialog.clone())
+            .children(self.shell_error_dialog.clone())
+            .children(self.update_confirm_dialog.clone()),
+        )
+        .into_any_element();
+    }
     let search_visible = self.search_visible;
     let search_bar = self.search_bar.clone();
     let config = cx.global::<::config::Config>();
@@ -666,13 +702,12 @@ impl Render for MainWindow {
         cx.update(|_cx| {
           let max_offset = scroll_handle.max_offset();
           let offset = if vertical_tabs {
-            gpui::point(px(0.0), -max_offset.height)
+            gpui::point(px(0.0), -max_offset.y)
           } else {
-            gpui::point(-max_offset.width, px(0.0))
+            gpui::point(-max_offset.x, px(0.0))
           };
           scroll_handle.set_offset(offset);
-        })
-        .ok();
+        });
       })
       .detach();
     }
@@ -690,14 +725,13 @@ impl Render for MainWindow {
             let max_offset = scroll_handle.max_offset();
             let scroll_ratio = active_tab_ix as f32 / total_tabs.max(1) as f32;
             let offset = if vertical_tabs {
-              gpui::point(px(0.0), -max_offset.height * scroll_ratio)
+              gpui::point(px(0.0), -max_offset.y * scroll_ratio)
             } else {
-              gpui::point(-max_offset.width * scroll_ratio, px(0.0))
+              gpui::point(-max_offset.x * scroll_ratio, px(0.0))
             };
             scroll_handle.set_offset(offset);
           }
-        })
-        .ok();
+        });
       })
       .detach();
     }
@@ -710,7 +744,6 @@ impl Render for MainWindow {
       .flex()
       .flex_col()
       .size_full()
-      .opacity(self.ui_transition_opacity)
       .key_context("MainWindow")
       .on_key_down(cx.listener(move |this, e: &KeyDownEvent, window, cx| {
         let key_debug_modifiers = KeyDebugModifiers {
@@ -1177,7 +1210,7 @@ impl Render for MainWindow {
                                         })
                                         .context_menu({
                                           let view = view.clone();
-                                          move |menu, _window, _cx| {
+                                          move |menu, window, cx| {
                                               build_tab_context_menu(
                                                 menu,
                                                 view.clone(),
@@ -1194,6 +1227,8 @@ impl Render for MainWindow {
                                                 IconName::ArrowRight,
                                                 has_hidden_panes,
                                                 can_toggle_hidden_panes,
+                                                window,
+                                                cx,
                                               )
                                             }
                                         }),
@@ -1253,8 +1288,8 @@ impl Render for MainWindow {
                         let view = menu_view.clone();
                         let profile_shortcuts = profile_shortcuts.clone();
                         move |menu: PopupMenu,
-                              _window: &mut Window,
-                              _cx: &mut Context<PopupMenu>| {
+                              window: &mut Window,
+                              cx: &mut Context<PopupMenu>| {
                           build_new_tab_menu(
                             menu,
                             view.clone(),
@@ -1262,6 +1297,8 @@ impl Render for MainWindow {
                             &container_profiles,
                             &ssh_hosts,
                             &profile_shortcuts,
+                            window,
+                            cx,
                           )
                         }
                       }),
@@ -1568,7 +1605,7 @@ impl Render for MainWindow {
                                             })
                                             .context_menu({
                                               let view = view.clone();
-                                              move |menu, _window, _cx| {
+                                              move |menu, window, cx| {
                                                 build_tab_context_menu(
                                                   menu,
                                                   view.clone(),
@@ -1585,6 +1622,8 @@ impl Render for MainWindow {
                                                   IconName::ArrowDown,
                                                   has_hidden_panes,
                                                   can_toggle_hidden_panes,
+                                                  window,
+                                                  cx,
                                                 )
                                               }
                                             }),
@@ -1634,5 +1673,6 @@ impl Render for MainWindow {
           content.into_any_element()
         }
       })
+      .into_any_element()
   }
 }

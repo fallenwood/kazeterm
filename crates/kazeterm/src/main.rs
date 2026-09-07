@@ -15,7 +15,7 @@ extern crate objc;
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
-use gpui::{App, Application, KeyBinding, WindowAppearance, actions};
+use gpui::{App, CursorHideMode, KeyBinding, WindowAppearance, actions};
 #[cfg(target_os = "macos")]
 use gpui::{Menu, MenuItem};
 use themeing::SettingsStore;
@@ -171,7 +171,7 @@ fn main() {
   // Initialize theme system with embedded assets and custom path
   init_theme_system(&config);
 
-  let app = Application::new().with_assets(Assets);
+  let app = gpui_kit::application().with_assets(Assets);
 
   // On macOS, clicking the dock icon while no windows are open should open a new window.
   // `on_reopen` is invoked by `applicationShouldHandleReopen:hasVisibleWindows:`.
@@ -186,7 +186,12 @@ fn main() {
 
   app.run(move |cx: &mut App| {
     Assets.load_fonts(cx).unwrap();
-    gpui_component::init(cx);
+    gpui_kit::init(cx);
+    cx.set_cursor_hide_mode(if config.terminal.hide_mouse_when_typing {
+      CursorHideMode::OnTyping
+    } else {
+      CursorHideMode::Never
+    });
     terminal::init(cx, &config.keybindings);
 
     cx.set_global(crate::config::create_settings_store(
@@ -195,7 +200,7 @@ fn main() {
     ));
     cx.set_global(config.clone());
 
-    SettingsStore::init_gpui_component_theme(cx);
+    SettingsStore::init_gpui_kit_theme(cx);
 
     // Start config and theme hot reload watcher
     config_watcher::start_config_watcher(cx);
@@ -276,6 +281,7 @@ fn main() {
             MenuItem::separator(),
             MenuItem::action("Quit Kazeterm", Quit),
           ],
+          disabled: false,
         },
         Menu {
           name: "Window".into(),
@@ -285,6 +291,7 @@ fn main() {
             MenuItem::separator(),
             MenuItem::action("New Window", NewWindow),
           ],
+          disabled: false,
         },
       ]);
     }

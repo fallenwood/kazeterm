@@ -283,6 +283,10 @@ impl Terminal {
         TouchPhase::Ended => {
           self.last_scroll_time = None;
         }
+        TouchPhase::Cancelled => {
+          self.last_scroll_time = None;
+          self.scroll_velocity = 0.0;
+        }
       }
     }
 

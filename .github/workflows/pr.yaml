@@ -26,9 +26,6 @@ jobs:
           - os: macos-latest
             arch: ARM64
             target: aarch64-apple-darwin
-          - os: macos-latest
-            arch: X64
-            target: x86_64-apple-darwin
     permissions:
       contents: write
     steps:
@@ -57,6 +54,7 @@ jobs:
           sudo apt-get update -y && sudo apt install -y \
             clang \
             llvm \
+            libfontconfig-dev \
             libxcb1-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-dev

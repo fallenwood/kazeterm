@@ -1,7 +1,7 @@
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputState};
-use gpui_component::{ActiveTheme, Sizable};
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::{ActiveTheme, Sizable};
 use themeing::SettingsStore;
 
 /// Event emitted when the rename dialog is closed
@@ -32,7 +32,7 @@ impl TabRenameDialog {
     let input_state = cx.new(|cx| InputState::new(window, cx).default_value(title));
 
     let subscription = cx.subscribe_in(&input_state, window, |view, state, event, _window, cx| {
-      if let gpui_component::input::InputEvent::PressEnter { .. } = event {
+      if let gpui_kit::component::input::InputEvent::PressEnter { .. } = event {
         let value = state.read(cx).value().to_string();
         let new_title = if value.trim().is_empty() {
           None // Clear custom title, revert to auto-title
@@ -55,7 +55,7 @@ impl TabRenameDialog {
 
   pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
     let focus_handle = self.input_state.focus_handle(cx);
-    window.focus(&focus_handle);
+    window.focus(&focus_handle, cx);
   }
 
   fn confirm(&mut self, cx: &mut Context<Self>) {
@@ -150,7 +150,7 @@ impl Render for TabRenameDialog {
                   .child("Leave empty to use automatic title from terminal"),
               )
               .child(
-                gpui_component::h_flex()
+                gpui_kit::component::h_flex()
                   .gap_2()
                   .justify_end()
                   .child(

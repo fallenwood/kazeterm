@@ -48,9 +48,11 @@ impl MainWindow {
       }
 
       // Focus on search bar input
-      self.search_bar.update(cx, |search_bar, cx| {
-        search_bar.focus(window, cx);
-      });
+      if self.settings_page.is_none() {
+        self.search_bar.update(cx, |search_bar, cx| {
+          search_bar.focus(window, cx);
+        });
+      }
     } else {
       self.search_bar.update(cx, |search_bar, cx| {
         search_bar.clear_search(cx);

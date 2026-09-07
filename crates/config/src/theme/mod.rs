@@ -64,6 +64,13 @@ pub fn set_custom_themes_path(path: PathBuf) {
   }
 }
 
+/// Stop using a custom themes directory, restoring normal theme lookup.
+pub fn clear_custom_themes_path() {
+  if let Ok(mut guard) = CUSTOM_THEMES_PATH.write() {
+    *guard = None;
+  }
+}
+
 /// Get the custom themes directory path
 pub fn get_custom_themes_path() -> Option<PathBuf> {
   CUSTOM_THEMES_PATH.read().ok().and_then(|g| g.clone())
@@ -340,6 +347,27 @@ pub fn load_theme(name: &str, is_dark: bool) -> (String, Palette) {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn editor_custom_theme_directory_can_be_cleared() {
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+      fn drop(&mut self) {
+        *CUSTOM_THEMES_PATH.write().unwrap() = self.0.take();
+      }
+    }
+    let _restore = Restore(get_custom_themes_path());
+    let path = PathBuf::from("config-editor-custom-themes");
+    set_custom_themes_path(path.clone());
+    assert_eq!(get_custom_themes_path(), Some(path));
+    clear_custom_themes_path();
+    assert_eq!(get_custom_themes_path(), None);
+    clear_custom_themes_path();
+    assert_eq!(get_custom_themes_path(), None);
+    let next = PathBuf::from("config-editor-next-themes");
+    set_custom_themes_path(next.clone());
+    assert_eq!(get_custom_themes_path(), Some(next));
+  }
 
   #[test]
   fn parse_hex_color_works() {

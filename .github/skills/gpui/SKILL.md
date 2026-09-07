@@ -1,6 +1,6 @@
 ---
 name: gpui
-description: Build desktop apps with GPUI, the GPU-accelerated UI framework from Zed. Covers Entity state, Render trait, div() Tailwind API, actions/keybindings, gpui-component widgets, theming. Use when building Rust desktop applications with GPUI or gpui-component.
+description: Build desktop apps with GPUI Kit, the GPU-accelerated application and component framework. Covers Entity state, Render trait, div() Tailwind API, actions/keybindings, components, and theming.
 ---
 
 # GPUI Development
@@ -15,19 +15,19 @@ GPUI is a hybrid immediate/retained mode, GPU-accelerated UI framework for Rust 
 | **State Management** | Entity<T>, notify(), emit(), subscribe() | [state-management.md](state-management.md) |
 | **Rendering** | div() API, layout, conditional rendering | [rendering.md](rendering.md) |
 | **Actions** | Keyboard shortcuts, key bindings | [actions.md](actions.md) |
-| **Components** | gpui-component widgets (Button, Input, Table) | [components.md](components.md) |
+| **Components** | GPUI Kit widgets (Button, Input, Table) | [components.md](components.md) |
 | **Theming** | Colors, cx.theme(), Root view | [theming.md](theming.md) |
 | **Anti-patterns** | Common mistakes to avoid | [anti-patterns.md](anti-patterns.md) |
 
 ## Critical Setup (MUST DO)
 
 ```rust
-use gpui::{Application, App};
-use gpui_component::Root;
+use gpui_kit::component::Root;
+use gpui_kit::App;
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        gpui_component::init(cx);  // REQUIRED when using gpui-component
+    gpui_kit::application().run(|cx: &mut App| {
+        gpui_kit::init(cx);  // REQUIRED before using GPUI Kit components
         
         cx.open_window(opts, |window, cx| {
             let view = cx.new(|cx| MyView::new(window, cx));
@@ -69,8 +69,7 @@ fn main() {
 
 ```toml
 [dependencies]
-gpui = "0.2.2"
-gpui-component = "0.6.0-preview0"
+gpui-kit = "0.6"
 ```
 
 ## Common Patterns

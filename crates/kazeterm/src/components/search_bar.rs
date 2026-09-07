@@ -1,9 +1,9 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::Escape as InputEscape;
-use gpui_component::input::{Input, InputState};
-use gpui_component::{ActiveTheme, IconName, Sizable};
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::Escape as InputEscape;
+use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::{ActiveTheme, IconName, Sizable};
 use terminal::TerminalView;
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
@@ -67,8 +67,8 @@ impl SearchBar {
       &search_input_state,
       window,
       |view, state, event, _window, cx| match event {
-        gpui_component::input::InputEvent::Focus => {}
-        gpui_component::input::InputEvent::PressEnter { secondary } => {
+        gpui_kit::component::input::InputEvent::Focus => {}
+        gpui_kit::component::input::InputEvent::PressEnter { secondary, .. } => {
           _ = secondary;
           view.query = state.read(cx).value().clone();
           view.perform_search(cx);
@@ -93,7 +93,7 @@ impl SearchBar {
 
   pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
     let focus_handle = self.search_input_state.focus_handle(cx);
-    window.focus(&focus_handle);
+    window.focus(&focus_handle, cx);
   }
 
   pub fn set_terminal_view(&mut self, terminal_view: Entity<TerminalView>) {
@@ -450,7 +450,7 @@ impl Render for SearchBar {
         cx.stop_propagation();
       })
       .child(
-        gpui_component::h_flex()
+        gpui_kit::component::h_flex()
           .gap_1()
           .items_center()
           .child(
@@ -467,7 +467,7 @@ impl Render for SearchBar {
               .child(format!("{}/{}", current_match, match_count)),
           )
           .child(
-            gpui_component::h_flex()
+            gpui_kit::component::h_flex()
               .gap_0p5()
               .items_center()
               .child(
@@ -491,7 +491,7 @@ impl Render for SearchBar {
           )
           .child(div().h(px(14.)).w(px(1.)).bg(theme.border))
           .child(
-            gpui_component::h_flex()
+            gpui_kit::component::h_flex()
               .gap_0p5()
               .items_center()
               .child(

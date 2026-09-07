@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use futures::FutureExt;
-use gpui::{App, AppContext, AsyncApp, WindowBackgroundAppearance};
+use gpui::{App, AppContext, AsyncApp, CursorHideMode, WindowBackgroundAppearance};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use smol::channel::unbounded;
 
@@ -274,7 +274,7 @@ fn config_watch_targets(config_paths: &[PathBuf]) -> HashSet<PathBuf> {
 async fn handle_file_change(cx: &mut AsyncApp, change_type: FileChangeType) -> anyhow::Result<()> {
   cx.update(|cx| {
     reload_config_and_theme(cx, change_type);
-  })?;
+  });
 
   Ok(())
 }
@@ -293,35 +293,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       };
       tracing::info!("Reloaded config: theme={}", new_config.colors.theme);
 
-      // Update the themes path if it changed
-      if let Some(themes_path) = &new_config.appearance.themes_path {
-        let path = PathBuf::from(themes_path);
-        if path.exists() && path.is_dir() {
-          ::config::set_custom_themes_path(path);
-        }
-      }
-
-      // Detect system dark mode
-      let system_is_dark = crate::system_is_dark(cx);
-
-      // Create new settings store with updated theme
-      let settings = create_settings_store(&new_config, system_is_dark);
-
-      // Update globals
-      cx.set_global(new_config.clone());
-      cx.set_global(settings);
-
-      // Re-bind terminal keybindings with updated config
-      terminal::bind_terminal_keys(cx, &new_config.keybindings);
-
-      // Re-initialize gpui-component theme
-      themeing::SettingsStore::init_gpui_component_theme(cx);
-
-      // Update window background appearance for transparency
-      update_window_background_appearance(cx, &new_config);
-      crate::window_manager::transition_configuration_change(&new_config, cx);
-
-      tracing::info!("Config and theme reloaded successfully");
+      apply_loaded_config(new_config, cx);
     }
     FileChangeType::Theme => {
       // Only reload the theme, not the entire config
@@ -334,13 +306,35 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
       // Update theme global
       cx.set_global(settings);
 
-      // Re-initialize gpui-component theme
-      themeing::SettingsStore::init_gpui_component_theme(cx);
+      // Re-initialize the GPUI Kit theme
+      themeing::SettingsStore::init_gpui_kit_theme(cx);
       crate::window_manager::transition_configuration_change(&config, cx);
 
       tracing::info!("Theme reloaded successfully: {}", config.colors.theme);
     }
   }
+}
+
+pub(crate) fn apply_loaded_config(new_config: Config, cx: &mut App) {
+  if let Some(themes_path) = &new_config.appearance.themes_path {
+    ::config::set_custom_themes_path(PathBuf::from(themes_path));
+  } else {
+    ::config::clear_custom_themes_path();
+  }
+
+  let settings = create_settings_store(&new_config, crate::system_is_dark(cx));
+  cx.set_global(new_config.clone());
+  cx.set_global(settings);
+  cx.set_cursor_hide_mode(if new_config.terminal.hide_mouse_when_typing {
+    CursorHideMode::OnTyping
+  } else {
+    CursorHideMode::Never
+  });
+  terminal::bind_terminal_keys(cx, &new_config.keybindings);
+  themeing::SettingsStore::init_gpui_kit_theme(cx);
+  update_window_background_appearance(cx, &new_config);
+  crate::window_manager::transition_configuration_change(&new_config, cx);
+  tracing::info!("Config and theme reloaded successfully");
 }
 
 /// Reload config and theme from an external event.

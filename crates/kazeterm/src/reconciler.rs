@@ -211,7 +211,6 @@ impl UITreeStore {
     window: &mut Window,
     cx: &mut Context<MainWindow>,
   ) {
-    let had_visible_content = !main_window.items.is_empty();
     for d in diffs {
       match d {
         TreeDiff::TabAdded { tab, .. } => {
@@ -293,7 +292,7 @@ impl UITreeStore {
               if let Some(item) = main_window.items.get_mut(tab_ix) {
                 item.split_container.set_active_pane(target_pane_id);
                 if let Some(terminal) = item.split_container.get_active_terminal() {
-                  MainWindow::focus_terminal(window, &terminal, cx);
+                  main_window.focus_terminal(window, &terminal, cx);
                 }
               }
             } else {
@@ -381,12 +380,8 @@ impl UITreeStore {
       }
     }
 
-    let is_initial_content = !had_visible_content
-      && diffs
-        .iter()
-        .any(|diff| matches!(diff, TreeDiff::TabAdded { .. }));
-    if !is_initial_content && diffs.iter().any(tree_diff_fades_window) {
-      main_window.animate_ui_change(window, cx);
+    if !diffs.is_empty() {
+      cx.notify();
     }
   }
 
@@ -405,20 +400,6 @@ impl UITreeStore {
     main_window.reconciling_ui_tree = was_reconciling;
     Ok(())
   }
-}
-
-fn tree_diff_fades_window(diff: &TreeDiff) -> bool {
-  !matches!(
-    diff,
-    TreeDiff::WindowAdded { .. }
-      | TreeDiff::WindowRemoved { .. }
-      | TreeDiff::PaneWorkingDirectoryChanged { .. }
-      | TreeDiff::SearchQueryChanged { .. }
-      | TreeDiff::SearchFlagsChanged { .. }
-      // Creating or switching tabs must not fade the terminal contents.
-      | TreeDiff::TabAdded { .. }
-      | TreeDiff::ActiveTabChanged { .. }
-  )
 }
 
 impl Reconciler for UITreeStore {

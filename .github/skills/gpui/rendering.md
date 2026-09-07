@@ -158,10 +158,10 @@ div().when_some(user_avatar, |this, avatar_url| {
 })
 ```
 
-## Layout Helpers (gpui-component)
+## Layout Helpers (GPUI Kit)
 
 ```rust
-use gpui_component::*;
+use gpui_kit::component::*;
 
 // Horizontal flex container
 h_flex().gap_2().child("Left").child("Right")

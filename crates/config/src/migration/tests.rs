@@ -384,7 +384,6 @@ fn migrated_config_deserializes_to_config_struct() {
   assert_eq!(config.animation.duration_ms, 180);
   assert_eq!(config.animation.frame_interval_ms, 15);
   assert_eq!(config.animation.easing, crate::AnimationEasing::EaseInOut);
-  assert!((config.animation.fade_start_opacity - 0.82).abs() < 0.001);
   assert!((config.pane.inactive_opacity - 0.6).abs() < 0.001);
   assert_eq!(config.tab.label_min_width, 60.0);
   assert_eq!(config.tab.label_max_width, 200.0);
@@ -442,15 +441,7 @@ background_opacity = 0.9
       .unwrap(),
     "ease_in_out"
   );
-  assert!(
-    (get_nested(&config, "animation", "fade_start_opacity")
-      .unwrap()
-      .as_float()
-      .unwrap()
-      - 0.82)
-      .abs()
-      < 0.001
-  );
+  assert!(get_nested(&config, "animation", "fade_start_opacity").is_none());
 }
 
 #[test]
@@ -490,6 +481,38 @@ fade_start_opacity = 0.5
       .unwrap(),
     "linear"
   );
+  assert!(get_nested(&config, "animation", "fade_start_opacity").is_none());
+}
+
+#[test]
+fn migrate_20260901_1_removes_fade_start_opacity() {
+  let mut config: Value = toml::from_str(
+    r#"
+version = "20260901.1"
+
+[animation]
+enabled = false
+duration_ms = 320
+frame_interval_ms = 20
+easing = "linear"
+fade_start_opacity = 0.5
+"#,
+  )
+  .unwrap();
+
+  assert!(apply_migrations(&mut config));
+  assert_eq!(
+    config.get("version").unwrap().as_str().unwrap(),
+    CURRENT_CONFIG_VERSION
+  );
+  assert_eq!(
+    get_nested(&config, "animation", "duration_ms")
+      .unwrap()
+      .as_integer()
+      .unwrap(),
+    320
+  );
+  assert!(get_nested(&config, "animation", "fade_start_opacity").is_none());
 }
 
 #[test]

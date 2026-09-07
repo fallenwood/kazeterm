@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::{h_flex, label::Label, v_flex};
+use gpui_kit::component::{h_flex, label::Label, v_flex};
 use themeing::SettingsStore;
 
 use crate::components::shell_icon::ShellIcon;

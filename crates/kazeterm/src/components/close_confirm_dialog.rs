@@ -1,6 +1,6 @@
 use gpui::*;
-use gpui_component::ActiveTheme;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use themeing::SettingsStore;
 
 /// Event emitted when the close confirmation dialog is resolved
@@ -59,7 +59,7 @@ impl EventEmitter<CloseConfirmEvent> for CloseConfirmDialog {}
 impl CloseConfirmDialog {
   pub fn new(restore_workspace: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let focus_handle = cx.focus_handle();
-    window.focus(&focus_handle);
+    window.focus(&focus_handle, cx);
     Self {
       focus_handle,
       content: CloseConfirmContent::new(restore_workspace),
@@ -91,7 +91,7 @@ impl Render for CloseConfirmDialog {
     let colors = cx.global::<SettingsStore>().theme().colors();
     let content = self.content;
     let actions = if content.restore_workspace {
-      gpui_component::h_flex()
+      gpui_kit::component::h_flex()
         .gap_2()
         .justify_end()
         .child(
@@ -119,7 +119,7 @@ impl Render for CloseConfirmDialog {
             })),
         )
     } else {
-      gpui_component::h_flex()
+      gpui_kit::component::h_flex()
         .gap_2()
         .justify_end()
         .child(

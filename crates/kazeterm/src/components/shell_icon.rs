@@ -276,7 +276,7 @@ impl ShellIcon {
         .h(size)
         .into_any_element(),
       ShellIcon::Default(path) => {
-        use gpui_component::{Icon, Sizable};
+        use gpui_kit::component::{Icon, Sizable};
         Icon::empty().path(path).small().into_any_element()
       }
     }

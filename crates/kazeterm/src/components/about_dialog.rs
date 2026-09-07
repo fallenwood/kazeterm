@@ -1,8 +1,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::ActiveTheme;
-use gpui_component::Disableable;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::Disableable;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use themeing::SettingsStore;
 
 /// Events emitted by the about dialog
@@ -28,7 +28,7 @@ impl EventEmitter<AboutDialogCloseEvent> for AboutDialog {}
 impl AboutDialog {
   pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
     let focus_handle = cx.focus_handle();
-    window.focus(&focus_handle);
+    window.focus(&focus_handle, cx);
     Self {
       focus_handle,
       checking_for_updates: false,
@@ -178,7 +178,7 @@ impl Render for AboutDialog {
               })
               // Buttons
               .child(
-                gpui_component::h_flex()
+                gpui_kit::component::h_flex()
                   .mt_2()
                   .justify_end()
                   .gap_2()
@@ -209,7 +209,12 @@ impl Render for AboutDialog {
 }
 
 impl AboutDialog {
-  fn info_row(&self, label: &str, value: &str, theme: &gpui_component::Theme) -> impl IntoElement {
+  fn info_row(
+    &self,
+    label: &str,
+    value: &str,
+    theme: &gpui_kit::component::Theme,
+  ) -> impl IntoElement {
     div()
       .flex()
       .gap_2()
@@ -232,7 +237,7 @@ impl AboutDialog {
     &self,
     label: &str,
     value: &str,
-    theme: &gpui_component::Theme,
+    theme: &gpui_kit::component::Theme,
   ) -> impl IntoElement {
     div()
       .flex()
