@@ -1,7 +1,8 @@
 [package]
 name = "kazeterm"
-version = "0.2.0"
-edition = "2024"
+version.workspace = true
+publish.workspace = true
+edition.workspace = true
 description = "A modern GPU-accelerated terminal emulator"
 authors = ["fallenwood"]
 license = "GPL-3.0"
@@ -15,8 +16,8 @@ gpui-component.workspace = true
 futures.workspace = true
 smol.workspace = true
 rust-embed.workspace=true
-clap = { version = "4", features = ["derive"] }
-serde_json = "1"
+clap.workspace = true
+serde_json.workspace = true
 
 config = { path = "../config" }
 kazeterm-event-system = { path = "../kazeterm-event-system" }
@@ -39,12 +40,12 @@ urlencoding.workspace = true
 [dev-dependencies]
 gpui = { workspace = true, features = ["font-kit", "test-support"] }
 
-[target.'cfg(not(any(target_os = "macos", all(target_os = "windows", target_arch = "aarch64"))))'.dependencies]
-mimalloc = { version = "0.1.50", default-features = false }
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+mimalloc.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc = "0.2"
-raw-window-handle = "0.6"
+objc.workspace = true
+raw-window-handle.workspace = true
 
 # Use native notification APIs on macOS and Windows.
 # notify-rust is only needed on Linux.
@@ -52,8 +53,8 @@ raw-window-handle = "0.6"
 terminal-kernel-vte = { path = "../terminal-kernel-vte" }
 notify-rust = { workspace = true }
 which.workspace = true
-raw-window-handle = "0.6"
-x11rb = "0.13"
+raw-window-handle.workspace = true
+x11rb.workspace = true
 image = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -65,7 +66,7 @@ image.workspace = true
 gpui = { workspace = true, features = ["wayland"] }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
-winresource = "0.1"
+winresource.workspace = true
 
 [package.metadata.bundle]
 icon = ["../../assets/icons/kazeterm.png"]

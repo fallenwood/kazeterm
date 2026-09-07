@@ -144,9 +144,9 @@ mod tests {
 
   #[test]
   fn description_includes_release_tag() {
-    let content = UpdateConfirmContent::new("0.2.0".to_string());
+    let content = UpdateConfirmContent::new("0.3.1".to_string());
 
-    assert!(content.description().contains("0.2.0"));
+    assert!(content.description().contains("0.3.1"));
     assert!(content.description().contains("Update now?"));
   }
 
@@ -154,7 +154,7 @@ mod tests {
   fn cancel_emits_cancel_event(cx: &mut TestAppContext) {
     crate::test_support::init_test_app(cx);
     let window =
-      cx.add_window(|window, cx| UpdateConfirmDialog::new("0.2.0".to_string(), window, cx));
+      cx.add_window(|window, cx| UpdateConfirmDialog::new("0.3.1".to_string(), window, cx));
     cx.run_until_parked();
 
     let received: Rc<RefCell<Vec<UpdateConfirmEvent>>> = Default::default();
