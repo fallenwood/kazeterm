@@ -33,7 +33,7 @@ edition = "2024"
 
 [workspace.dependencies]
 gpui = { package = "gpui-pre", version = "0.3.1", default-features = false }
-gpui-kit = { version = "0.6.0", default-features = false, features = ["component"] }
+gpui-kit = { version = "0.6.1", default-features = false, features = ["component"] }
 alacritty_terminal = "0.26.0"
 anyhow = "1.0.104"
 smol = "2.0.2"
