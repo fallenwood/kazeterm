@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicUsize;
 use gpui::*;
 use gpui_kit::component::Size;
 use kazeterm_ui_tree::action::UIAction;
+use kazeterm_ui_tree::node::TabGroupNode;
 
 use crate::components::about_dialog::AboutDialog;
 use crate::components::close_confirm_dialog::CloseConfirmDialog;
@@ -10,6 +11,7 @@ use crate::components::import_alacritty_dialog::ImportAlacrittyDialog;
 use crate::components::search_bar::SearchBar;
 use crate::components::settings_page::SettingsPage;
 use crate::components::shell_error_dialog::ShellErrorDialog;
+use crate::components::tab_group_dialogs::{GroupDeleteDialog, GroupRenameDialog};
 use crate::components::tab_rename_dialog::TabRenameDialog;
 use crate::components::tab_switcher::TabSwitcher;
 use crate::components::update_confirm_dialog::UpdateConfirmDialog;
@@ -52,6 +54,7 @@ pub struct MainWindow {
   #[allow(dead_code)]
   pub(crate) size: Size,
   pub(crate) items: Vec<TabItem>,
+  pub(crate) groups: Vec<TabGroupNode>,
   pub(crate) tab_index: AtomicUsize,
   pub(crate) search_visible: bool,
   pub(crate) search_bar: Entity<SearchBar>,
@@ -76,6 +79,10 @@ pub struct MainWindow {
   /// Tab rename dialog state
   pub(crate) rename_dialog: Option<Entity<TabRenameDialog>>,
   pub(crate) _rename_dialog_subscription: Option<gpui::Subscription>,
+  pub(crate) group_rename_dialog: Option<Entity<GroupRenameDialog>>,
+  pub(crate) _group_rename_subscription: Option<gpui::Subscription>,
+  pub(crate) group_delete_dialog: Option<Entity<GroupDeleteDialog>>,
+  pub(crate) _group_delete_subscription: Option<gpui::Subscription>,
   /// Close confirmation dialog state
   pub(crate) close_confirm_dialog: Option<Entity<CloseConfirmDialog>>,
   pub(crate) _close_confirm_subscription: Option<gpui::Subscription>,
@@ -224,6 +231,7 @@ impl MainWindow {
       active_tab_ix: None,
       size: Size::default(),
       items: vec![],
+      groups: vec![],
       tab_index,
       search_visible: false,
       search_bar,
@@ -245,6 +253,10 @@ impl MainWindow {
       key_debug_recent_keys: Vec::new(),
       rename_dialog: None,
       _rename_dialog_subscription: None,
+      group_rename_dialog: None,
+      _group_rename_subscription: None,
+      group_delete_dialog: None,
+      _group_delete_subscription: None,
       close_confirm_dialog: None,
       _close_confirm_subscription: None,
       about_dialog: None,
@@ -309,6 +321,12 @@ impl MainWindow {
     refresh_working_directories: bool,
     cx: &mut Context<Self>,
   ) {
+    self.groups.retain(|group| {
+      self
+        .items
+        .iter()
+        .any(|item| item.group_id.as_deref() == Some(&group.id))
+    });
     let mut tree_store = std::mem::replace(&mut self.ui_tree, UITreeStore::new());
     tree_store.capture_from_main_window(self, refresh_working_directories, cx);
     self.ui_tree = tree_store;

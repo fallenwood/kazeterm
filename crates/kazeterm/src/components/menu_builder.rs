@@ -3,6 +3,7 @@ use gpui_kit::component::{
   Icon, IconName, h_flex,
   menu::{PopupMenu, PopupMenuItem},
 };
+use kazeterm_ui_tree::node::{TabGroupColor, TabGroupNode};
 use themeing::SettingsStore;
 
 use super::main_window::MainWindow;
@@ -36,6 +37,19 @@ pub(super) fn scrollable_menu(
     .detach();
 
   menu.scrollable(true).max_h(max_height)
+}
+
+fn group_color_icon(color: TabGroupColor, cx: &Context<PopupMenu>) -> Icon {
+  let colors = cx.global::<SettingsStore>().theme().colors();
+  let color = match color {
+    TabGroupColor::Blue => colors.terminal_ansi_blue,
+    TabGroupColor::Green => colors.terminal_ansi_green,
+    TabGroupColor::Yellow => colors.terminal_ansi_yellow,
+    TabGroupColor::Red => colors.terminal_ansi_red,
+    TabGroupColor::Purple => colors.terminal_ansi_magenta,
+    TabGroupColor::Cyan => colors.terminal_ansi_cyan,
+  };
+  Icon::empty().path("icons/circle.svg").text_color(color)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -79,8 +93,70 @@ pub(super) fn build_tab_context_menu(
     "Hide Other Panes"
   };
   let pin_tab_label = if is_pinned { "Unpin Tab" } else { "Pin Tab" };
+  let (current_group, groups) = {
+    let main = view.read(cx);
+    (
+      main
+        .items
+        .iter()
+        .find(|item| item.index == tab_index)
+        .and_then(|item| item.group_id.clone()),
+      main.groups.clone(),
+    )
+  };
+  let mut menu = scrollable_menu(menu, window, cx);
+  if !is_pinned {
+    if current_group.is_none() {
+      let target = view.clone();
+      menu = menu.item(
+        PopupMenuItem::new("Create Group")
+          .icon(Icon::empty().path("icons/folder.svg"))
+          .on_click(move |_, window, cx| {
+            target.update(cx, |this, cx| this.create_tab_group(tab_index, window, cx));
+          }),
+      );
+    } else {
+      let target = view.clone();
+      menu = menu.item(
+        PopupMenuItem::new("Remove from Group")
+          .icon(Icon::empty().path("icons/minus.svg"))
+          .on_click(move |_, window, cx| {
+            target.update(cx, |this, cx| this.ungroup_tab(tab_index, window, cx));
+          }),
+      );
+    }
+    if groups.iter().any(|g| Some(&g.id) != current_group.as_ref()) {
+      let target = view.clone();
+      menu = menu.submenu_with_icon(
+        Some(Icon::empty().path("icons/folder.svg")),
+        "Move to Group",
+        window,
+        cx,
+        move |mut submenu, _, cx| {
+          for group in &groups {
+            if Some(&group.id) == current_group.as_ref() {
+              continue;
+            }
+            let id = group.id.clone();
+            let title = group.display_name();
+            let icon = group_color_icon(group.color, cx);
+            let target = target.clone();
+            submenu = submenu.item(PopupMenuItem::new(title).icon(icon).on_click(
+              move |_, window, cx| {
+                target.update(cx, |this, cx| {
+                  this.move_tab_to_group(tab_index, id.clone(), window, cx)
+                });
+              },
+            ));
+          }
+          submenu
+        },
+      );
+    }
+    menu = menu.separator();
+  }
 
-  scrollable_menu(menu, window, cx)
+  menu
     .item(
       PopupMenuItem::new("Rename Tab")
         .icon(Icon::empty().path("icons/pencil.svg"))
@@ -225,6 +301,69 @@ pub(super) fn build_tab_context_menu(
         .on_click(move |_, window, cx| {
           view_close_tab.update(cx, |this, cx| {
             this.remove_tab_by(tab_index, window, cx);
+          });
+        }),
+    )
+}
+
+pub(super) fn build_group_context_menu(
+  menu: PopupMenu,
+  view: Entity<MainWindow>,
+  group: TabGroupNode,
+  window: &mut Window,
+  cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+  let rename = view.clone();
+  let delete = view.clone();
+  let id = group.id.clone();
+  let color_group_id = group.id.clone();
+  let delete_id = group.id;
+  scrollable_menu(menu, window, cx)
+    .item(
+      PopupMenuItem::new("Rename Group")
+        .icon(Icon::empty().path("icons/pencil.svg"))
+        .on_click(move |_, window, cx| {
+          rename.update(cx, |this, cx| {
+            this.show_group_rename(id.clone(), window, cx)
+          });
+        }),
+    )
+    .submenu_with_icon(
+      Some(Icon::empty().path("icons/palette.svg")),
+      "Group Color",
+      window,
+      cx,
+      move |mut menu, _, cx| {
+        for (name, color) in [
+          ("Blue", TabGroupColor::Blue),
+          ("Green", TabGroupColor::Green),
+          ("Yellow", TabGroupColor::Yellow),
+          ("Red", TabGroupColor::Red),
+          ("Purple", TabGroupColor::Purple),
+          ("Cyan", TabGroupColor::Cyan),
+        ] {
+          let view = view.clone();
+          let id = color_group_id.clone();
+          let icon = group_color_icon(color, cx);
+          menu = menu.item(
+            PopupMenuItem::new(name)
+              .icon(icon)
+              .on_click(move |_, window, cx| {
+                view.update(cx, |this, cx| {
+                  this.set_group_color(id.clone(), color, window, cx)
+                });
+              }),
+          );
+        }
+        menu
+      },
+    )
+    .item(
+      PopupMenuItem::new("Delete Group…")
+        .icon(Icon::empty().path("icons/delete.svg"))
+        .on_click(move |_, window, cx| {
+          delete.update(cx, |this, cx| {
+            this.show_group_delete(delete_id.clone(), window, cx)
           });
         }),
     )

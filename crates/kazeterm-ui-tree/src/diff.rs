@@ -49,6 +49,9 @@ pub enum TreeDiff {
     tab_id: String,
     pinned: bool,
   },
+  TabGroupsChanged {
+    window_id: String,
+  },
 
   // ── Pane level ──
   PaneTreeChanged {
@@ -230,6 +233,23 @@ fn diff_windows(old: &WindowNode, new: &WindowNode, diffs: &mut Vec<TreeDiff>) {
 
   // Tabs
   diff_tabs(win_id, &old.tabs, &new.tabs, diffs);
+  if old.groups != new.groups
+    || ((!old.groups.is_empty() || !new.groups.is_empty())
+      && old
+        .tabs
+        .iter()
+        .map(|tab| &tab.id)
+        .ne(new.tabs.iter().map(|tab| &tab.id)))
+    || old.tabs.iter().any(|tab| {
+      new
+        .tab(&tab.id)
+        .is_some_and(|(_, updated)| updated.group_id != tab.group_id)
+    })
+  {
+    diffs.push(TreeDiff::TabGroupsChanged {
+      window_id: win_id.clone(),
+    });
+  }
 }
 
 fn diff_tabs(win_id: &str, old_tabs: &[TabNode], new_tabs: &[TabNode], diffs: &mut Vec<TreeDiff>) {

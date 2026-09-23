@@ -113,6 +113,7 @@ impl MainWindow {
         Pixels::ZERO
       };
     self.search_visible = win.search.visible;
+    self.groups = win.groups.clone();
 
     for tab_node in &win.tabs {
       self.restore_tab_from_node(tab_node, window, cx);
@@ -167,6 +168,7 @@ impl MainWindow {
     self.reconciling_ui_tree = true;
 
     self.items.clear();
+    self.groups.clear();
     self.active_tab_ix = None;
     self.search_visible = false;
     self.tab_bar_visible = true;
@@ -213,6 +215,7 @@ impl MainWindow {
       title,
       custom_title: tab.custom_title.clone(),
       pinned: tab.pinned,
+      group_id: tab.group_id.clone(),
       shell_path: tab.shell.path.clone(),
       shell_args: tab.shell.args.clone(),
       _shell_name: shell_name,
@@ -594,6 +597,7 @@ fn convert_legacy_to_ui_tree(legacy: &LegacyWorkspaceState) -> UITree {
       id: tab_id,
       custom_title: tab.custom_title.clone(),
       pinned: false,
+      group_id: None,
       shell: kazeterm_ui_tree::node::ShellConfig {
         path: tab.shell_path.clone(),
         args: tab.shell_args.clone(),
@@ -612,6 +616,7 @@ fn convert_legacy_to_ui_tree(legacy: &LegacyWorkspaceState) -> UITree {
     tab_bar: kazeterm_ui_tree::node::TabBarState::default(),
     search: kazeterm_ui_tree::node::SearchState::default(),
     tabs,
+    groups: vec![],
     overlay: None,
     key_debug: kazeterm_ui_tree::node::KeyDebugState::default(),
   };

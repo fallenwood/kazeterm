@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::node::{Position, SplitDirection};
+use crate::node::{Position, SplitDirection, TabGroupColor};
 
 /// Every mutation to the UI tree is expressed as a `UIAction`.
 /// Actions are serializable so they can be replayed, logged, or sent via JSON API.
@@ -67,6 +67,39 @@ pub enum UIAction {
     window_id: String,
     tab_id: String,
     pinned: bool,
+  },
+  CreateTabGroup {
+    window_id: String,
+    tab_id: String,
+  },
+  MoveTabToGroup {
+    window_id: String,
+    tab_id: String,
+    group_id: String,
+  },
+  UngroupTab {
+    window_id: String,
+    tab_id: String,
+  },
+  MoveTabGroup {
+    window_id: String,
+    group_id: String,
+    new_index: usize,
+  },
+  RenameTabGroup {
+    window_id: String,
+    group_id: String,
+    name: Option<String>,
+  },
+  SetTabGroupColor {
+    window_id: String,
+    group_id: String,
+    color: TabGroupColor,
+  },
+  DeleteTabGroup {
+    window_id: String,
+    group_id: String,
+    close_tabs: bool,
   },
 
   // ── Pane management ──
