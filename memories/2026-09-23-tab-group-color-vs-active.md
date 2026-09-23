@@ -1,12 +1,14 @@
-# 区分组颜色与活动 Tab 标记
+# Separate Group Color from the Active-Tab Indicator
 
-- 水平与垂直 tab 栏均把组颜色展示为组标签和每个组成员 tab 的独立色点，组名回归主题普通文本色。
-- 组内活动 tab 使用主题文本色边线，组色不再承担活动状态指示；未分组 tab 保留原来的强调色边线。分组成员切换活动状态时，色点不变。
-- 更新 ADR/术语表中的颜色语义，并添加覆盖分组/未分组活动指示分支的 GPUI 测试。
+- In this intermediate iteration, horizontal and vertical tab bars showed group color as a dot on the group label and on each member tab. Group names returned to the theme's ordinary text color.
+- Active grouped tabs used a theme-text-colored border instead of the group color; ungrouped tabs kept their original accent border. The group-color dot remained unchanged when the active member changed.
+- Updated the ADR and glossary's color semantics and added a GPUI test covering grouped and ungrouped active-indicator branches.
 
-## 验证
+Subsequent feedback removed the member dots, then changed the group label to a colored capsule and added a rail beside members in the vertical tab bar. See [remove member dots](2026-09-23-remove-group-member-dots.md) and [Edge-inspired group color](2026-09-23-edge-style-tab-group-color.md) for the current appearance.
 
-- `cargo fmt --all` 与 `cargo fmt --all -- --check` 通过。
-- `cargo test --package kazeterm --bin kazeterm -- --test-threads=1`：104 项通过。
-- `cargo check --package kazeterm --bin kazeterm -q`、`cargo build --package kazeterm --bin kazeterm -q` 通过。
-- `git diff --check` 通过；本轮未重跑全工作区测试，也未进行手动 GUI/主题对比验收。
+## Validation
+
+- `cargo fmt --all` and `cargo fmt --all -- --check` passed.
+- `cargo test --package kazeterm --bin kazeterm -- --test-threads=1`: 104 passed.
+- `cargo check --package kazeterm --bin kazeterm -q` and `cargo build --package kazeterm --bin kazeterm -q` passed.
+- `git diff --check` passed. This iteration did not rerun workspace-wide tests or perform a hands-on GUI/theme comparison.

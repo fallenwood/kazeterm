@@ -1,41 +1,41 @@
-# ADR: 窗口内 Tab 分组
+# ADR: Per-Window Tab Groups
 
-- 状态：已实现，待桌面交互验收
-- 日期：2026-09-23
-- 相关术语：[Tab 分组术语表](tab-groups-glossary.md)
+- Status: Implemented; pending hands-on desktop interaction review
+- Date: 2026-09-23
+- Related terms: [Tab Groups Glossary](tab-groups-glossary.md)
 
-## 背景
+## Context
 
-Kazeterm 的窗口目前持有有序的 tab 列表；tab 可以置顶、在同窗口排序、跨窗口转移，也可以被并入另一 tab 的分屏。工作区由 UI tree 保存，在启用工作区恢复时重建 tab 和 shell。需要在不改变终端会话生命周期及现有 tab 操作含义的前提下，增加可命名、可着色的分组。
+Each Kazeterm window owns an ordered list of tabs. Tabs can be pinned, reordered within a window, moved across windows, or merged into another tab's split layout. The UI tree stores workspace state and recreates tabs and shells when workspace restoration is enabled. Named, colored groups must fit these existing operations without changing the lifetime of running terminal sessions.
 
-## 决策：领域边界与不变量
+## Decision: Domain Boundaries and Invariants
 
-- 组只属于一个窗口；一个 tab 至多属于该窗口的一个组，也可以不属于任何组。组不包含组，不允许跨窗口成员关系。
-- 允许单 tab 组；组不能为空。最后一个成员被移出、关闭、转移或并入分屏后，组自动消失。
-- 同组 tab 在 tab 栏中必须连续排列，组内顺序可调整；置顶 tab 不能加入组。置顶已分组 tab 时，先将其移出组。
-- 组有独立身份，不依靠名称识别；名称可为空（显示自动名称），也可与其他组重名。颜色从适配明暗主题的预设选项中选择；组身份、成员关系、名称和颜色都属于需恢复的工作区状态。
-- 成员关系变化只改变组织方式与必要的排列位置，不重建或关闭仍应运行的终端。跨窗口移动单个 tab 时，沿用现有的终端实体/PTY 转移方式。
+- A group belongs to exactly one window. A tab belongs to at most one group in that window, or remains ungrouped. Groups cannot contain other groups or have members in another window.
+- Single-tab groups are allowed; empty groups are not. A group disappears automatically when its final member is removed, closed, transferred, or merged into a split layout.
+- Members of a group occupy a contiguous range in the tab bar and can be reordered within that range. Pinned tabs cannot join groups; pinning a grouped tab removes it from its group first.
+- A group has an identity independent of its name. Names may be absent (showing an automatically generated name) or duplicated. Colors come from preset options that follow the light/dark theme. Group identity, membership, name, and color are part of the restorable workspace state.
+- Changing membership affects organization and any necessary tab ordering only: it must not recreate or close a terminal that should remain running. Moving a single tab between windows continues to transfer its existing terminal entities and PTY.
 
-## 决策：交互和操作
+## Decision: Interactions and Operations
 
-- 在 tab 右键菜单创建单 tab 组、将 tab 移至已有组，或将 tab 拖到组标签以加入该组。未分组 tab 拖到普通 tab 上只排序，不创建或加入组；将其他组的 tab 拖到组标签时只转移该 tab，不合并整组。
-- 组内拖动可调整成员顺序。拖到组区块外可将 tab 移出并放在落点；右键「移出组」则将 tab 放在原组之后。拖到其他组的普通 tab 上只可落在整个区块之前或之后，不改变目标组的成员关系。
-- 可拖动组标签在同窗口内移动整个连续区块；首版不支持跨窗口拖动整个组。跨窗口移动单个已分组 tab 时默认脱组，明确落到目标窗口的组标签上才加入目标组；来源组变空则消失。
-- 组标签在 tab 栏可见时始终显示，展示名称与颜色，并提供重命名、修改颜色、删除组的右键操作；普通左键点击组标签不切换活动 tab。组标签以组色胶囊展示名称；竖向 tab 栏在组成员左侧绘制从组标签下方延续的细色线，表示整个组的范围，不在成员 tab 图标前加色点。分组内活动 tab 使用主题中性色边线，不以组色表示活动状态，未分组 tab 维持原有活动强调色。水平和垂直 tab 栏均支持分组。首版不提供组折叠或整组合并。
-- 全局新建 tab 默认未分组；复制组内 tab 时，副本插在来源 tab 旁并加入同组。
-- 删除组始终弹出确认，提供「取消」「移出全部 tab」「关闭全部 tab」三个结果。默认聚焦安全的「移出全部」；关闭选项标明将关闭的 tab 数量及终端结束风险。移出全部仅删除组与成员关系，保持 tab 顺序、活动 tab 和运行中的终端不变；关闭全部则关闭成员 tab 及其终端。关闭后若窗口无 tab，沿用现有 `close_on_last` 设置（关闭窗口或创建未分组的新 tab）。
-- 现有「关闭其他 tab」「关闭右侧 tab」仍按单个 tab 生效，保留原有跳过置顶 tab 的规则；幸存成员仍属于原组，空组自动消失。将一个 tab 并入另一 tab 的分屏时，该 tab 从来源组移除，其余成员不受影响。
+- The tab context menu can create a single-tab group or move a tab into an existing group. Dropping a tab on a group label also joins that group. Dropping an ungrouped tab on an ordinary tab only reorders it; it does not create or join a group. Dropping a tab from another group onto a group label transfers just that tab, not the entire group.
+- Dragging within a group reorders its members. Dragging a tab outside the group removes it and places it at the drop position; using **Remove from Group** in the context menu places it immediately after its old group. Dropping onto an ordinary tab in another group can only place the dragged tab before or after that whole group, without joining it.
+- Dragging a group label moves its entire contiguous block within the same window. Moving an entire group across windows is not supported in the first version. A single grouped tab moved to another window becomes ungrouped by default; it joins a destination group only when explicitly dropped on that group's label. An emptied source group disappears.
+- Group labels remain visible whenever the tab bar is visible. They show the group's name in a colored capsule and offer rename, color, and delete actions in a context menu. A normal left click on the label does not activate a tab. In the vertical tab bar, a thin colored rail runs from below the capsule alongside the group's members; member tab icons do not get colored dots. Active grouped tabs use a neutral, theme-text-colored border instead of the group color; active ungrouped tabs retain their existing accent border. Both horizontal and vertical tab bars support groups. Collapsing or merging whole groups is outside the first version.
+- A newly created tab is ungrouped by default. Duplicating a grouped tab inserts its copy next to the source and into the same group.
+- Deleting a group always requires confirmation with three outcomes: **Cancel**, **Remove All Tabs from Group**, or **Close All Tabs in Group**. The safer remove-all choice has initial focus; the close-all choice states the tab count and the risk of ending terminals. Remove-all deletes only the group and membership, preserving tab order, the active tab, and running terminals. Close-all closes the group's tabs and terminals. If this leaves the window empty, the existing `close_on_last` setting decides whether the window closes or a new ungrouped tab is created.
+- Existing **Close Other Tabs** and **Close Tabs to the Right** actions still operate on individual tabs and retain their pinned-tab exclusions. Surviving members stay in their group, and an empty group disappears. Merging a tab into another tab's split layout removes only that tab from its source group.
 
-## 工作区与兼容性
+## Workspace and Compatibility
 
-只有启用现有「恢复工作区」机制时才恢复组；不改变该开关，也不承诺跨重启保活原进程：恢复 shell 仍遵循现有重建行为。旧工作区/UI-tree JSON 中没有组信息时，应仍可读取并视为全部未分组；新数据应维持窗口归属、成员唯一、非空、连续及置顶互斥等不变量。具体序列化形状和版本迁移方案留待实现时依据现有 UI-tree 兼容规则确定。
+Groups are restored only when the existing workspace-restore mechanism is enabled. The setting is unchanged, and restoration does not keep shell processes alive across restarts: shells are recreated as before. Each window's UI-tree JSON stores `groups`, and each tab has an optional `group_id`. Serde defaults let older workspaces without these fields load as entirely ungrouped. New data must satisfy window ownership, unique membership, nonempty and contiguous groups, and the pinned-tab exclusion.
 
-## 验收场景
+## Acceptance Scenarios
 
-1. 从单 tab 建组，加入第二个 tab，重命名、换色、组内排序；在水平和垂直 tab 栏显示正确，启用工作区恢复后可重建组信息。
-2. 将 tab 从组内右键移出、拖出、移至另一组或跨窗口移动；原组变空时消失，仍需运行的终端保持运行，跨窗口不重建 PTY。
-3. 对组内 tab 置顶、复制、关闭、批量关闭或并入分屏；各操作保留上述成员及排列不变量。
-4. 删除组分别选择取消、移出全部、关闭全部；前两者不关闭终端，移出保留顺序与活动 tab；关闭最后一个组时沿用 `close_on_last`。
-5. 载入无分组信息的旧工作区，不产生隐式分组，也不破坏原有 tab。
+1. Create a group from one tab, add a second, rename and recolor it, and reorder its members. Verify both tab-bar layouts and restoration when workspace restore is enabled.
+2. Remove a tab via the context menu or drag, move it to another group, and transfer it between windows. Empty source groups disappear; terminals that should keep running do so, without recreating a PTY on cross-window moves.
+3. Pin, duplicate, close, bulk-close, or merge a grouped tab into a split layout. Each operation preserves the membership and ordering invariants above.
+4. Try each delete-group choice: cancel, remove all, and close all. The first two do not close terminals; remove-all preserves order and the active tab. Closing the last group follows `close_on_last`.
+5. Load an older workspace without group data. It must not create implicit groups or disturb existing tabs.
 
-本 ADR 记录已批准的需求及首版边界。功能已接入代码，仍需桌面交互验收。
+This ADR records the approved first-version requirements and boundaries. The feature is implemented, but hands-on desktop interaction review is still pending.

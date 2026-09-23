@@ -1,10 +1,10 @@
-# Tab 分组领域建模与需求确认
+# Tab Group Domain Model and Requirements
 
-- 与用户分轮确认窗口内 tab 分组的领域边界、成员关系、非空与连续排列不变量、置顶互斥，以及跨窗口移动和现有关闭/分屏行为。
-- 记录组创建、加入、移出、同窗口整组排序、删除确认、命名和预设颜色的首版交互规则；明确折叠、整组合并和跨窗口整组移动不在首版范围。
-- 新增 `.github/docs/tab-groups-adr.md` 和 `.github/docs/tab-groups-glossary.md`，作为已确认但尚未实现的设计文档。没有修改应用源码、依赖或配置。
+- Confirmed the per-window grouping boundary, exclusive membership, nonempty and contiguous groups, pinned-tab exclusion, cross-window moves, and interactions with existing close and split operations with the user over several rounds.
+- Recorded first-version rules for group creation, joining, removal, whole-group reordering within a window, delete confirmation, naming, and preset colors. Explicitly excluded collapsing, merging whole groups, and moving whole groups across windows.
+- Added `.github/docs/tab-groups-adr.md` and `.github/docs/tab-groups-glossary.md` as agreed design documents before implementation. This planning iteration did not change application source, dependencies, or configuration.
 
-## 验证
+## Validation
 
-- 文档改动检查与工作区状态见本轮最终报告。
-- 本轮只有 Markdown 文档，没有运行 Rust 格式化、编译或测试；未实现功能。
+- The documentation diff and workspace state were reviewed in that iteration's final report.
+- This documentation-only planning iteration did not run Rust formatting, compilation, or tests. The feature had not yet been implemented at this stage; see [implementation](2026-09-23-tab-groups-implementation.md).

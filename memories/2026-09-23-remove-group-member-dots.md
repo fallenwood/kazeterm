@@ -1,5 +1,10 @@
-# 移除组内 Tab 前的色点
+# Remove Colored Dots from Grouped Tabs
 
-按用户反馈，撤销上一轮在组成员 tab 的 shell 图标之后添加的色点（水平、垂直 tab 栏均移除）。组颜色仍仅以组标签上的色点表示；组内活动 tab 的主题中性色边线及未分组 tab 的原有强调色边线保持不变。选中颜色直接根据 tab 的 `group_id` 判断，无须查找组颜色。同步修改 ADR 和术语表。
+Following user feedback, removed the colored dot previously added after the shell icon of each group member in both horizontal and vertical tab bars. At this point, the group color appeared only as a dot on the group label. The neutral active border for grouped tabs and original accent border for ungrouped tabs remained unchanged. Selection color now depends directly on the tab's `group_id`, without looking up the group's color. Updated the ADR and glossary.
 
-验证：`cargo fmt --all`、`cargo fmt --all -- --check`、`cargo test --package kazeterm --bin kazeterm -- --test-threads=1`（104 项通过）、`cargo build --package kazeterm --bin kazeterm -q`、`git diff --check` 均通过。未重跑全工作区测试，未做手工 GUI 验收。
+A later iteration replaced the label dot with a colored capsule and added a rail beside members in the vertical tab bar; see [Edge-inspired group color](2026-09-23-edge-style-tab-group-color.md).
+
+## Validation
+
+- `cargo fmt --all`, `cargo fmt --all -- --check`, `cargo test --package kazeterm --bin kazeterm -- --test-threads=1` (104 passed), `cargo build --package kazeterm --bin kazeterm -q`, and `git diff --check` passed.
+- This iteration did not rerun workspace-wide tests or perform hands-on GUI review.

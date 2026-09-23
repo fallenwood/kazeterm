@@ -1,22 +1,22 @@
-# Tab 分组术语表
+# Tab Groups Glossary
 
-相关决策：[窗口内 Tab 分组 ADR](tab-groups-adr.md)。本文描述已确认的领域模型；功能已接入代码，仍需桌面交互验收。
+Related decision: [Per-Window Tab Groups ADR](tab-groups-adr.md). This document describes the agreed domain model. The feature is implemented, but hands-on desktop interaction review is still pending.
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| 窗口 | 组的归属边界；一个组的所有成员都在同一个窗口。 |
-| Tab | 分组的最小成员单位；一个 tab 内可以包含多个分屏终端。至多属于一个组，也可未分组。 |
-| 组 | 具有独立身份、名称和预设颜色的非空 tab 集合；成员按顺序在 tab 栏中连续排列。组不可嵌套，不能跨窗口，不能包含置顶 tab。 |
-| 组标签 | 组在 tab 栏中的可见标识，显示名称和颜色；可用于接收单个 tab 的拖放、同窗口整组排序及访问组操作，不代表一个 tab。 |
-| 组名 | 可由用户设置，也可为空并显示自动名称；组名不要求唯一，不用作组的身份标识。 |
-| 组颜色 | 从适配明暗主题的预设选项中选择的组视觉标识，用于组标签的胶囊背景与竖向 tab 栏组成员左侧的连续细线，随工作区恢复；不用于表示活动 tab，成员 tab 图标前不添加组色色点。 |
-| 组内顺序 | 同组成员在连续区块内的显示顺序，可通过拖动改变。 |
-| 加入组 | 将单个 tab 归属到目标组，并移入目标组的连续区块；若来源组因此变空，来源组消失。不重建终端。 |
-| 移出组 | 只解除单个 tab 的成员关系，不关闭 tab 或终端；拖动移出时 tab 放在落点，右键移出时放在原组之后。 |
-| 移出全部 / 解散组 | 删除组并令全部成员变为未分组 tab；保持原有顺序、活动 tab 和运行中的终端。 |
-| 关闭全部 / 关闭组内 tab | 删除组并关闭其全部成员 tab 及终端；若窗口因此无 tab，遵循现有 `close_on_last` 设置。 |
-| 自动消失 | 最后一个成员因移出、关闭、跨窗口转移或并入分屏而离开时，组立即不再存在。 |
-| 置顶 tab | 现有的置顶 tab，不能成为组成员；对分组 tab 置顶时，先移出组。 |
-| 工作区恢复 | 仅在已有恢复工作区机制启用时，恢复组的身份、成员、名称和颜色；shell 按现有机制重建，而非保活原进程。 |
+| Window | The ownership boundary for a group; all of a group's members belong to one window. |
+| Tab | The smallest grouping unit. A tab can contain multiple split terminal panes. It belongs to at most one group, or none. |
+| Group | A nonempty set of tabs with its own identity, name, and preset color. Members are contiguous in tab-bar order. Groups cannot be nested, span windows, or contain pinned tabs. |
+| Group label | The visible name-and-color marker in the tab bar. It accepts individual tab drops, supports moving the whole group within a window, and exposes group actions. It is not itself a tab. |
+| Group name | A user-provided name, or no name with an automatically generated display name. Names need not be unique and are not group identifiers. |
+| Group color | A theme-aware preset used for the group label's capsule background and the continuous rail beside members in the vertical tab bar. It is restored with the workspace, does not signal the active tab, and does not add a colored dot before member tab icons. |
+| Member order | The order of a group's tabs in its contiguous block, adjustable by dragging. |
+| Join group | Assign one tab to a target group and move it into that group's contiguous block. An emptied source group disappears. The terminal is not recreated. |
+| Remove from group | Remove a single tab's membership without closing the tab or its terminal. A dragged tab stays at its drop position; a context-menu removal places it after its former group. |
+| Remove all / Disband group | Delete the group and leave all its former members ungrouped, preserving their order, the active tab, and running terminals. |
+| Close all / Close grouped tabs | Delete the group and close every member tab and its terminals. If no tabs remain, follow the existing `close_on_last` setting. |
+| Automatic removal | A group ceases to exist immediately when its last member leaves through removal, closing, cross-window transfer, or a split-layout merge. |
+| Pinned tab | An existing pinned tab, which cannot belong to a group. Pinning a grouped tab first removes it from the group. |
+| Workspace restoration | Restore group identity, membership, name, and color only when the existing workspace-restore mechanism is enabled. Shells are recreated as before; their processes do not survive a restart. |
 
-**非目标（首版）**：嵌套组、跨窗口组、整组合并、跨窗口整组拖动、折叠组、通过拖到普通 tab 上隐式创建或加入组。
+**Out of scope for the first version:** nested groups, cross-window groups, merging whole groups, dragging a whole group across windows, collapsing groups, or implicitly creating/joining a group by dropping onto an ordinary tab.
