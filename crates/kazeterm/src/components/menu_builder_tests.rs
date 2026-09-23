@@ -16,11 +16,13 @@ use crate::components::{
   split_pane_context_menu::build_terminal_context_menu,
   terminal_window::clear_terminal_session_factory_for_testing,
 };
+use kazeterm_ui_tree::node::{TabGroupColor, TabGroupNode};
 
 #[derive(Clone, Copy, Debug)]
 enum MenuKind {
   NewTab,
   Tab,
+  Group,
   Terminal,
 }
 
@@ -80,6 +82,17 @@ impl Render for MenuTest {
                   window,
                   cx,
                 ),
+                MenuKind::Group => super::build_group_context_menu(
+                  menu,
+                  main.clone(),
+                  TabGroupNode {
+                    id: "group-test".into(),
+                    name: Some("Test Group".into()),
+                    color: TabGroupColor::Blue,
+                  },
+                  window,
+                  cx,
+                ),
                 MenuKind::Terminal => {
                   let terminal = main.read(cx).active_terminal().unwrap();
                   build_terminal_context_menu(menu, &terminal, &main, window, cx)
@@ -110,7 +123,19 @@ fn application_popup_menus_scroll_without_clipping_submenus(cx: &mut TestAppCont
   crate::test_support::init_test_app(cx);
   install_fake_factory();
 
-  for kind in [MenuKind::NewTab, MenuKind::Tab, MenuKind::Terminal] {
+  for icon in ["folder", "minus", "pencil", "palette", "circle", "delete"] {
+    assert!(
+      crate::assets::Assets::get(&format!("icons/{icon}.svg")).is_some(),
+      "missing group menu icon: {icon}",
+    );
+  }
+
+  for kind in [
+    MenuKind::NewTab,
+    MenuKind::Tab,
+    MenuKind::Group,
+    MenuKind::Terminal,
+  ] {
     let selected = Rc::new(Cell::new(false));
     let focus = cx.update(|cx| cx.focus_handle());
     let window = cx.add_window(|window, cx| {
@@ -170,7 +195,7 @@ fn application_popup_menus_scroll_without_clipping_submenus(cx: &mut TestAppCont
         viewport.contains(&last.bottom_right()),
         "{kind:?}: {last:?}"
       );
-      if !matches!(kind, MenuKind::Tab) {
+      if !matches!(kind, MenuKind::Tab | MenuKind::Group) {
         assert!(
           last.bottom() - content_top >= viewport.size.height - px(64.0),
           "{kind:?}: a long menu should use the available window height",

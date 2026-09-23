@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use gpui::{AppContext, Bounds, Context, MouseUpEvent, Window, point, px};
+use kazeterm_ui_tree::action::UIAction;
 
 use super::dragged_tab::DraggedTab;
 use super::main_window::{MainWindow, TabItem};
@@ -68,20 +69,22 @@ impl MainWindow {
     target_ix: Option<usize>,
     window: &mut Window,
     cx: &mut Context<Self>,
-  ) {
+  ) -> bool {
     if !dragged.claim() {
-      return;
+      return false;
     }
 
     self.active_tab_drag = None;
     if dragged.source_entity_id == cx.entity_id() {
       self.reorder_local_tab(dragged.tab_index, target_ix, window, cx);
-      return;
+      return true;
     }
 
     if !self.receive_claimed_tab(dragged, target_ix, window, cx) {
       tracing::warn!("Dragged tab no longer exists in its source window");
+      return false;
     }
+    true
   }
 
   pub(crate) fn receive_claimed_tab(
@@ -208,31 +211,30 @@ impl MainWindow {
     &mut self,
     tab_index: usize,
     target_ix: Option<usize>,
-    _window: &mut Window,
+    window: &mut Window,
     cx: &mut Context<Self>,
   ) {
-    let Some(from_ix) = self.items.iter().position(|item| item.index == tab_index) else {
+    let Some(tab_id) = self
+      .items
+      .iter()
+      .find(|item| item.index == tab_index)
+      .map(|item| item.ui_tree_id.clone())
+    else {
       return;
     };
-    let to_ix = target_ix.unwrap_or(self.items.len());
-    let item = self.items.remove(from_ix);
-    let to_ix = to_ix.min(self.items.len());
-    self.items.insert(to_ix, item);
-
-    if let Some(active) = self.active_tab_ix {
-      self.active_tab_ix = Some(if active == from_ix {
-        to_ix
-      } else if from_ix < active && active <= to_ix {
-        active - 1
-      } else if to_ix <= active && active < from_ix {
-        active + 1
-      } else {
-        active
-      });
-    }
-
-    self.sync_ui_tree(cx);
-    cx.notify();
+    let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
+      return;
+    };
+    self.dispatch_default_ui_action(
+      UIAction::MoveTab {
+        window_id,
+        tab_id,
+        new_index: target_ix.unwrap_or(self.items.len()),
+      },
+      "reorder tab",
+      window,
+      cx,
+    );
   }
 
   fn take_external_tab(
@@ -303,10 +305,22 @@ impl MainWindow {
     self.prepare_transferred_terminals(&item.split_container, window, cx);
     item.index = self.tab_index.fetch_add(1, Ordering::SeqCst);
     item.ui_tree_id = self.ui_tree.alloc_id("tab");
+    item.group_id = None;
     item.terminal_subscriptions =
       Self::subscribe_to_split_container(&item.split_container, window, cx);
 
-    let target_ix = target_ix.unwrap_or(self.items.len()).min(self.items.len());
+    let mut target_ix = target_ix.unwrap_or(self.items.len()).min(self.items.len());
+    if let Some(group_id) = self
+      .items
+      .get(target_ix)
+      .and_then(|tab| tab.group_id.as_ref())
+    {
+      target_ix = self
+        .items
+        .iter()
+        .position(|tab| tab.group_id.as_ref() == Some(group_id))
+        .unwrap_or(target_ix);
+    }
     self.items.insert(target_ix, item);
     self.set_active_tab_direct(target_ix, window, cx);
     self.scroll_to_active_tab = true;

@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui::{TestAppContext, WindowHandle};
 use kazeterm_ui_tree::action::UIAction;
-use kazeterm_ui_tree::node::{OverlayNode, PaneNode, UITree};
+use kazeterm_ui_tree::node::{OverlayNode, PaneNode, TabGroupColor, UITree};
 
 use crate::components::MainWindow;
 use crate::components::terminal_window::{
@@ -920,6 +920,140 @@ fn moving_tab_into_terminal_split_reuses_existing_sessions(cx: &mut TestAppConte
     );
   });
 
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn tab_groups_reconcile_without_restarting_and_restore_from_snapshot(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  let calls = install_fake_factory();
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.insert_new_tab(window, cx);
+      root.insert_new_tab(window, cx);
+    })
+    .unwrap();
+  cx.run_until_parked();
+  let before = calls.lock().unwrap().programs.len();
+  let (first, third, terminal_id) = window
+    .update(cx, |root: &mut MainWindow, _, cx| {
+      let terminal = root.items[2].split_container.get_active_terminal().unwrap();
+      (
+        root.items[0].index,
+        root.items[2].index,
+        terminal.read(cx).terminal().entity_id(),
+      )
+    })
+    .unwrap();
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.create_tab_group(first, window, cx);
+      let group_id = root.groups[0].id.clone();
+      root.move_tab_to_group(third, group_id.clone(), window, cx);
+      root.set_group_color(group_id, TabGroupColor::Green, window, cx);
+    })
+    .unwrap();
+  let json = window
+    .update(cx, |root: &mut MainWindow, _, cx| {
+      root.snapshot_ui_tree(cx).unwrap()
+    })
+    .unwrap();
+  assert_eq!(calls.lock().unwrap().programs.len(), before);
+  window.root(cx).unwrap().read_with(cx, |root, cx| {
+    assert_eq!(root.groups.len(), 1);
+    assert_eq!(root.items[0].group_id, root.items[1].group_id);
+    assert_eq!(root.groups[0].color, TabGroupColor::Green);
+    let terminal = root.items[1].split_container.get_active_terminal().unwrap();
+    assert_eq!(terminal.read(cx).terminal().entity_id(), terminal_id);
+  });
+  assert!(json.contains("\"group_id\""));
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.load_ui_tree_from_str(&json, window, cx).unwrap();
+    })
+    .unwrap();
+  window.root(cx).unwrap().read_with(cx, |root, _| {
+    assert_eq!(root.groups.len(), 1);
+    assert_eq!(root.groups[0].color, TabGroupColor::Green);
+    assert_eq!(root.items[0].group_id, root.items[1].group_id);
+  });
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn duplicating_grouped_tab_inserts_copy_next_to_source(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  let calls = install_fake_factory();
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.insert_new_tab(window, cx);
+      let source = root.items[0].index;
+      let other = root.items[1].index;
+      root.create_tab_group(source, window, cx);
+      let group_id = root.groups[0].id.clone();
+      root.move_tab_to_group(other, group_id.clone(), window, cx);
+      root.duplicate_tab(source, window, cx);
+      assert_eq!(root.items.len(), 3);
+      assert_eq!(root.items[0].index, source);
+      assert_ne!(root.items[1].index, other);
+      assert_eq!(root.items[2].index, other);
+      assert!(
+        root
+          .items
+          .iter()
+          .all(|item| item.group_id.as_deref() == Some(&group_id))
+      );
+    })
+    .unwrap();
+  assert_eq!(calls.lock().unwrap().programs.len(), 3);
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn group_reorder_and_pin_keep_live_tab_identity(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  let calls = install_fake_factory();
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  window
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      for _ in 0..3 {
+        root.insert_new_tab(window, cx);
+      }
+      let first = root.items[0].index;
+      let third = root.items[2].index;
+      root.create_tab_group(first, window, cx);
+      let group = root.groups[0].id.clone();
+      root.move_tab_to_group(third, group.clone(), window, cx);
+      let active_id = root.items[root.active_tab_ix.unwrap()].ui_tree_id.clone();
+      root.move_group(group, root.items.len(), window, cx);
+      assert_eq!(
+        root.items[root.active_tab_ix.unwrap()].ui_tree_id,
+        active_id
+      );
+      assert_eq!(root.items[2].index, first);
+      root.set_tab_pinned(first, true, window, cx);
+      assert_eq!(root.groups.len(), 1);
+      assert!(
+        root
+          .items
+          .iter()
+          .find(|item| item.index == first)
+          .unwrap()
+          .group_id
+          .is_none()
+      );
+      assert_eq!(
+        root.items[root.active_tab_ix.unwrap()].ui_tree_id,
+        active_id
+      );
+    })
+    .unwrap();
+  assert_eq!(calls.lock().unwrap().programs.len(), 4);
   clear_terminal_session_factory_for_testing();
 }
 

@@ -59,6 +59,8 @@ pub struct WindowNode {
   pub tab_bar: TabBarState,
   pub search: SearchState,
   pub tabs: Vec<TabNode>,
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub groups: Vec<TabGroupNode>,
   /// Currently displayed overlay/dialog, if any.
   pub overlay: Option<OverlayNode>,
   pub key_debug: KeyDebugState,
@@ -172,6 +174,39 @@ impl Default for KeyDebugState {
   }
 }
 
+/// A nonempty, contiguous collection of tabs in one window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabGroupNode {
+  pub id: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub name: Option<String>,
+  #[serde(default)]
+  pub color: TabGroupColor,
+}
+
+impl TabGroupNode {
+  pub fn display_name(&self) -> String {
+    self.name.clone().unwrap_or_else(|| {
+      format!(
+        "Group {}",
+        self.id.strip_prefix("group-").unwrap_or(&self.id)
+      )
+    })
+  }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TabGroupColor {
+  #[default]
+  Blue,
+  Green,
+  Yellow,
+  Red,
+  Purple,
+  Cyan,
+}
+
 /// A single tab within a window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TabNode {
@@ -180,6 +215,8 @@ pub struct TabNode {
   pub custom_title: Option<String>,
   #[serde(default, skip_serializing_if = "is_false")]
   pub pinned: bool,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub group_id: Option<String>,
   pub shell: ShellConfig,
   pub pane_tree: PaneNode,
   /// Per-tab search state (query, flags, visibility).
@@ -427,6 +464,7 @@ mod tests {
           id: "tab-1".into(),
           custom_title: Some("My Tab".into()),
           pinned: true,
+          group_id: None,
           shell: ShellConfig {
             path: "pwsh.exe".into(),
             args: vec![],
@@ -450,6 +488,7 @@ mod tests {
           },
           search: SearchState::default(),
         }],
+        groups: vec![],
         overlay: None,
         key_debug: KeyDebugState::default(),
       }],
@@ -458,6 +497,26 @@ mod tests {
     let json = serde_json::to_string_pretty(&tree).unwrap();
     let deserialized: UITree = serde_json::from_str(&json).unwrap();
     assert_eq!(tree, deserialized);
+  }
+
+  #[test]
+  fn old_workspace_without_group_fields_is_ungrouped() {
+    let json = serde_json::json!({
+      "version": 1, "next_id": 4,
+      "windows": [{
+        "id": "win-1", "size": {"width": 800.0, "height": 600.0},
+        "active_tab": 0, "tab_bar": {"visible": true, "vertical": false},
+        "search": {"visible": false}, "overlay": null,
+        "key_debug": {"enabled": false},
+        "tabs": [{
+          "id": "tab-2", "custom_title": null, "shell": {"path": "sh"},
+          "pane_tree": {"type": "terminal", "id": "pane-3"}
+        }]
+      }]
+    });
+    let tree: UITree = serde_json::from_value(json).unwrap();
+    assert!(tree.windows[0].groups.is_empty());
+    assert_eq!(tree.windows[0].tabs[0].group_id, None);
   }
 
   #[test]

@@ -159,6 +159,7 @@ impl UITreeStore {
         id: item.ui_tree_id.clone(),
         custom_title: item.custom_title.clone(),
         pinned: item.pinned,
+        group_id: item.group_id.clone(),
         shell: ShellConfig {
           path: item.shell_path.clone(),
           args: item.shell_args.clone(),
@@ -193,6 +194,7 @@ impl UITreeStore {
         ..SearchState::default()
       },
       tabs,
+      groups: main_window.groups.clone(),
       overlay: capture_overlay(main_window),
       key_debug: KeyDebugState {
         enabled: config_key_debug,
@@ -211,6 +213,9 @@ impl UITreeStore {
     window: &mut Window,
     cx: &mut Context<MainWindow>,
   ) {
+    let groups_changed = diffs
+      .iter()
+      .any(|diff| matches!(diff, TreeDiff::TabGroupsChanged { .. }));
     for d in diffs {
       match d {
         TreeDiff::TabAdded { tab, .. } => {
@@ -229,6 +234,9 @@ impl UITreeStore {
         }
 
         TreeDiff::ActiveTabChanged { active_tab, .. } => {
+          if groups_changed {
+            continue;
+          }
           if let Some(ix) = active_tab {
             if *ix < main_window.items.len() {
               main_window.set_active_tab(*ix, window, cx);
@@ -259,6 +267,35 @@ impl UITreeStore {
             && item.pinned != *pinned
           {
             item.pinned = *pinned;
+            cx.notify();
+          }
+        }
+
+        TreeDiff::TabGroupsChanged { window_id } => {
+          if let Some(win) = self.tree.window(window_id) {
+            main_window.groups = win.groups.clone();
+            for item in &mut main_window.items {
+              item.group_id = win
+                .tab(&item.ui_tree_id)
+                .and_then(|(_, tab)| tab.group_id.clone());
+            }
+            // Multi-tab moves cannot be applied as independent index updates.
+            // Preserve the active tab's search before aligning existing entities by ID.
+            if let Some(ix) = main_window.active_tab_ix
+              && let Some(item) = main_window.items.get_mut(ix)
+            {
+              item.search_bar_state = main_window
+                .search_bar
+                .read(cx)
+                .save_state(main_window.search_visible, cx);
+            }
+            main_window
+              .items
+              .sort_by_key(|item| win.tab(&item.ui_tree_id).map_or(usize::MAX, |(ix, _)| ix));
+            main_window.active_tab_ix = None;
+            if let Some(ix) = win.active_tab {
+              main_window.set_active_tab_direct(ix, window, cx);
+            }
             cx.notify();
           }
         }
@@ -349,6 +386,9 @@ impl UITreeStore {
           new_index,
           ..
         } => {
+          if groups_changed {
+            continue;
+          }
           if let Some(current_ix) = main_window
             .items
             .iter()

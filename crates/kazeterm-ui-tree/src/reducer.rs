@@ -29,6 +29,7 @@ impl UITree {
           tab_bar: TabBarState::default(),
           search: SearchState::default(),
           tabs: Vec::new(),
+          groups: Vec::new(),
           overlay: None,
           key_debug: KeyDebugState::default(),
         });
@@ -87,6 +88,7 @@ impl UITree {
           id: tab_id,
           custom_title: None,
           pinned: false,
+          group_id: None,
           shell: ShellConfig {
             path: shell_path,
             args: shell_args,
@@ -113,6 +115,7 @@ impl UITree {
           .tab(&tab_id)
           .ok_or_else(|| anyhow::anyhow!("Tab '{}' not found", tab_id))?;
         win.tabs.remove(ix);
+        prune_groups(win);
         // Adjust active tab
         if win.tabs.is_empty() {
           win.active_tab = None;
@@ -183,13 +186,31 @@ impl UITree {
         let (old_ix, _) = win
           .tab(&tab_id)
           .ok_or_else(|| anyhow::anyhow!("Tab '{}' not found", tab_id))?;
+        let active_id = active_id(win);
+        let append = new_index >= win.tabs.len();
         let new_index = new_index.min(win.tabs.len() - 1);
-        let tab = win.tabs.remove(old_ix);
-        win.tabs.insert(new_index, tab);
-        // Update active tab to follow the moved tab if it was active
-        if win.active_tab == Some(old_ix) {
-          win.active_tab = Some(new_index);
+        let target_group = if append {
+          None
+        } else {
+          win.tabs[new_index].group_id.clone()
+        };
+        let source_group = win.tabs[old_ix].group_id.clone();
+        let mut tab = win.tabs.remove(old_ix);
+        let mut destination = new_index.min(win.tabs.len());
+        if source_group != target_group {
+          tab.group_id = None;
+          if let Some(group_id) = target_group {
+            let indices = group_bounds(win, &group_id).expect("target group exists");
+            destination = if old_ix < new_index {
+              indices.0
+            } else {
+              indices.1 + 1
+            };
+          }
         }
+        win.tabs.insert(destination, tab);
+        prune_groups(win);
+        restore_active(win, active_id);
         Ok(())
       }
 
@@ -220,6 +241,183 @@ impl UITree {
           .tab_mut(&tab_id)
           .ok_or_else(|| anyhow::anyhow!("Tab '{}' not found", tab_id))?;
         tab.pinned = pinned;
+        if pinned && tab.group_id.is_some() {
+          let active_id = active_id(win);
+          let (ix, _) = win.tab(&tab_id).expect("tab exists");
+          let mut tab = win.tabs.remove(ix);
+          let group_id = tab.group_id.take().expect("group exists");
+          let destination = group_bounds(win, &group_id).map_or(ix, |(_, end)| end + 1);
+          win.tabs.insert(destination.min(win.tabs.len()), tab);
+          prune_groups(win);
+          restore_active(win, active_id);
+        }
+        Ok(())
+      }
+
+      UIAction::CreateTabGroup { window_id, tab_id } => {
+        let tab = self
+          .window(&window_id)
+          .and_then(|win| win.tab(&tab_id))
+          .map(|(_, tab)| tab)
+          .ok_or_else(|| anyhow::anyhow!("Tab not found"))?;
+        if tab.pinned || tab.group_id.is_some() {
+          bail!("Only an ungrouped, unpinned tab can create a group");
+        }
+        let id = self.next_id("group");
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window not found"))?;
+        let (_, tab) = win
+          .tab_mut(&tab_id)
+          .ok_or_else(|| anyhow::anyhow!("Tab not found"))?;
+        tab.group_id = Some(id.clone());
+        win.groups.push(TabGroupNode {
+          id,
+          name: None,
+          color: TabGroupColor::default(),
+        });
+        Ok(())
+      }
+      UIAction::MoveTabToGroup {
+        window_id,
+        tab_id,
+        group_id,
+      } => {
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window not found"))?;
+        if !win.groups.iter().any(|g| g.id == group_id) {
+          bail!("Group '{}' not found", group_id);
+        }
+        let (ix, tab) = win
+          .tab(&tab_id)
+          .ok_or_else(|| anyhow::anyhow!("Tab not found"))?;
+        if tab.pinned {
+          bail!("Pinned tabs cannot join a group");
+        }
+        if tab.group_id.as_deref() == Some(&group_id) {
+          return Ok(());
+        }
+        let active_id = active_id(win);
+        let mut tab = win.tabs.remove(ix);
+        tab.group_id = Some(group_id.clone());
+        let (_, end) = group_bounds(win, &group_id).expect("nonempty target group");
+        win.tabs.insert(end + 1, tab);
+        prune_groups(win);
+        restore_active(win, active_id);
+        Ok(())
+      }
+      UIAction::UngroupTab { window_id, tab_id } => {
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window not found"))?;
+        let (ix, tab) = win
+          .tab(&tab_id)
+          .ok_or_else(|| anyhow::anyhow!("Tab not found"))?;
+        let Some(group_id) = tab.group_id.clone() else {
+          return Ok(());
+        };
+        let active_id = active_id(win);
+        let mut tab = win.tabs.remove(ix);
+        tab.group_id = None;
+        let destination = group_bounds(win, &group_id).map_or(ix, |(_, end)| end + 1);
+        win.tabs.insert(destination.min(win.tabs.len()), tab);
+        prune_groups(win);
+        restore_active(win, active_id);
+        Ok(())
+      }
+      UIAction::MoveTabGroup {
+        window_id,
+        group_id,
+        new_index,
+      } => {
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window not found"))?;
+        let (start, end) =
+          group_bounds(win, &group_id).ok_or_else(|| anyhow::anyhow!("Group not found"))?;
+        let active_id = active_id(win);
+        let mut destination = new_index.min(win.tabs.len());
+        if (start..=end).contains(&destination) {
+          return Ok(());
+        }
+        if let Some(target) = win.tabs.get(destination).and_then(|t| t.group_id.as_ref()) {
+          let (target_start, target_end) = group_bounds(win, target).expect("target group exists");
+          destination = if start < target_start {
+            target_end + 1
+          } else {
+            target_start
+          };
+        }
+        let members: Vec<_> = win.tabs.drain(start..=end).collect();
+        if destination > end {
+          destination -= members.len();
+        }
+        win.tabs.splice(destination..destination, members);
+        restore_active(win, active_id);
+        Ok(())
+      }
+      UIAction::RenameTabGroup {
+        window_id,
+        group_id,
+        name,
+      } => {
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window not found"))?;
+        let group = win
+          .groups
+          .iter_mut()
+          .find(|g| g.id == group_id)
+          .ok_or_else(|| anyhow::anyhow!("Group not found"))?;
+        group.name = name.filter(|s| !s.trim().is_empty());
+        Ok(())
+      }
+      UIAction::SetTabGroupColor {
+        window_id,
+        group_id,
+        color,
+      } => {
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window not found"))?;
+        let group = win
+          .groups
+          .iter_mut()
+          .find(|g| g.id == group_id)
+          .ok_or_else(|| anyhow::anyhow!("Group not found"))?;
+        group.color = color;
+        Ok(())
+      }
+      UIAction::DeleteTabGroup {
+        window_id,
+        group_id,
+        close_tabs,
+      } => {
+        let win = self
+          .window_mut(&window_id)
+          .ok_or_else(|| anyhow::anyhow!("Window not found"))?;
+        if !win.groups.iter().any(|g| g.id == group_id) {
+          bail!("Group not found");
+        }
+        let active_id = active_id(win);
+        let old_index = win.active_tab.unwrap_or(0);
+        if close_tabs {
+          win
+            .tabs
+            .retain(|tab| tab.group_id.as_deref() != Some(&group_id));
+        } else {
+          for tab in &mut win.tabs {
+            if tab.group_id.as_deref() == Some(&group_id) {
+              tab.group_id = None;
+            }
+          }
+        }
+        win.groups.retain(|g| g.id != group_id);
+        restore_active(win, active_id);
+        if win.active_tab.is_none() && !win.tabs.is_empty() {
+          win.active_tab = Some(old_index.min(win.tabs.len() - 1));
+        }
         Ok(())
       }
 
@@ -537,6 +735,35 @@ impl UITree {
 }
 
 /// Swap the children of the innermost split that contains the focused pane.
+fn active_id(win: &WindowNode) -> Option<String> {
+  win.active_tab().map(|tab| tab.id.clone())
+}
+
+fn restore_active(win: &mut WindowNode, id: Option<String>) {
+  win.active_tab = id.and_then(|id| win.tab(&id).map(|(index, _)| index));
+}
+
+fn group_bounds(win: &WindowNode, id: &str) -> Option<(usize, usize)> {
+  let start = win
+    .tabs
+    .iter()
+    .position(|tab| tab.group_id.as_deref() == Some(id))?;
+  let end = win
+    .tabs
+    .iter()
+    .rposition(|tab| tab.group_id.as_deref() == Some(id))?;
+  Some((start, end))
+}
+
+fn prune_groups(win: &mut WindowNode) {
+  win.groups.retain(|group| {
+    win
+      .tabs
+      .iter()
+      .any(|tab| tab.group_id.as_deref() == Some(&group.id))
+  });
+}
+
 fn swap_innermost_split(node: &mut PaneNode) {
   if let PaneNode::Split { first, second, .. } = node {
     let first_has_focus = first.focused_pane_id().is_some();
@@ -609,6 +836,241 @@ mod tests {
       .unwrap();
     let win_id = tree.windows[0].id.clone();
     (tree, win_id)
+  }
+
+  #[test]
+  fn tab_groups_preserve_order_and_active_tab_across_membership_changes() {
+    let (mut tree, window_id) = setup_tree_with_window();
+    for _ in 0..4 {
+      tree
+        .apply(UIAction::AddTab {
+          window_id: window_id.clone(),
+          shell_path: "sh".into(),
+          shell_args: vec![],
+          profile: None,
+          working_directory: None,
+        })
+        .unwrap();
+    }
+    let ids: Vec<_> = tree.windows[0]
+      .tabs
+      .iter()
+      .map(|tab| tab.id.clone())
+      .collect();
+    tree
+      .apply(UIAction::CreateTabGroup {
+        window_id: window_id.clone(),
+        tab_id: ids[0].clone(),
+      })
+      .unwrap();
+    let group_id = tree.windows[0].groups[0].id.clone();
+    tree
+      .apply(UIAction::MoveTabToGroup {
+        window_id: window_id.clone(),
+        tab_id: ids[2].clone(),
+        group_id,
+      })
+      .unwrap();
+    assert_eq!(
+      tree.windows[0]
+        .tabs
+        .iter()
+        .map(|t| &t.id)
+        .collect::<Vec<_>>(),
+      vec![&ids[0], &ids[2], &ids[1], &ids[3]]
+    );
+    assert_eq!(tree.windows[0].active_tab().unwrap().id, ids[3]);
+    tree
+      .apply(UIAction::MoveTab {
+        window_id: window_id.clone(),
+        tab_id: ids[1].clone(),
+        new_index: 1,
+      })
+      .unwrap();
+    assert_eq!(
+      tree.windows[0]
+        .tabs
+        .iter()
+        .map(|t| &t.id)
+        .collect::<Vec<_>>(),
+      vec![&ids[0], &ids[2], &ids[1], &ids[3]]
+    );
+    assert!(tree.windows[0].tabs[2].group_id.is_none());
+    tree
+      .apply(UIAction::UngroupTab {
+        window_id: window_id.clone(),
+        tab_id: ids[0].clone(),
+      })
+      .unwrap();
+    assert_eq!(tree.windows[0].groups.len(), 1);
+    tree
+      .apply(UIAction::SetTabPinned {
+        window_id,
+        tab_id: ids[2].clone(),
+        pinned: true,
+      })
+      .unwrap();
+    assert!(tree.windows[0].groups.is_empty());
+    assert!(
+      tree.windows[0]
+        .tabs
+        .iter()
+        .find(|t| t.id == ids[2])
+        .unwrap()
+        .group_id
+        .is_none()
+    );
+    assert_eq!(tree.windows[0].active_tab().unwrap().id, ids[3]);
+  }
+
+  #[test]
+  fn group_reordering_and_pinned_members_are_validated() {
+    let (mut tree, window_id) = setup_tree_with_window();
+    for _ in 0..5 {
+      tree
+        .apply(UIAction::AddTab {
+          window_id: window_id.clone(),
+          shell_path: "sh".into(),
+          shell_args: vec![],
+          profile: None,
+          working_directory: None,
+        })
+        .unwrap();
+    }
+    let ids: Vec<_> = tree.windows[0].tabs.iter().map(|t| t.id.clone()).collect();
+    tree
+      .apply(UIAction::CreateTabGroup {
+        window_id: window_id.clone(),
+        tab_id: ids[0].clone(),
+      })
+      .unwrap();
+    let group_a = tree.windows[0].groups[0].id.clone();
+    tree
+      .apply(UIAction::MoveTabToGroup {
+        window_id: window_id.clone(),
+        tab_id: ids[1].clone(),
+        group_id: group_a.clone(),
+      })
+      .unwrap();
+    tree
+      .apply(UIAction::CreateTabGroup {
+        window_id: window_id.clone(),
+        tab_id: ids[3].clone(),
+      })
+      .unwrap();
+    let group_b = tree.windows[0].groups[1].id.clone();
+    tree
+      .apply(UIAction::MoveTabGroup {
+        window_id: window_id.clone(),
+        group_id: group_a,
+        new_index: 3,
+      })
+      .unwrap();
+    assert_eq!(
+      tree.windows[0]
+        .tabs
+        .iter()
+        .map(|t| &t.id)
+        .collect::<Vec<_>>(),
+      vec![&ids[2], &ids[3], &ids[0], &ids[1], &ids[4]]
+    );
+    tree
+      .apply(UIAction::SetTabPinned {
+        window_id: window_id.clone(),
+        tab_id: ids[4].clone(),
+        pinned: true,
+      })
+      .unwrap();
+    assert!(
+      tree
+        .apply(UIAction::MoveTabToGroup {
+          window_id: window_id.clone(),
+          tab_id: ids[4].clone(),
+          group_id: group_b.clone()
+        })
+        .is_err()
+    );
+    assert!(
+      tree
+        .apply(UIAction::CreateTabGroup {
+          window_id: window_id.clone(),
+          tab_id: ids[4].clone()
+        })
+        .is_err()
+    );
+    tree
+      .apply(UIAction::RenameTabGroup {
+        window_id: window_id.clone(),
+        group_id: group_b.clone(),
+        name: Some("work".into()),
+      })
+      .unwrap();
+    tree
+      .apply(UIAction::SetTabGroupColor {
+        window_id,
+        group_id: group_b,
+        color: TabGroupColor::Cyan,
+      })
+      .unwrap();
+    let json = serde_json::to_string(&tree).unwrap();
+    let restored: UITree = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored, tree);
+  }
+
+  #[test]
+  fn deleting_group_can_ungroup_or_close_its_members() {
+    let (mut tree, window_id) = setup_tree_with_window();
+    for _ in 0..3 {
+      tree
+        .apply(UIAction::AddTab {
+          window_id: window_id.clone(),
+          shell_path: "sh".into(),
+          shell_args: vec![],
+          profile: None,
+          working_directory: None,
+        })
+        .unwrap();
+    }
+    let ids: Vec<_> = tree.windows[0]
+      .tabs
+      .iter()
+      .map(|tab| tab.id.clone())
+      .collect();
+    tree
+      .apply(UIAction::CreateTabGroup {
+        window_id: window_id.clone(),
+        tab_id: ids[0].clone(),
+      })
+      .unwrap();
+    let group_id = tree.windows[0].groups[0].id.clone();
+    tree
+      .apply(UIAction::MoveTabToGroup {
+        window_id: window_id.clone(),
+        tab_id: ids[1].clone(),
+        group_id: group_id.clone(),
+      })
+      .unwrap();
+    let saved = tree.clone();
+    tree
+      .apply(UIAction::DeleteTabGroup {
+        window_id: window_id.clone(),
+        group_id: group_id.clone(),
+        close_tabs: false,
+      })
+      .unwrap();
+    assert_eq!(tree.windows[0].tabs.len(), 3);
+    assert!(tree.windows[0].tabs.iter().all(|t| t.group_id.is_none()));
+    tree = saved;
+    tree
+      .apply(UIAction::DeleteTabGroup {
+        window_id,
+        group_id,
+        close_tabs: true,
+      })
+      .unwrap();
+    assert_eq!(tree.windows[0].tabs.len(), 1);
+    assert_eq!(tree.windows[0].tabs[0].id, ids[2]);
+    assert_eq!(tree.windows[0].active_tab, Some(0));
   }
 
   #[test]

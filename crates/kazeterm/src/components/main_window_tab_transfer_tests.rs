@@ -84,6 +84,55 @@ fn moving_tab_between_windows_preserves_terminal_entities(cx: &mut TestAppContex
 }
 
 #[gpui::test]
+fn grouped_tab_moves_to_target_group_without_restarting_terminal(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  let calls = install_fake_factory();
+  let source = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  let target = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  source
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.insert_new_tab(window, cx)
+    })
+    .unwrap();
+  let (dragged, terminal_id) = source
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.create_tab_group(root.items[1].index, window, cx);
+      let terminal = root.items[1].split_container.get_active_terminal().unwrap();
+      (
+        root.dragged_tab(1, window, cx).unwrap(),
+        terminal.read(cx).terminal().entity_id(),
+      )
+    })
+    .unwrap();
+  let group_id = target
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.create_tab_group(root.items[0].index, window, cx);
+      root.groups[0].id.clone()
+    })
+    .unwrap();
+  let before = calls.lock().unwrap().programs.len();
+  target
+    .update(cx, |root: &mut MainWindow, window, cx| {
+      root.drop_tab_into_group(&dragged, group_id.clone(), window, cx);
+    })
+    .unwrap();
+  cx.run_until_parked();
+  assert_eq!(calls.lock().unwrap().programs.len(), before);
+  source.root(cx).unwrap().read_with(cx, |root, _| {
+    assert!(root.groups.is_empty());
+    assert_eq!(root.items.len(), 1);
+  });
+  target.root(cx).unwrap().read_with(cx, |root, cx| {
+    assert_eq!(root.items.len(), 2);
+    assert_eq!(root.items[1].group_id.as_deref(), Some(group_id.as_str()));
+    let terminal = root.items[1].split_container.get_active_terminal().unwrap();
+    assert_eq!(terminal.read(cx).terminal().entity_id(), terminal_id);
+  });
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
 fn moving_tab_from_another_window_into_split_preserves_terminal_entities(cx: &mut TestAppContext) {
   let _guard = test_lock();
   crate::test_support::init_test_app(cx);

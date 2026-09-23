@@ -13,14 +13,153 @@ use smol::Timer;
 use themeing::SettingsStore;
 
 use super::main_window::{KeyDebugModifiers, KeyDebugPressedKey, KeyDebugRecentKey, MainWindow};
-use super::menu_builder::{build_new_tab_menu, build_tab_context_menu};
+use super::menu_builder::{build_group_context_menu, build_new_tab_menu, build_tab_context_menu};
 use super::terminal_tab_bar::{TerminalTab, TerminalTabBar};
 use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
+use kazeterm_ui_tree::node::{TabGroupColor, TabGroupNode};
 
 #[derive(Clone)]
 struct ResizeVerticalTabbar(pub EntityId);
+
+#[derive(Clone)]
+struct DraggedGroup {
+  id: String,
+  source: EntityId,
+}
+
+struct DraggedGroupView(String);
+
+impl Render for DraggedGroupView {
+  fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    let colors = cx.global::<SettingsStore>().theme().colors();
+    div()
+      .p_2()
+      .rounded_md()
+      .bg(colors.tab_active_background)
+      .text_color(colors.text)
+      .border_1()
+      .border_color(colors.text_accent)
+      .child(self.0.clone())
+  }
+}
+
+fn tab_group_color(color: TabGroupColor, palette: &config::Palette) -> gpui::Hsla {
+  match color {
+    TabGroupColor::Blue => palette.terminal_ansi_blue,
+    TabGroupColor::Green => palette.terminal_ansi_green,
+    TabGroupColor::Yellow => palette.terminal_ansi_yellow,
+    TabGroupColor::Red => palette.terminal_ansi_red,
+    TabGroupColor::Purple => palette.terminal_ansi_magenta,
+    TabGroupColor::Cyan => palette.terminal_ansi_cyan,
+  }
+}
+
+fn group_label_text_color(color: gpui::Hsla) -> gpui::Hsla {
+  let rgb = color.to_rgb();
+  if 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b < 0.5 {
+    gpui::white()
+  } else {
+    gpui::black()
+  }
+}
+
+fn tab_selection_color(grouped: bool, palette: &config::Palette) -> gpui::Hsla {
+  if grouped {
+    palette.text
+  } else {
+    palette.text_accent
+  }
+}
+
+#[cfg(test)]
+mod color_tests {
+  use gpui::TestAppContext;
+  use kazeterm_ui_tree::node::TabGroupColor;
+  use themeing::SettingsStore;
+
+  use super::{group_label_text_color, tab_group_color, tab_selection_color};
+
+  #[gpui::test]
+  fn group_color_and_active_tab_have_distinct_indicators(cx: &mut TestAppContext) {
+    crate::test_support::init_test_app(cx);
+    cx.update(|cx| {
+      let palette = cx.global::<SettingsStore>().theme().colors();
+      assert_eq!(tab_selection_color(false, palette), palette.text_accent);
+      assert_eq!(tab_selection_color(true, palette), palette.text);
+      assert_ne!(
+        tab_selection_color(true, palette),
+        tab_group_color(TabGroupColor::Blue, palette)
+      );
+      assert_eq!(
+        group_label_text_color(gpui::rgb(0x3568d4).into()),
+        gpui::white()
+      );
+      assert_eq!(
+        group_label_text_color(gpui::rgb(0xf0d85c).into()),
+        gpui::black()
+      );
+    });
+  }
+}
+
+fn group_label(
+  group: TabGroupNode,
+  view: Entity<MainWindow>,
+  tab_ix: usize,
+  vertical: bool,
+  palette: &config::Palette,
+  cx: &mut Context<MainWindow>,
+) -> impl IntoElement {
+  let color = tab_group_color(group.color, palette);
+  let label_text_color = group_label_text_color(color);
+  let title = group.display_name();
+  let id = group.id.clone();
+  let group_for_menu = group.clone();
+  let drag = DraggedGroup {
+    id: id.clone(),
+    source: cx.entity_id(),
+  };
+  div()
+    .id(format!("group-{}", id))
+    .flex_shrink_0()
+    .when(vertical, |this| this.self_start().ml_1())
+    .px_2()
+    .py_1()
+    .max_w(px(160.0))
+    .overflow_x_hidden()
+    .rounded_sm()
+    .bg(color)
+    .text_color(label_text_color)
+    .font_weight(FontWeight::SEMIBOLD)
+    .cursor(CursorStyle::OpenHand)
+    .child(Label::new(title.clone()).whitespace_nowrap())
+    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+    .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+    .on_drag(drag, move |_drag, _, _, cx| {
+      cx.new(|_| DraggedGroupView(title.clone()))
+    })
+    .drag_over::<DraggedTab>(move |style, _, _, _| style.border_2().border_color(label_text_color))
+    .on_drop({
+      let id = id.clone();
+      cx.listener(move |this, dragged: &DraggedTab, window, cx| {
+        this.drop_tab_into_group(dragged, id.clone(), window, cx);
+      })
+    })
+    .on_drop({
+      let id = id.clone();
+      cx.listener(move |this, dragged: &DraggedGroup, window, cx| {
+        cx.stop_propagation();
+        if dragged.source == cx.entity_id() && dragged.id != id {
+          this.move_group(dragged.id.clone(), tab_ix, window, cx);
+        }
+      })
+    })
+    .context_menu(move |menu, window, cx| {
+      build_group_context_menu(menu, view.clone(), group_for_menu.clone(), window, cx)
+    })
+}
 
 impl Render for ResizeVerticalTabbar {
   fn render(&mut self, _window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -997,6 +1136,11 @@ impl Render for MainWindow {
           this.drop_tab_at(dragged, None, window, cx);
         },
       ))
+      .on_drop(cx.listener(move |this, dragged: &DraggedGroup, window, cx| {
+        if dragged.source == cx.entity_id() {
+          this.move_group(dragged.id.clone(), this.items.len(), window, cx);
+        }
+      }))
       .on_mouse_down(
         MouseButton::Left,
         cx.listener(move |_this, _e: &MouseDownEvent, _window, _cx| {
@@ -1062,8 +1206,9 @@ impl Render for MainWindow {
                           let text_muted = colors.text_muted;
                           let accent_color = colors.text_accent;
                           let warning_color = colors.terminal_ansi_yellow;
+                          let selection_color = tab_selection_color(item.group_id.is_some(), &colors);
 
-                          TerminalTab::new()
+                          let tab = TerminalTab::new()
                             .selected(is_selected)
                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                               // Prevent TitleBar from starting window drag when pressing on tabs
@@ -1119,6 +1264,12 @@ impl Render for MainWindow {
                                         this.drop_tab_at(dragged, Some(tab_ix), window, cx);
                                       },
                                     ))
+                                    .on_drop(cx.listener(move |this, dragged: &DraggedGroup, window, cx| {
+                                      cx.stop_propagation();
+                                      if dragged.source == cx.entity_id() {
+                                        this.move_group(dragged.id.clone(), tab_ix, window, cx);
+                                      }
+                                    }))
                                     .child(
                                       h_flex()
                                         .id(ElementId::NamedInteger(
@@ -1138,7 +1289,7 @@ impl Render for MainWindow {
                                           this
                                             .bg(selected_bg)
                                             .border_b_2()
-                                            .border_color(accent_color)
+                                            .border_color(selection_color)
                                         })
                                         .when(!is_selected, |this| {
                                           this.bg(normal_bg).hover(|style| style.bg(hover_bg))
@@ -1234,8 +1385,17 @@ impl Render for MainWindow {
                                         }),
                                     ),
                                 ),
-                            )
+                            );
+                          let mut elements = Vec::new();
+                          if let Some(group) = item.group_id.as_ref().and_then(|id| self.groups.iter().find(|g| &g.id == id))
+                            && (tab_ix == 0 || self.items[tab_ix - 1].group_id.as_ref() != Some(&group.id))
+                          {
+                            elements.push(group_label(group.clone(), cx.entity(), tab_ix, false, &colors, cx).into_any_element());
+                          }
+                          elements.push(tab.into_any_element());
+                          elements
                         })
+                        .flatten()
                         .collect::<Vec<_>>(),
                     ),
                 )
@@ -1372,6 +1532,12 @@ impl Render for MainWindow {
               this
             }
           })
+          .when(self.group_rename_dialog.is_some(), |this| {
+            this.child(self.group_rename_dialog.as_ref().unwrap().clone())
+          })
+          .when(self.group_delete_dialog.is_some(), |this| {
+            this.child(self.group_delete_dialog.as_ref().unwrap().clone())
+          })
           .when(self.close_confirm_dialog.is_some(), |this| {
             if let Some(close_confirm_dialog) = &self.close_confirm_dialog {
               this.child(close_confirm_dialog.clone())
@@ -1468,8 +1634,12 @@ impl Render for MainWindow {
                               let text_muted = colors.text_muted;
                               let accent_color = colors.text_accent;
                               let warning_color = colors.terminal_ansi_yellow;
+                              let selection_color = tab_selection_color(item.group_id.is_some(), &colors);
+                              let group = item.group_id.as_ref()
+                                .and_then(|id| self.groups.iter().find(|group| &group.id == id));
+                              let group_color = group.map(|group| tab_group_color(group.color, &colors));
 
-                              TerminalTab::new()
+                              let tab = TerminalTab::new()
                                 .selected(is_selected)
                                 .fill_height(false)
                                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -1526,6 +1696,12 @@ impl Render for MainWindow {
                                             this.drop_tab_at(dragged, Some(tab_ix), window, cx);
                                           },
                                         ))
+                                        .on_drop(cx.listener(move |this, dragged: &DraggedGroup, window, cx| {
+                                          cx.stop_propagation();
+                                          if dragged.source == cx.entity_id() {
+                                            this.move_group(dragged.id.clone(), tab_ix, window, cx);
+                                          }
+                                        }))
                                         .child(
                                           h_flex()
                                             .w_full()
@@ -1538,7 +1714,7 @@ impl Render for MainWindow {
                                               this
                                                 .bg(selected_bg)
                                                 .border_l_2()
-                                                .border_color(accent_color)
+                                                .border_color(selection_color)
                                             })
                                             .when(!is_selected, |this| {
                                               this.bg(normal_bg).hover(|style| style.bg(hover_bg))
@@ -1629,8 +1805,39 @@ impl Render for MainWindow {
                                             }),
                                         ),
                                     ),
-                                )
+                                );
+                              let mut elements = Vec::new();
+                              if let Some(group) = group
+                                && (tab_ix == 0 || self.items[tab_ix - 1].group_id.as_ref() != Some(&group.id))
+                              {
+                                elements.push(group_label(group.clone(), cx.entity(), tab_ix, true, &colors, cx).into_any_element());
+                              }
+                              // The rail bridges the tab-bar gap so the group reads as one continuous block.
+                              if let Some(color) = group_color {
+                                elements.push(
+                                  div()
+                                    .relative()
+                                    .flex_shrink_0()
+                                    .w_full()
+                                    .pl_3()
+                                    .child(tab)
+                                    .child(
+                                      div()
+                                        .absolute()
+                                        .left(px(4.0))
+                                        .top(px(-4.0))
+                                        .bottom(px(0.0))
+                                        .w(px(2.0))
+                                        .bg(color),
+                                    )
+                                    .into_any_element(),
+                                );
+                              } else {
+                                elements.push(tab.into_any_element());
+                              }
+                              elements
                             })
+                            .flatten()
                             .collect::<Vec<_>>(),
                         ),
                     ),

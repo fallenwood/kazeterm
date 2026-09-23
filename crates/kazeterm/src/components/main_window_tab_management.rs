@@ -174,6 +174,7 @@ impl MainWindow {
     let tab = self.items.iter().find(|item| item.index == tab_index);
     if let Some(tab) = tab {
       let shell_path = tab.shell_path.clone();
+      let group_id = tab.group_id.clone();
 
       // Get the current working directory from the active terminal
       let working_directory = tab
@@ -183,6 +184,14 @@ impl MainWindow {
 
       // Create a new tab with the same shell and working directory
       self.insert_new_tab_with_profile(Some(&shell_path), working_directory, window, cx);
+      if let Some(group_id) = group_id
+        && let Some(index) = self.items.last().map(|item| item.index)
+      {
+        self.move_tab_to_group(index, group_id, window, cx);
+        if let Some(source_ix) = self.items.iter().position(|item| item.index == tab_index) {
+          self.reorder_tab_by_index(index, source_ix + 1, window, cx);
+        }
+      }
     }
   }
 
@@ -236,6 +245,7 @@ impl MainWindow {
       title: tab_title,
       custom_title: None,
       pinned: false,
+      group_id: None,
       shell_path: shell_program,
       shell_args,
       _shell_name: shell_name,
@@ -535,29 +545,55 @@ impl MainWindow {
   pub(crate) fn move_tab_left(
     &mut self,
     tab_ix: usize,
-    _window: &mut Window,
+    window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if tab_ix > 0 {
-      self.items.swap(tab_ix, tab_ix - 1);
-      self.active_tab_ix = Some(tab_ix - 1);
-      self.sync_ui_tree(cx);
-      cx.notify();
+      let index = self.items[tab_ix].index;
+      self.reorder_tab_by_index(index, tab_ix - 1, window, cx);
     }
   }
 
   pub(crate) fn move_tab_right(
     &mut self,
     tab_ix: usize,
-    _window: &mut Window,
+    window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     if tab_ix + 1 < self.items.len() {
-      self.items.swap(tab_ix, tab_ix + 1);
-      self.active_tab_ix = Some(tab_ix + 1);
-      self.sync_ui_tree(cx);
-      cx.notify();
+      let index = self.items[tab_ix].index;
+      self.reorder_tab_by_index(index, tab_ix + 1, window, cx);
     }
+  }
+
+  fn reorder_tab_by_index(
+    &mut self,
+    index: usize,
+    new_index: usize,
+    window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
+    let Some(tab_id) = self
+      .items
+      .iter()
+      .find(|item| item.index == index)
+      .map(|item| item.ui_tree_id.clone())
+    else {
+      return;
+    };
+    let Some(window_id) = self.ensure_ui_tree_window_id(cx) else {
+      return;
+    };
+    self.dispatch_default_ui_action(
+      UIAction::MoveTab {
+        window_id,
+        tab_id,
+        new_index,
+      },
+      "move tab",
+      window,
+      cx,
+    );
   }
 
   pub(crate) fn set_tab_pinned(
