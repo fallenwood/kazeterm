@@ -74,4 +74,6 @@ name = "Kazeterm"
 category = "public.app-category.developer-tools"
 short_description = "A terminal emulator"
 copyright = "Copyright (c) fallenwood"
-osx_minimum_system_version = "10.15"
+
+[package.metadata.bundle.osx]
+minimum_system_version = "10.15"
