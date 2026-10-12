@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::thread;
 
 use parking_lot::Mutex;
+use terminal::program_status::{ProgramStatusParser, ProgramStatusTracker};
 use terminal_kernel::{event::WindowSize, tty::EventedReadWrite};
 
 use crate::vte_term::VteTermInner;
@@ -33,6 +34,7 @@ pub struct VteEventLoop {
   rx: std::sync::mpsc::Receiver<VteMsg>,
   pty: terminal_kernel::tty::Pty,
   state: Arc<Mutex<VteTermInner>>,
+  program_status_parser: ProgramStatusParser,
   #[cfg(unix)]
   pty_raw_fd: i32,
 }
@@ -42,6 +44,7 @@ impl VteEventLoop {
   pub fn new(
     pty: terminal_kernel::tty::Pty,
     state: Arc<Mutex<VteTermInner>>,
+    program_status_tracker: ProgramStatusTracker,
     #[cfg(unix)] pty_raw_fd: i32,
   ) -> Self {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -50,6 +53,7 @@ impl VteEventLoop {
       rx,
       pty,
       state,
+      program_status_parser: ProgramStatusParser::new(program_status_tracker),
       #[cfg(unix)]
       pty_raw_fd,
     }
@@ -128,6 +132,9 @@ impl VteEventLoop {
           return;
         }
         Ok(n) => {
+          self.program_status_parser.advance(&buf[..n], |reply| {
+            let _ = self.pty.writer().write_all(reply);
+          });
           let mut state = self.state.lock();
           parser.advance(&mut *state, &buf[..n]);
           drop(state);

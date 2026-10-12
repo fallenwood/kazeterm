@@ -190,7 +190,7 @@ fn parse_flags_and_mode(bytes: &[u8]) -> Option<(u32, u32)> {
 #[cfg(unix)]
 mod unix {
   use std::fs::File;
-  use std::io::{self, Read};
+  use std::io::{self, Read, Write};
   use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
   use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -206,6 +206,7 @@ mod unix {
   use super::super::command::RawGraphicsCommand;
   use super::KeyboardModeTracker;
   use crate::osc7;
+  use crate::program_status::{ProgramStatusParser, ProgramStatusTracker};
 
   /// Callback that tries to get the cursor position from the terminal.
   /// Returns `Some((absolute_line, column))` on success, `None` if lock unavailable.
@@ -237,6 +238,7 @@ mod unix {
   /// Returns `WouldBlock` when all bytes in a read were APC data.
   pub struct FilteringReader {
     inner: File,
+    program_status_parser: ProgramStatusParser,
     state: FilterState,
     apc_buf: Vec<u8>,
     /// Filtered bytes not yet returned to the caller.
@@ -578,6 +580,10 @@ mod unix {
         return Ok(0);
       }
 
+      self.program_status_parser.advance(&raw[..n], |reply| {
+        let _ = self.inner.write_all(reply);
+      });
+
       // Run the APC state machine over the raw bytes.
       self.pending.clear();
       self.pending_pos = 0;
@@ -761,6 +767,7 @@ mod unix {
       pty: Pty,
       cursor_fn: CursorFn,
       dsr_cursor_fn: DsrCursorFn,
+      program_status_tracker: ProgramStatusTracker,
     ) -> io::Result<(
       Self,
       Arc<AtomicU32>,
@@ -784,6 +791,7 @@ mod unix {
 
       let reader = FilteringReader {
         inner: read_file,
+        program_status_parser: ProgramStatusParser::new(program_status_tracker),
         state: FilterState::Normal,
         apc_buf: Vec::with_capacity(4096),
         pending: Vec::with_capacity(8192),
@@ -889,6 +897,7 @@ mod windows {
   use std::sync::atomic::{AtomicU32, Ordering};
 
   use super::KeyboardModeTracker;
+  use crate::program_status::{ProgramStatusParser, ProgramStatusTracker};
   use polling::{Event, PollMode, Poller};
   use terminal_kernel::event::{OnResize, WindowSize};
   use terminal_kernel::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
@@ -916,6 +925,7 @@ mod windows {
   /// has access to both the inner reader and writer of the wrapped Pty.
   pub struct WindowsDsrFilter {
     pty: Pty,
+    program_status_parser: ProgramStatusParser,
     state: FilterState,
     csi_buf: Vec<u8>,
     pending: Vec<u8>,
@@ -927,12 +937,17 @@ mod windows {
   }
 
   impl WindowsDsrFilter {
-    pub fn new(pty: Pty, dsr_cursor_fn: DsrCursorFn) -> (Self, Arc<AtomicU32>) {
+    pub fn new(
+      pty: Pty,
+      dsr_cursor_fn: DsrCursorFn,
+      program_status_tracker: ProgramStatusTracker,
+    ) -> (Self, Arc<AtomicU32>) {
       let keyboard_flags = Arc::new(AtomicU32::new(0));
 
       (
         Self {
           pty,
+          program_status_parser: ProgramStatusParser::new(program_status_tracker),
           state: FilterState::Normal,
           csi_buf: Vec::with_capacity(64),
           pending: Vec::with_capacity(8192),
@@ -1130,6 +1145,10 @@ mod windows {
       if n == 0 {
         return Ok(0);
       }
+
+      self.program_status_parser.advance(&raw[..n], |reply| {
+        let _ = self.pty.writer().write_all(reply);
+      });
 
       self.pending.clear();
       self.pending_pos = 0;

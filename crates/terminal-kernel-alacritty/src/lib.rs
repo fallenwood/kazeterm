@@ -3,6 +3,7 @@ use std::{borrow::Cow, collections::HashMap, path::PathBuf, sync::Arc};
 use alacritty_terminal::term::Osc52;
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle};
 use futures::{channel::mpsc::UnboundedReceiver, channel::mpsc::unbounded};
+use terminal::program_status::ProgramStatusTracker;
 use terminal::{PtyProcessInfo, PtySender, Terminal, TerminalBounds, TerminalEventListener};
 use terminal_kernel::{
   AlacrittyBackend, SessionEvents, Term,
@@ -104,7 +105,7 @@ pub fn create_terminal_session(
 
   let cwd_file_str = cwd_file.to_string_lossy();
   let bash_hook = format!(
-    r#"printf '\e]7;file://%s%s\e\\' "$(hostname)" "$PWD"; printf '%s' "$PWD" >| "{}""#,
+    r#"printf '\e]133;A\e\\\e]7;file://%s%s\e\\' "$(hostname)" "$PWD"; printf '%s' "$PWD" >| "{}""#,
     cwd_file_str,
   );
   env.insert("__KAZETERM_OSC7".to_string(), bash_hook.clone());
@@ -129,6 +130,7 @@ pub fn create_terminal_session(
       r#"[System.IO.File]::WriteAllText('{}', $cwd); "#,
       r#"$esc = [char]27; "#,
       r#"$host_name = [System.Net.Dns]::GetHostName(); "#,
+      r#"[Console]::Write("${{esc}}]133;A${{esc}}\"); "#,
       r#"[Console]::Write("${{esc}}]7;file://${{host_name}}${{cwd}}${{esc}}\"); "#,
       r#"if ($__kazeterm_orig_prompt) {{ & $__kazeterm_orig_prompt }} "#,
       r#"else {{ "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }} "#,
@@ -162,6 +164,7 @@ pub fn create_terminal_session(
   );
 
   let term = Arc::new(FairMutex::new(term));
+  let program_status_tracker = ProgramStatusTracker::default();
 
   let shell_program = program.clone();
   let pty_options = {
@@ -197,8 +200,13 @@ pub fn create_terminal_session(
       Some((cursor.line.0 + 1, cursor.column.0 as i32 + 1))
     });
 
-    let (filter, pending_cnl, keyboard_flags, graphics_rx, osc7_rx) =
-      GraphicsPtyFilter::new(pty, cursor_fn, dsr_cursor_fn).unwrap();
+    let (filter, pending_cnl, keyboard_flags, graphics_rx, osc7_rx) = GraphicsPtyFilter::new(
+      pty,
+      cursor_fn,
+      dsr_cursor_fn,
+      program_status_tracker.clone(),
+    )
+    .unwrap();
     let pty_info = PtyProcessInfo::from_raw(filter.pty_fd(), filter.child_pid());
 
     let event_loop = EventLoop::new(
@@ -233,7 +241,8 @@ pub fn create_terminal_session(
     });
 
     let pty_info = PtyProcessInfo::new(&pty);
-    let (filter, keyboard_flags) = WindowsDsrFilter::new(pty, dsr_cursor_fn);
+    let (filter, keyboard_flags) =
+      WindowsDsrFilter::new(pty, dsr_cursor_fn, program_status_tracker.clone());
 
     let event_loop = EventLoop::new(
       term.clone(),
@@ -260,6 +269,7 @@ pub fn create_terminal_session(
     keyboard_flags,
     osc7_rx,
     Some(cwd_file),
+    program_status_tracker,
   );
 
   Ok((terminal, events_rx))

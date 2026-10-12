@@ -115,6 +115,7 @@ pub fn fake_terminal_session(
     keyboard_flags,
     None,
     None,
+    crate::program_status::ProgramStatusTracker::default(),
   );
 
   (terminal, rx, writes, resizes)

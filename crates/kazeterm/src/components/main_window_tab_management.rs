@@ -325,6 +325,7 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     match event {
+      terminal::TerminalEvent::ProgramStatusChanged => cx.notify(),
       terminal::TerminalEvent::CloseTerminal(terminal_index) => {
         // Find the tab containing this terminal
         let terminal_entity_id = terminal_view.entity_id();

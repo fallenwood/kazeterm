@@ -106,6 +106,95 @@ fn main_window_creates_initial_tab_with_fake_factory(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn program_status_updates_background_tabs_and_preserves_completed_records(cx: &mut TestAppContext) {
+  use terminal::program_status::{ProgramState, ProgramStatusParser};
+  use terminal_kernel::event::Event;
+
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  let terminal = window
+    .update(cx, |root, window, cx| {
+      let view = root.active_terminal().unwrap();
+      let terminal = view.read(cx).terminal().clone();
+      root.insert_new_tab(window, cx);
+      assert_ne!(
+        root.active_terminal().unwrap().entity_id(),
+        view.entity_id()
+      );
+      terminal
+    })
+    .unwrap();
+  cx.run_until_parked();
+  let tracker = terminal.read_with(cx, |terminal, _| terminal.program_status_tracker.clone());
+  let mut parser = ProgramStatusParser::new(tracker);
+  parser.advance(
+    b"\x1b]7501;state=blocked:kind=permission:app=deploy\x07",
+    |_| {
+      panic!("unexpected reply");
+    },
+  );
+  terminal.update(cx, |terminal, cx| terminal.process_event(Event::Wakeup, cx));
+  cx.run_until_parked();
+  terminal.read_with(cx, |terminal, _| {
+    assert_eq!(
+      terminal.program_status_records()[0].state,
+      ProgramState::Blocked
+    );
+  });
+
+  parser.advance(
+    b"\x1b]7501;state=done\x07\x1b]7501;state=working:id=worker\x07\x1b]133;A\x07",
+    |_| {},
+  );
+  terminal.update(cx, |terminal, cx| terminal.process_event(Event::Wakeup, cx));
+  cx.run_until_parked();
+  terminal.read_with(cx, |terminal, _| {
+    assert_eq!(terminal.program_status_records().len(), 1);
+    assert_eq!(
+      terminal.program_status_records()[0].state,
+      ProgramState::Done
+    );
+  });
+
+  // Exercise exit cleanup without closing the pane (a failed child is retained).
+  parser.advance(b"\x1b]7501;state=blocked:id=worker\x07", |_| {});
+  terminal.update(cx, |terminal, cx| {
+    #[cfg(target_os = "windows")]
+    {
+      use std::os::windows::process::ExitStatusExt;
+      terminal.process_event(Event::ChildExit(std::process::ExitStatus::from_raw(1)), cx);
+    }
+    #[cfg(unix)]
+    {
+      use std::os::unix::process::ExitStatusExt;
+      terminal.process_event(
+        Event::ChildExit(std::process::ExitStatus::from_raw(1 << 8)),
+        cx,
+      );
+    }
+  });
+  cx.run_until_parked();
+  terminal.read_with(cx, |terminal, _| {
+    assert_eq!(terminal.program_status_records().len(), 1);
+    assert_eq!(
+      terminal.program_status_records()[0].state,
+      ProgramState::Done
+    );
+  });
+  parser.advance(b"\x1bc", |_| {});
+  terminal.update(cx, |terminal, cx| terminal.process_event(Event::Wakeup, cx));
+  cx.run_until_parked();
+  terminal.read_with(cx, |terminal, _| {
+    assert!(terminal.program_status_records().is_empty())
+  });
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
 fn ui_actions_keep_canonical_terminal_metadata_until_update_event(cx: &mut TestAppContext) {
   let _guard = test_lock();
   crate::test_support::init_test_app(cx);
