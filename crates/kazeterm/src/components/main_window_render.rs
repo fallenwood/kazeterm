@@ -8,17 +8,134 @@ use gpui_kit::component::{
   h_flex,
   label::Label,
   menu::{ContextMenuExt, DropdownMenu, PopupMenu},
+  spinner::Spinner,
+  tooltip::Tooltip,
 };
 use smol::Timer;
 use themeing::SettingsStore;
 
-use super::main_window::{KeyDebugModifiers, KeyDebugPressedKey, KeyDebugRecentKey, MainWindow};
+use super::main_window::{
+  KeyDebugModifiers, KeyDebugPressedKey, KeyDebugRecentKey, MainWindow, TabItem,
+};
 use super::menu_builder::{build_group_context_menu, build_new_tab_menu, build_tab_context_menu};
 use super::terminal_tab_bar::{TerminalTab, TerminalTabBar};
 use crate::components::dragged_tab::{DraggedTab, DraggedTabView};
 use crate::components::shell_icon::ShellIcon;
 use crate::components::tab_button::{TabButton, TabButtonClickEvent};
 use kazeterm_ui_tree::node::{TabGroupColor, TabGroupNode};
+use terminal::program_status::{BlockedKind, ProgramState, ProgramStatusRecord, display_text};
+
+fn program_status_description(pane: usize, record: &ProgramStatusRecord) -> String {
+  let label = record.title.as_deref().unwrap_or(if record.id.is_empty() {
+    "Program"
+  } else {
+    &record.id
+  });
+  let mut description = format!("Pane {}: {}", pane + 1, display_text(label));
+  if let Some(app) = &record.app {
+    description.push_str(&format!(" ({app})"));
+  }
+  description.push_str(&format!(" — {}", record.state.label()));
+  if let Some(kind) = record.kind {
+    description.push_str(match kind {
+      BlockedKind::Permission => " (permission)",
+      BlockedKind::Question => " (question)",
+      BlockedKind::Auth => " (authentication)",
+    });
+  }
+  if let Some(progress) = record.progress {
+    description.push_str(&format!(" {progress}%"));
+  }
+  if let Some(msg) = &record.msg {
+    let msg = display_text(msg);
+    description.push_str(": ");
+    description.extend(msg.chars().take(320));
+    if msg.chars().count() > 320 {
+      description.push('…');
+    }
+  }
+  description
+}
+
+fn program_status_indicator(
+  item: &TabItem,
+  palette: &config::Palette,
+  cx: &App,
+) -> Option<AnyElement> {
+  let mut records = Vec::new();
+  for (pane, (_, view)) in item.split_container.all_terminals().iter().enumerate() {
+    let terminal = view.read(cx).terminal().read(cx);
+    records.extend(
+      terminal
+        .program_status_records()
+        .iter()
+        .cloned()
+        .map(|record| (pane, record)),
+    );
+  }
+  // Stable sorting prefers the most recent report in each pane when priorities tie.
+  records.reverse();
+  records.sort_by_key(|(_, record)| std::cmp::Reverse(record.state.priority()));
+  let (_, record) = records.first()?;
+  let (icon, color) = match record.state {
+    ProgramState::Idle => (IconName::Pause, palette.text_muted),
+    ProgramState::Working => (IconName::Loader, palette.text_accent),
+    ProgramState::Done => (IconName::CircleCheck, palette.terminal_ansi_green),
+    ProgramState::Blocked => (IconName::CircleAlert, palette.terminal_ansi_yellow),
+    ProgramState::Error => (IconName::CircleX, palette.terminal_ansi_red),
+  };
+  let glyph = if record.state == ProgramState::Working {
+    Spinner::new().small().color(color).into_any_element()
+  } else {
+    Icon::new(icon)
+      .size_3()
+      .text_color(color)
+      .into_any_element()
+  };
+  let mut lines = vec![format!(
+    "{} — Program status",
+    display_text(item.display_title())
+  )];
+  lines.extend(
+    records
+      .iter()
+      .take(8)
+      .map(|(pane, record)| program_status_description(*pane, record)),
+  );
+  if records.len() > 8 {
+    lines.push(format!("{} more records", records.len() - 8));
+  }
+  Some(
+    h_flex()
+      .id(format!("program-status-{}", item.ui_tree_id))
+      .flex_shrink_0()
+      .gap_1()
+      .child(glyph)
+      .when_some(record.progress, |this, progress| {
+        this.child(
+          div()
+            .text_xs()
+            .text_color(color)
+            .child(format!("{progress}%")),
+        )
+      })
+      .tooltip(move |window, cx| {
+        Tooltip::element({
+          let lines = lines.clone();
+          move |_, _| {
+            div()
+              .flex()
+              .flex_col()
+              .gap_1()
+              .max_w(px(440.0))
+              .children(lines.iter().map(|line| div().child(line.clone())))
+          }
+        })
+        .build(window, cx)
+      })
+      .into_any_element(),
+  )
+}
 
 #[derive(Clone)]
 struct ResizeVerticalTabbar(pub EntityId);
@@ -80,6 +197,26 @@ mod color_tests {
   use themeing::SettingsStore;
 
   use super::{group_label_text_color, tab_group_color, tab_selection_color};
+
+  #[test]
+  fn program_status_details_identify_source_and_preserve_literal_text() {
+    use terminal::program_status::{BlockedKind, ProgramState, ProgramStatusRecord};
+    let record = ProgramStatusRecord {
+      id: "build/test".into(),
+      state: ProgramState::Blocked,
+      kind: Some(BlockedKind::Question),
+      progress: Some(40),
+      app: Some("cargo".into()),
+      title: Some("Test\u{202e}".into()),
+      msg: Some("<b>Answer?</b>\u{200b}".into()),
+    };
+    assert_eq!(
+      super::program_status_description(1, &record),
+      "Pane 2: Test (cargo) — Blocked (question) 40%: <b>Answer?</b>"
+    );
+    assert!(ProgramState::Blocked.priority() > ProgramState::Working.priority());
+    assert!(ProgramState::Error.priority() > ProgramState::Done.priority());
+  }
 
   #[gpui::test]
   fn group_color_and_active_tab_have_distinct_indicators(cx: &mut TestAppContext) {
@@ -1302,6 +1439,9 @@ impl Render for MainWindow {
                                             .child(shell_icon.into_element(px(14.0))),
                                         )
                                         // Bell indicator
+                                        .when_some(program_status_indicator(item, &colors, cx), |this, indicator| {
+                                          this.child(indicator)
+                                        })
                                         .when(has_bell, |this| {
                                           this.child(
                                             div().flex_shrink_0().child(
@@ -1725,6 +1865,9 @@ impl Render for MainWindow {
                                                 .flex_shrink_0()
                                                 .child(shell_icon.into_element(px(14.0))),
                                             )
+                                            .when_some(program_status_indicator(item, &colors, cx), |this, indicator| {
+                                              this.child(indicator)
+                                            })
                                             .when(has_bell, |this| {
                                               this.child(
                                                 div().flex_shrink_0().child(

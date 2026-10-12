@@ -136,6 +136,7 @@ fn committed_text_bytes(text: &str) -> Option<Vec<u8>> {
 
 #[derive(Clone, Debug)]
 pub enum TerminalEvent {
+  ProgramStatusChanged,
   UpdateTab,
   Wakeup,
   CloseTerminal(usize),
@@ -821,6 +822,10 @@ fn subscribe_for_terminal_events(
     move |terminal_view, terminal, event, window, cx| match event {
       crate::terminal::Event::TitleChanged => {
         terminal_view.schedule_tab_title_update(window, cx);
+      }
+      crate::terminal::Event::ProgramStatusChanged => {
+        cx.emit(TerminalEvent::ProgramStatusChanged);
+        cx.notify();
       }
       crate::terminal::Event::CloseTerminal => {
         cx.emit(TerminalEvent::CloseTerminal(terminal_view.index));

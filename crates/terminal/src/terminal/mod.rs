@@ -17,6 +17,7 @@ use crate::{
   },
   minimap::{MinimapCell, sampled_line_indices},
   mouse::grid_point_and_side,
+  program_status::{ProgramStatusRecord, ProgramStatusTracker},
   pty_info::PtyProcessInfo,
   terminal_content::TerminalContent,
   terminal_hyperlinks::RegexSearches,
@@ -68,6 +69,7 @@ pub enum InternalEvent {
 #[derive(Clone, Debug)]
 pub enum Event {
   TitleChanged,
+  ProgramStatusChanged,
   CloseTerminal,
   Bell,
   Wakeup,
@@ -111,6 +113,9 @@ pub struct Terminal {
   /// The title before the most recent title change.
   /// Used to show which process just finished in notifications.
   pub previous_title_text: String,
+  pub program_status_tracker: ProgramStatusTracker,
+  program_status_records: Vec<ProgramStatusRecord>,
+  program_status_revision: u64,
   pub next_link_id: usize,
   pub process_changed_at: Option<std::time::Instant>,
   last_process_refresh: Option<Instant>,
@@ -158,6 +163,7 @@ impl Terminal {
     keyboard_protocol_flags: Arc<AtomicU32>,
     osc7_rx: Option<std::sync::mpsc::Receiver<std::path::PathBuf>>,
     cwd_file: Option<std::path::PathBuf>,
+    program_status_tracker: ProgramStatusTracker,
   ) -> Self {
     Self {
       pty_tx,
@@ -177,6 +183,9 @@ impl Terminal {
       scroll_px: px(0.),
       title_text: "".to_string(),
       previous_title_text: "".to_string(),
+      program_status_tracker,
+      program_status_records: Vec::new(),
+      program_status_revision: 0,
       next_link_id: 0,
       process_changed_at: None,
       last_process_refresh: None,
@@ -349,6 +358,7 @@ impl Terminal {
   }
 
   pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    self.sync_program_status(cx);
     self.start_graphics_worker(cx);
     let mut processed_internal_event = false;
     while let Some(e) = self.events.pop_front() {
@@ -680,7 +690,24 @@ impl Terminal {
     }
   }
 
+  pub fn program_status_records(&self) -> &[ProgramStatusRecord] {
+    &self.program_status_records
+  }
+
+  fn sync_program_status(&mut self, cx: &mut Context<Self>) {
+    if let Some((revision, records)) = self
+      .program_status_tracker
+      .snapshot_since(self.program_status_revision)
+    {
+      self.program_status_revision = revision;
+      self.program_status_records = records;
+      cx.emit(Event::ProgramStatusChanged);
+      cx.notify();
+    }
+  }
+
   pub fn process_event(&mut self, event: AlacTermEvent, cx: &mut Context<Self>) {
+    self.sync_program_status(cx);
     match event {
       AlacTermEvent::Title(title) => {
         const PROCESS_CHANGE_GRACE_PERIOD: std::time::Duration =

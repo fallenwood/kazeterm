@@ -77,6 +77,30 @@ kernel = "alacritty"
 
 Supported values are `alacritty` (default) and `vte` (Linux only). Unsupported kernels fail explicitly instead of silently falling back.
 
+### Program status (OSC 7501)
+
+Both kernels support the [Program Status Protocol, revision 0.4](https://www.superlogical.com/rex/docs/build/program-status).
+Programs can report `idle`, `working`, `done`, `blocked`, or `error`, with optional
+progress, application identity, a label, and a message. Horizontal and vertical
+tabs show a status indicator and percentage; hover it for details from each pane.
+Blocked tasks take priority, followed by errors, completed work, and running work.
+
+```sh
+printf '\033]7501;state=working:app=cargo:progress=40:msg=QnVpbGRpbmc=\033\\'
+printf '\033]7501;state=done:app=cargo:msg=QnVpbGQgY29tcGxldGU=\033\\'
+printf '\033]7501;state=clear\033\\'
+```
+
+Feature queries (`OSC 7501 ; ? ST`) receive the supported states and blocked
+kinds. Reports replace a record completely; hierarchical IDs support independent
+tasks, inherited application identities, and subtree clearing. Working and blocked
+records expire on OSC 133 A or attached-process exit; done and error records survive.
+Kazeterm's Bash and PowerShell prompt hooks emit OSC 133 A automatically.
+RIS clears all records, while soft resets and alternate-screen switches preserve
+them. Storage is capped at 256 records per pane with least-recently-updated eviction.
+Malformed reports and text/size violations are handled according to the protocol;
+messages and labels are displayed literally with invisible formatting removed.
+
 ### Key debug overlay
 
 Enable the bottom-right shortcut inspector with:

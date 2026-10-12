@@ -12,6 +12,7 @@ mod mappings;
 pub mod minimap;
 mod mouse;
 pub mod osc7;
+pub mod program_status;
 mod pty_info;
 pub mod scrollbar;
 mod terminal;

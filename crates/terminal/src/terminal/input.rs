@@ -291,6 +291,8 @@ impl Terminal {
     exit_status: Option<ExitStatus>,
     cx: &mut Context<Terminal>,
   ) {
+    self.program_status_tracker.expire_running();
+    self.sync_program_status(cx);
     if let Some(status) = exit_status {
       self.child_exited = Some(status);
     }
