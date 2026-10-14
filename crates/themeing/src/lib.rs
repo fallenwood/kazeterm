@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use config::Palette;
 use gpui::{App, Global, Hsla, SharedString, UpdateGlobal};
+use gpui_kit::component::Colorize as _;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AnsiRgb {
@@ -271,13 +272,34 @@ impl SettingsStore {
   }
 
   pub fn init_gpui_kit_theme(cx: &mut App) {
+    let mode = if cx.global::<SettingsStore>().is_dark {
+      gpui_kit::component::ThemeMode::Dark
+    } else {
+      gpui_kit::component::ThemeMode::Light
+    };
+    if gpui_kit::component::Theme::global(cx).mode != mode {
+      // Load the mode before applying our palette so component defaults cannot overwrite it.
+      gpui_kit::component::Theme::change(mode, None, cx);
+    }
     gpui_kit::component::Theme::update_global(cx, |theme, app| {
       let settings = app.global::<SettingsStore>();
 
       let colors = settings.theme().colors();
+      let button_surface = Hsla {
+        a: 1.0,
+        ..colors.element_background
+      };
 
-      theme.accent = colors.text_accent;
-      theme.accent_foreground = colors.terminal_foreground;
+      theme.accent = if settings.is_dark {
+        colors.text_accent
+      } else {
+        button_surface.darken(0.06)
+      };
+      theme.accent_foreground = if settings.is_dark {
+        colors.terminal_foreground
+      } else {
+        colors.text
+      };
       theme.accordion = colors.element_background;
 
       theme.blue = colors.terminal_ansi_blue;
@@ -293,13 +315,84 @@ impl SettingsStore {
       theme.magenta = colors.terminal_ansi_magenta;
       theme.magenta_light = colors.terminal_ansi_bright_magenta;
 
-      theme.primary = colors.text_accent;
-      theme.primary_hover = colors.element_hover;
-      theme.primary_active = colors.element_active;
-      theme.button_primary = colors.text_accent;
-      theme.button_primary_foreground = colors.terminal_foreground;
-      theme.button_primary_hover = colors.element_hover;
-      theme.button_primary_active = colors.element_active;
+      // Keep dark accents; light mode uses theme-derived ink with contrasting text.
+      let button_fill = if settings.is_dark {
+        colors.text_accent
+      } else {
+        colors.text
+      };
+      let button_hover = if settings.is_dark {
+        button_fill.lighten(0.06)
+      } else {
+        button_fill.darken(0.06)
+      };
+      let button_active = button_fill.darken(0.14);
+      let button_foreground = if settings.is_dark {
+        colors.terminal_foreground
+      } else {
+        Hsla {
+          a: 1.0,
+          ..colors.background
+        }
+      };
+
+      theme.primary = button_fill;
+      theme.primary_foreground = button_foreground;
+      theme.primary_hover = button_hover;
+      theme.primary_active = button_active;
+
+      // Ghost buttons share the default button's pressed background but keep dark text.
+      // Use light surfaces for defaults/dropdowns so both remain readable in light mode.
+      theme.button = if settings.is_dark {
+        button_fill
+      } else {
+        button_surface
+      };
+      theme.button_foreground = if settings.is_dark {
+        button_foreground
+      } else {
+        colors.text
+      };
+      theme.button_hover = if settings.is_dark {
+        button_hover
+      } else {
+        button_surface.darken(0.06)
+      };
+      theme.button_active = if settings.is_dark {
+        button_active
+      } else {
+        button_surface.darken(0.14)
+      };
+
+      theme.button_primary = button_fill;
+      theme.button_primary_foreground = button_foreground;
+      theme.button_primary_hover = button_hover;
+      theme.button_primary_active = button_active;
+
+      theme.button_secondary = button_fill;
+      theme.button_secondary_foreground = button_foreground;
+      theme.button_secondary_hover = button_hover;
+      theme.button_secondary_active = button_active;
+
+      theme.button_danger = button_fill;
+      theme.button_danger_foreground = button_foreground;
+      theme.button_danger_hover = button_hover;
+      theme.button_danger_active = button_active;
+
+      theme.button_warning = button_fill;
+      theme.button_warning_foreground = button_foreground;
+      theme.button_warning_hover = button_hover;
+      theme.button_warning_active = button_active;
+
+      theme.button_success = button_fill;
+      theme.button_success_foreground = button_foreground;
+      theme.button_success_hover = button_hover;
+      theme.button_success_active = button_active;
+
+      theme.button_info = button_fill;
+      theme.button_info_foreground = button_foreground;
+      theme.button_info_hover = button_hover;
+      theme.button_info_active = button_active;
 
       theme.title_bar = colors.title_bar_background;
       theme.title_bar_border = colors.border;
@@ -352,6 +445,7 @@ impl SettingsStore {
       theme.tokens = gpui_kit::component::ThemeTokens::from(theme.colors);
     });
     gpui_kit::component::Theme::sync_base(cx);
+    cx.refresh_windows();
   }
 }
 

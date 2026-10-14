@@ -148,7 +148,8 @@ impl Render for ImportAlacrittyDialog {
                   .justify_end()
                   .child(
                     Button::new("cancel")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .small()
                       .label("Cancel")
                       .on_click(cx.listener(|this, _, _window, cx| {

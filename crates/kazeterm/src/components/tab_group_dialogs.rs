@@ -98,7 +98,8 @@ impl Render for GroupRenameDialog {
                   .justify_end()
                   .child(
                     Button::new("cancel-group-rename")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .label("Cancel")
                       .on_click(cx.listener(|_, _, _, cx| cx.emit(GroupRenameEvent::Cancel))),
                   )
@@ -186,7 +187,8 @@ impl Render for GroupDeleteDialog {
                   .justify_end()
                   .child(
                     Button::new("cancel-group-delete")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .label("Cancel")
                       .on_click(cx.listener(|_, _, _, cx| cx.emit(GroupDeleteEvent::Cancel))),
                   )
@@ -199,6 +201,7 @@ impl Render for GroupDeleteDialog {
                   .child(
                     Button::new("close-group-tabs")
                       .danger()
+                      .outline()
                       .label(format!("Close {} Tabs", self.count))
                       .on_click(cx.listener(|_, _, _, cx| cx.emit(GroupDeleteEvent::CloseTabs))),
                   ),
