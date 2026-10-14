@@ -87,3 +87,28 @@ pub fn embedded_theme_loader(name: &str) -> Option<Vec<u8>> {
 pub fn embedded_theme_lister() -> Vec<String> {
   Assets::list_themes()
 }
+
+#[cfg(test)]
+mod tests {
+  use gpui_kit::component::{IconName, IconNamed as _};
+
+  use super::*;
+
+  #[test]
+  fn program_status_icons_are_available_from_application_assets() {
+    for icon in [
+      IconName::Pause,
+      IconName::Loader,
+      IconName::CircleCheck,
+      IconName::CircleAlert,
+      IconName::CircleX,
+    ] {
+      let path = icon.path();
+      let data = Assets
+        .load(&path)
+        .unwrap_or_else(|error| panic!("missing program status icon {path}: {error}"))
+        .unwrap_or_else(|| panic!("empty program status icon {path}"));
+      assert!(!data.is_empty(), "empty program status icon {path}");
+    }
+  }
+}
