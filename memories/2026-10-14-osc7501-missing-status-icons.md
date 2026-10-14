@@ -1,0 +1,9 @@
+# OSC 7501 missing status icons
+
+- Investigated a user screenshot showing an empty slot between the shell icon and tab title after an OSC 7501 status report.
+- Root cause: `program_status_indicator` and GPUI Kit's `Spinner` reference `pause`, `loader`, `circle-check`, `circle-alert`, and `circle-x`, but Kazeterm's custom `Assets` source did not contain any of those SVG files. The icon layout existed while the SVG could not load.
+- Added the five matching Lucide SVGs to `assets/icons/`, copied from the existing GPUI Kit Assets 0.7.0 dependency, with its `LICENSE-LUCIDE` notice. No dependencies or protocol/UI behavior changed.
+- Added a grouped ordinary regression test in `crates/kazeterm/src/assets.rs` that resolves all five `IconName` paths through the actual application `AssetSource`. Confirmed it fails before the assets are added and passes afterward. The initial test import used the disabled `gpui_kit::assets` re-export; corrected it to `gpui_kit::component::IconNamed` before the failing regression run.
+- Validation passed: `cargo fmt --all`, `cargo fmt --all -- --check`, `git diff --check`, `cargo test --package kazeterm --bin kazeterm program_status --offline` (3 tests), `cargo test --package kazeterm --bin kazeterm --offline` (111 tests), and `cargo build --package kazeterm --offline`.
+- Formatting reported the existing stable-toolchain warning about `trailing_comma`; the test builds reported existing incremental-cache access-denied notes for themeing and terminal-kernel-alacritty, without preventing successful validation.
+- Built executable: `G:/Workspace/kazeterm/target/debug/kazeterm.exe`. The running installed `C:/Programs/kazeterm/kazeterm.exe` was not replaced or restarted. Native visual confirmation requires running the new build; workspace and Unix platform validation were skipped for this local application asset fix.
