@@ -354,6 +354,183 @@ fn page_with_defaults(cx: &mut TestAppContext) -> WindowHandle<SettingsPage> {
 }
 
 #[gpui::test]
+fn settings_button_colors_follow_theme_mode(cx: &mut TestAppContext) {
+  use gpui_kit::component::{Colorize as _, Theme, ThemeMode};
+
+  let luminance = |color: gpui::Hsla| {
+    let rgb = color.to_rgb();
+    let linear = |channel: f32| {
+      if channel <= 0.04045 {
+        channel / 12.92
+      } else {
+        ((channel + 0.055) / 1.055).powf(2.4)
+      }
+    };
+    0.2126 * linear(rgb.r) + 0.7152 * linear(rgb.g) + 0.0722 * linear(rgb.b)
+  };
+  let window = page_with_defaults(cx);
+  for name in ["one", "kanagawa"] {
+    for (mode, system_is_dark, is_dark) in [
+      (::config::ThemeMode::Light, true, false),
+      (::config::ThemeMode::Dark, false, true),
+      (::config::ThemeMode::System, false, false),
+      (::config::ThemeMode::System, true, true),
+      (::config::ThemeMode::Light, true, false),
+    ] {
+      let fill = window
+        .update(cx, |_, _, cx| {
+          let mut config = cx.global::<Config>().clone();
+          config.colors.theme = name.into();
+          config.colors.theme_mode = mode;
+          // Background opacity must not fade button text.
+          config.appearance.background_opacity = 0.8;
+          cx.set_global(crate::config::create_settings_store(
+            &config,
+            system_is_dark,
+          ));
+          cx.set_global(config);
+          themeing::SettingsStore::init_gpui_kit_theme(cx);
+          let palette = cx.global::<themeing::SettingsStore>().theme().colors();
+          let theme = Theme::global(cx);
+          let (fill, foreground, hover) = if is_dark {
+            (
+              palette.text_accent,
+              palette.terminal_foreground,
+              palette.text_accent.lighten(0.06),
+            )
+          } else {
+            (
+              palette.text,
+              gpui::Hsla {
+                a: 1.0,
+                ..palette.background
+              },
+              palette.text.darken(0.06),
+            )
+          };
+          assert_eq!(theme.button_primary, fill, "{name}, dark={is_dark}");
+          assert_eq!(theme.button_primary_foreground, foreground);
+          assert_eq!(theme.primary, fill);
+          assert_eq!(theme.primary_foreground, foreground);
+          assert_eq!(theme.button_primary_hover, hover);
+          assert_eq!(theme.button_primary_active, fill.darken(0.14));
+          assert_eq!(theme.tokens.button_primary.color, theme.button_primary);
+          assert_eq!(theme.tokens.primary.color, theme.primary);
+          assert_eq!(
+            theme.mode,
+            if is_dark {
+              ThemeMode::Dark
+            } else {
+              ThemeMode::Light
+            }
+          );
+          if !is_dark {
+            let surface = gpui::Hsla {
+              a: 1.0,
+              ..palette.element_background
+            };
+            assert_ne!(theme.button_primary, palette.text_accent);
+            assert_eq!(theme.button, surface);
+            assert_eq!(theme.button_foreground, palette.text);
+            assert_eq!(theme.accent, surface.darken(0.06));
+            assert_eq!(theme.accent_foreground, palette.text);
+            assert_eq!(theme.button_active, surface.darken(0.14));
+            for (foreground, background) in [
+              (theme.button_primary_foreground, theme.button_primary),
+              (theme.button_primary_foreground, theme.button_primary_hover),
+              (theme.button_primary_foreground, theme.button_primary_active),
+              (theme.button_foreground, theme.button),
+              (theme.button_foreground, theme.button_hover),
+              (theme.button_foreground, theme.button_active),
+              (theme.accent_foreground, theme.accent),
+            ] {
+              let fg = luminance(foreground);
+              let bg = luminance(background);
+              let contrast = (fg.max(bg) + 0.05) / (fg.min(bg) + 0.05);
+              assert!(
+                contrast >= 4.5,
+                "{name}: text contrast {contrast} is too low"
+              );
+            }
+          }
+          fill
+        })
+        .unwrap();
+      cx.run_until_parked();
+      let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+      visual.update(|window, _| {
+        assert!(
+          window
+            .painted_quads()
+            .iter()
+            .any(|quad| quad.background == fill.into()),
+          "selected category should repaint with the {name} {mode:?} fill",
+        );
+      });
+    }
+  }
+}
+
+#[gpui::test]
+fn settings_navigation_has_no_outline_but_back_and_open_file_do(cx: &mut TestAppContext) {
+  let window = page_with_defaults(cx);
+  cx.simulate_window_resize(window.into(), gpui::size(gpui::px(800.0), gpui::px(1000.0)));
+  cx.run_until_parked();
+  let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+  let navigation = visual.debug_bounds("settings-navigation").unwrap();
+  let back = visual.debug_bounds("settings-back").unwrap();
+  let open_file = visual.debug_bounds("settings-open-toml").unwrap();
+  visual.update(|window, _| {
+    let scale = window.scale_factor();
+    let quads = window.painted_quads();
+    let has_outline = |bounds: gpui::Bounds<gpui::Pixels>| {
+      quads.iter().any(|quad| {
+        quad.bounds.origin.x.as_f32() == f32::from(bounds.left()) * scale
+          && quad.bounds.size.width.as_f32() == f32::from(bounds.size.width) * scale
+          && quad.bounds.top().as_f32() >= f32::from(bounds.top()) * scale
+          && quad.bounds.bottom().as_f32() <= f32::from(bounds.bottom()) * scale
+          && quad.border_color.a > 0.0
+          && quad.border_widths.left.as_f32() > 0.0
+          && quad.border_widths.right.as_f32() > 0.0
+      })
+    };
+    assert!(
+      !has_outline(navigation),
+      "category buttons should be borderless"
+    );
+    assert!(has_outline(back), "Back should retain its outline");
+    assert!(
+      has_outline(open_file),
+      "Open TOML file should retain its outline"
+    );
+  });
+}
+
+#[gpui::test]
+fn settings_back_button_aligns_with_sidebar_navigation(cx: &mut TestAppContext) {
+  let window = page_with_defaults(cx);
+  for (width, height) in [(600.0, 420.0), (1400.0, 800.0)] {
+    cx.simulate_window_resize(window.into(), gpui::size(gpui::px(width), gpui::px(height)));
+    for font_size in [18.0, 22.0] {
+      window
+        .update(cx, |_, _, cx| {
+          cx.global_mut::<Config>().font.ui_size = font_size;
+          themeing::SettingsStore::init_gpui_kit_theme(cx);
+          cx.notify();
+        })
+        .unwrap();
+      cx.run_until_parked();
+      let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+      let back = visual.debug_bounds("settings-back").unwrap();
+      let navigation = visual.debug_bounds("settings-navigation").unwrap();
+      assert_eq!(back.left(), navigation.left(), "left edges should align");
+      assert_eq!(back.right(), navigation.right(), "right edges should align");
+      assert_eq!(back.size.width, navigation.size.width);
+    }
+  }
+}
+
+#[gpui::test]
 fn settings_page_uses_ui_font_and_compact_forms(cx: &mut TestAppContext) {
   use gpui::Styled;
 

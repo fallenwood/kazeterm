@@ -155,7 +155,8 @@ impl Render for TabRenameDialog {
                   .justify_end()
                   .child(
                     Button::new("cancel")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .small()
                       .label("Cancel")
                       .on_click(cx.listener(|this, _, _window, cx| {
@@ -164,7 +165,8 @@ impl Render for TabRenameDialog {
                   )
                   .child(
                     Button::new("reset")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .small()
                       .label("Reset to Auto")
                       .on_click(cx.listener(|this, _, _window, cx| {

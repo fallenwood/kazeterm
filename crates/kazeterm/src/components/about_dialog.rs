@@ -184,6 +184,8 @@ impl Render for AboutDialog {
                   .gap_2()
                   .child(
                     Button::new("check-for-updates")
+                      .primary()
+                      .outline()
                       .disabled(self.checking_for_updates)
                       .label(if self.checking_for_updates {
                         "Checking..."

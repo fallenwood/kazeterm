@@ -273,7 +273,8 @@ impl SettingsPage {
                   "settings-remove-arg-{id}-{arg_ix}"
                 )))
                 .icon(IconName::Close)
-                .ghost()
+                .primary()
+                .outline()
                 .small()
                 .disabled(busy)
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -411,7 +412,8 @@ impl SettingsPage {
                   .child(
                     Button::new(("settings-remove-binding", binding.id))
                       .label("Remove")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .small()
                       .disabled(busy)
                       .on_click(cx.listener(move |this, _, _, cx| {
@@ -458,7 +460,8 @@ impl SettingsPage {
               .child(
                 Button::new(("settings-remove-env", entry.id))
                   .label("Remove")
-                  .ghost()
+                  .primary()
+                  .outline()
                   .small()
                   .disabled(busy)
                   .on_click(cx.listener(move |this, _, _, cx| {
@@ -537,7 +540,8 @@ impl SettingsPage {
                   .child(
                     Button::new(("settings-remove-import", entry.id))
                       .label("Remove")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .small()
                       .disabled(busy)
                       .on_click(cx.listener(move |this, _, _, cx| {

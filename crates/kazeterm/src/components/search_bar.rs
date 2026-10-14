@@ -3,7 +3,7 @@ use gpui::*;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::Escape as InputEscape;
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::{ActiveTheme, IconName, Sizable};
+use gpui_kit::component::{ActiveTheme, IconName, Selectable, Sizable};
 use terminal::TerminalView;
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
@@ -333,6 +333,77 @@ mod tests {
   }
 
   #[gpui::test]
+  fn option_buttons_keep_theme_state_colors_on_hover(cx: &mut TestAppContext) {
+    use gpui::{Background, Modifiers, VisualTestContext, point, px};
+
+    crate::test_support::init_test_app(cx);
+    let window = cx.add_window(|window, cx| SearchBar::new(window, cx));
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+
+    for enabled in [false, true, false] {
+      window
+        .update(cx, |bar, window, cx| {
+          bar.restore_state(
+            &SearchBarState {
+              match_case: enabled,
+              match_whole: enabled,
+              use_regex: enabled,
+              ..Default::default()
+            },
+            window,
+            cx,
+          );
+          cx.notify();
+        })
+        .unwrap();
+      visual.simulate_mouse_move(point(px(0.0), px(0.0)), None, Modifiers::default());
+      let (buttons, hover_background) = visual.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+        let theme = gpui_kit::component::Theme::global(cx);
+        let background: Background = if enabled {
+          theme.tokens.button_primary_active.into()
+        } else {
+          theme.tokens.primary.background.opacity(0.1)
+        };
+        let hover_background = if enabled {
+          background
+        } else {
+          theme.tokens.primary_hover.background.opacity(0.2)
+        };
+        let buttons: Vec<_> = window
+          .painted_quads()
+          .into_iter()
+          .filter(|quad| quad.background == background)
+          .collect();
+        assert_eq!(buttons.len(), if enabled { 3 } else { 6 });
+        (buttons, hover_background)
+      });
+
+      for button in buttons {
+        let position = visual.update(|window, _| {
+          let center = button.bounds.center();
+          let scale = window.scale_factor();
+          point(px(center.x.as_f32() / scale), px(center.y.as_f32() / scale))
+        });
+        visual.simulate_mouse_move(position, None, Modifiers::default());
+        visual.update(|window, cx| {
+          window.refresh();
+          window.draw(cx).clear(cx);
+          assert!(
+            window
+              .painted_quads()
+              .iter()
+              .any(|quad| { quad.bounds == button.bounds && quad.background == hover_background }),
+            "button must retain its theme-defined {} color on hover",
+            if enabled { "selected" } else { "outline" },
+          );
+        });
+      }
+    }
+  }
+
+  #[gpui::test]
   fn save_and_restore_state_round_trip(cx: &mut TestAppContext) {
     crate::test_support::init_test_app(cx);
     let window = cx.add_window(|window, cx| SearchBar::new(window, cx));
@@ -385,7 +456,6 @@ mod tests {
 impl Render for SearchBar {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let theme = cx.theme();
-    let active_bg = theme.accent;
     let (match_count, current_match) = self.read_match_state(cx);
     let pos = self.position;
     let font_size = self.font_size;
@@ -472,7 +542,8 @@ impl Render for SearchBar {
               .items_center()
               .child(
                 Button::new("prev-match")
-                  .ghost()
+                  .primary()
+                  .outline()
                   .xsmall()
                   .label("↑")
                   .on_click(cx.listener(|this, _, _window, cx| {
@@ -481,7 +552,8 @@ impl Render for SearchBar {
               )
               .child(
                 Button::new("next-match")
-                  .ghost()
+                  .primary()
+                  .outline()
                   .xsmall()
                   .label("↓")
                   .on_click(cx.listener(|this, _, _window, cx| {
@@ -496,30 +568,36 @@ impl Render for SearchBar {
               .items_center()
               .child(
                 Button::new("match-case")
-                  .ghost()
+                  .primary()
+                  .when(!self.match_case, |btn| btn.outline())
+                  .selected(self.match_case)
+                  .toggled(self.match_case)
                   .xsmall()
                   .label("Aa")
-                  .when(self.match_case, |btn| btn.bg(active_bg))
                   .on_click(cx.listener(|this, _, _window, cx| {
                     this.toggle_match_case(cx);
                   })),
               )
               .child(
                 Button::new("match-whole")
-                  .ghost()
+                  .primary()
+                  .when(!self.match_whole, |btn| btn.outline())
+                  .selected(self.match_whole)
+                  .toggled(self.match_whole)
                   .xsmall()
                   .label("\"\"")
-                  .when(self.match_whole, |btn| btn.bg(active_bg))
                   .on_click(cx.listener(|this, _, _window, cx| {
                     this.toggle_match_whole(cx);
                   })),
               )
               .child(
                 Button::new("regex")
-                  .ghost()
+                  .primary()
+                  .when(!self.use_regex, |btn| btn.outline())
+                  .selected(self.use_regex)
+                  .toggled(self.use_regex)
                   .xsmall()
                   .label(".*")
-                  .when(self.use_regex, |btn| btn.bg(active_bg))
                   .on_click(cx.listener(|this, _, _window, cx| {
                     this.toggle_use_regex(cx);
                   })),
@@ -527,7 +605,8 @@ impl Render for SearchBar {
           )
           .child(
             Button::new("close-search")
-              .ghost()
+              .primary()
+              .outline()
               .xsmall()
               .label("×")
               .on_click(cx.listener(|this, _, _window, cx| {

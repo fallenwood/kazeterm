@@ -19,6 +19,8 @@ use super::menu_builder::scrollable_menu;
 use collections::{BindingEditor, EnvironmentEditor, ImportEditor, ProfileEditor};
 use fields::{FIELDS, FieldKind, Section};
 
+const SIDEBAR_WIDTH: f32 = 180.0;
+
 fn settings_dropdown(
   id: impl Into<ElementId>,
   label: impl Into<SharedString>,
@@ -517,6 +519,8 @@ impl SettingsPage {
             .child(
               Button::new("settings-keep-editing")
                 .label("Keep editing")
+                .primary()
+                .outline()
                 .small()
                 .disabled(self.busy)
                 .on_click(cx.listener(|this, _, _, cx| {
@@ -528,6 +532,7 @@ impl SettingsPage {
               Button::new("settings-discard")
                 .label("Discard changes")
                 .danger()
+                .outline()
                 .small()
                 .disabled(self.busy)
                 .on_click(cx.listener(move |this, _, window, cx| this.perform(action, window, cx))),
@@ -572,6 +577,8 @@ impl SettingsPage {
           .child(
             Button::new("settings-reload")
               .label("Reload file")
+              .primary()
+              .outline()
               .small()
               .disabled(self.busy)
               .on_click(
@@ -581,6 +588,8 @@ impl SettingsPage {
           .child(
             Button::new("settings-revert")
               .label("Revert changes")
+              .primary()
+              .outline()
               .small()
               .disabled(self.busy || !self.dirty)
               .on_click(
@@ -688,16 +697,28 @@ impl SettingsPage {
       .child(
         h_flex()
           .gap_3()
-          .p_3()
+          .py_3()
           .border_b_1()
           .border_color(cx.theme().border)
           .child(
-            Button::new("settings-back")
-              .icon(IconName::ArrowLeft)
-              .label("Back to terminal")
-              .ghost()
-              .disabled(self.busy)
-              .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))),
+            div()
+              .w(px(SIDEBAR_WIDTH))
+              .flex_shrink_0()
+              .px_2()
+              // Reserve the same right border as the sidebar without drawing a divider here.
+              .border_r_1()
+              .border_color(cx.theme().transparent)
+              .child(
+                Button::new("settings-back")
+                  .debug_selector(|| "settings-back".into())
+                  .icon(IconName::ArrowLeft)
+                  .label("Back")
+                  .primary()
+                  .outline()
+                  .w_full()
+                  .disabled(self.busy)
+                  .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))),
+              ),
           )
           .child(
             div()
@@ -713,7 +734,7 @@ impl SettingsPage {
           .min_w_0()
           .child(
             v_flex()
-              .w(px(180.0))
+              .w(px(SIDEBAR_WIDTH))
               .flex_shrink_0()
               .h_full()
               .p_2()
@@ -723,6 +744,7 @@ impl SettingsPage {
               .child(
                 div()
                   .id("settings-navigation")
+                  .debug_selector(|| "settings-navigation".into())
                   .flex_1()
                   .min_h_0()
                   .overflow_y_scroll()
@@ -744,8 +766,10 @@ impl SettingsPage {
               )
               .child(
                 Button::new("settings-open-toml")
+                  .debug_selector(|| "settings-open-toml".into())
                   .label("Open TOML file")
-                  .ghost()
+                  .primary()
+                  .outline()
                   .small()
                   .on_click(cx.listener(|this, _, _, cx| {
                     if let Some(file) = &this.file {

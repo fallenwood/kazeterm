@@ -116,7 +116,8 @@ impl Render for UpdateConfirmDialog {
                   .justify_end()
                   .child(
                     Button::new("cancel-update")
-                      .ghost()
+                      .primary()
+                      .outline()
                       .label("Cancel")
                       .on_click(cx.listener(|this, _, _window, cx| {
                         this.cancel(cx);

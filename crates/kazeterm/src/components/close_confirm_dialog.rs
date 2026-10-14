@@ -96,7 +96,8 @@ impl Render for CloseConfirmDialog {
         .justify_end()
         .child(
           Button::new("cancel")
-            .ghost()
+            .primary()
+            .outline()
             .label("Cancel")
             .on_click(cx.listener(|this, _, _window, cx| {
               this.cancel(cx);
@@ -105,6 +106,7 @@ impl Render for CloseConfirmDialog {
         .child(
           Button::new("close-without-saving")
             .danger()
+            .outline()
             .label("Don't Save")
             .on_click(cx.listener(|this, _, _window, cx| {
               this.close(cx);
@@ -124,7 +126,8 @@ impl Render for CloseConfirmDialog {
         .justify_end()
         .child(
           Button::new("cancel")
-            .ghost()
+            .primary()
+            .outline()
             .label("Cancel")
             .on_click(cx.listener(|this, _, _window, cx| {
               this.cancel(cx);
@@ -132,7 +135,7 @@ impl Render for CloseConfirmDialog {
         )
         .child(
           Button::new("confirm")
-            .danger()
+            .primary()
             .label(content.primary_button_label())
             .on_click(cx.listener(|this, _, _window, cx| {
               this.primary_action(cx);
