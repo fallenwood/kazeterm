@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "dirs 7.0.0",
  "gpui-fast",
@@ -3904,7 +3904,7 @@ dependencies = [
 
 [[package]]
 name = "kazeterm"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3945,7 +3945,7 @@ dependencies = [
 
 [[package]]
 name = "kazeterm-event-system"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "gpui-fast",
@@ -3958,7 +3958,7 @@ dependencies = [
 
 [[package]]
 name = "kazeterm-ui-tree"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -7094,7 +7094,7 @@ dependencies = [
 
 [[package]]
 name = "terminal"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -7119,7 +7119,7 @@ dependencies = [
 
 [[package]]
 name = "terminal-kernel"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "alacritty_terminal",
  "futures",
@@ -7128,7 +7128,7 @@ dependencies = [
 
 [[package]]
 name = "terminal-kernel-alacritty"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "alacritty_terminal",
  "config",
@@ -7139,14 +7139,14 @@ dependencies = [
 
 [[package]]
 name = "terminal-kernel-unix-bundle"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "terminal-kernel-vte",
 ]
 
 [[package]]
 name = "terminal-kernel-vte"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "config",
  "futures",
@@ -7159,7 +7159,7 @@ dependencies = [
 
 [[package]]
 name = "themeing"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "config",
  "gpui-fast",
