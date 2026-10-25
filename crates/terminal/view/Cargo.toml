@@ -16,6 +16,7 @@ urlencoding.workspace = true
 tracing.workspace = true
 image.workspace = true
 base64.workspace = true
+flate2.workspace = true
 
 config.workspace = true
 terminal-kernel.workspace = true

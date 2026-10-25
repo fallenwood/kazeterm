@@ -47,7 +47,25 @@ impl PlacementManager {
   pub fn remove_at_cursor(&mut self, line: i32, column: i32) {
     self
       .placements
-      .retain(|p| !(p.line == line && p.column == column));
+      .retain(|p| !placement_contains(p, line as i64, column as i64));
+  }
+
+  /// Remove matching placements and return the affected image IDs.
+  pub fn remove_matching(&mut self, mut matches: impl FnMut(&ImagePlacement) -> bool) -> Vec<u32> {
+    let mut affected = Vec::new();
+    self.placements.retain(|p| {
+      if matches(p) {
+        affected.push(p.image_id);
+        false
+      } else {
+        true
+      }
+    });
+    affected
+  }
+
+  pub fn has_image(&self, image_id: u32) -> bool {
+    self.placements.iter().any(|p| p.image_id == image_id)
   }
 
   /// Remove all placements.
@@ -62,6 +80,15 @@ impl PlacementManager {
       .retain(|p| storage.peek(p.image_id).is_some());
   }
 
+  /// Recompute automatic cell coverage after font/cell metrics change.
+  pub fn resize(&mut self, storage: &KittyImageStorage, cell_size: (f32, f32)) {
+    for p in &mut self.placements {
+      if let Some(image) = storage.peek(p.image_id) {
+        p.update_cell_coverage((image.width, image.height), cell_size);
+      }
+    }
+  }
+
   /// Get all placements visible in the current viewport.
   ///
   /// `viewport_top` is the absolute line number of the top visible row.
@@ -71,38 +98,51 @@ impl PlacementManager {
     storage: &KittyImageStorage,
     viewport_top: i32,
     viewport_lines: u32,
+    cell_size: (f32, f32),
   ) -> Vec<VisiblePlacement> {
-    let viewport_bottom = viewport_top + viewport_lines as i32;
-
-    self
+    let viewport_height = gpui::px(viewport_lines as f32 * cell_size.1);
+    let mut visible: Vec<_> = self
       .placements
       .iter()
       .filter_map(|p| {
-        // Check if any part of the image overlaps the viewport.
-        let img_bottom = p.line + p.height_cells as i32;
-        if img_bottom <= viewport_top || p.line >= viewport_bottom {
+        let stored = storage.peek(p.image_id)?;
+        let geometry = p.geometry((stored.width, stored.height), cell_size)?;
+        let origin = gpui::point(
+          gpui::px(p.column as f32 * cell_size.0),
+          gpui::px((i64::from(p.line) - i64::from(viewport_top)) as f32 * cell_size.1),
+        );
+        let bounds = gpui::Bounds::new(geometry.bounds.origin + origin, geometry.bounds.size);
+        if bounds.bottom() <= gpui::px(0.) || bounds.top() >= viewport_height {
           return None;
         }
 
-        let stored = storage.peek(p.image_id)?;
-
         Some(VisiblePlacement {
+          image_id: p.image_id,
+          internal_image_id: stored.internal_id,
           render_image: stored.render_image.clone(),
-          viewport_line: p.line - viewport_top,
-          column: p.column,
-          width_cells: p.width_cells,
-          height_cells: p.height_cells,
+          bounds,
+          image_bounds: gpui::Bounds::new(
+            geometry.image_bounds.origin + origin,
+            geometry.image_bounds.size,
+          ),
           z_index: p.z_index,
-          x_offset: p.x_offset,
-          y_offset: p.y_offset,
         })
       })
-      .collect()
+      .collect();
+    visible.sort_by_key(|p| (p.z_index, p.internal_image_id));
+    visible
   }
 
   pub fn placement_count(&self) -> usize {
     self.placements.len()
   }
+}
+
+pub fn placement_contains(p: &ImagePlacement, line: i64, column: i64) -> bool {
+  line >= i64::from(p.line)
+    && line < i64::from(p.line) + i64::from(p.height_cells)
+    && column >= i64::from(p.column)
+    && column < i64::from(p.column) + i64::from(p.width_cells)
 }
 
 #[cfg(test)]
@@ -115,6 +155,8 @@ mod tests {
       placement_id: 0,
       line,
       column: col,
+      display_columns: 10,
+      display_rows: 5,
       width_cells: 10,
       height_cells: 5,
       crop: (0, 0, 0, 0),
@@ -122,6 +164,106 @@ mod tests {
       x_offset: 0,
       y_offset: 0,
     }
+  }
+
+  #[test]
+  fn visible_graphics_keep_crop_transform_and_sort_by_kitty_internal_image_order() {
+    use super::super::command::{GraphicsLayer, KittyCommand};
+
+    let mut storage = KittyImageStorage::new();
+    let mut mgr = PlacementManager::new();
+    for (id, z_index) in [(9, 0), (2, 0), (7, -1), (3, i32::MIN)] {
+      storage
+        .store(&KittyCommand {
+          image_id: id,
+          source_width: 20,
+          source_height: 40,
+          payload: vec![0; 20 * 40 * 4],
+          ..KittyCommand::default()
+        })
+        .unwrap();
+      let mut p = make_placement(id, -1, 1);
+      p.display_columns = 0;
+      p.display_rows = 0;
+      p.crop = (2, 10, 8, 25);
+      p.z_index = z_index;
+      p.update_cell_coverage((20, 40), (10., 20.));
+      mgr.add(p);
+    }
+    mgr.add(make_placement(2, 2, 0)); // Starts below the viewport.
+    mgr.add(make_placement(404, 0, 0)); // Missing image data.
+    let mut empty = make_placement(2, 0, 0);
+    empty.crop = (20, 0, 0, 0);
+    mgr.add(empty);
+
+    let visible = mgr.visible_placements(&storage, 0, 2, (10., 20.));
+    assert_eq!(
+      visible.iter().map(|p| p.image_id).collect::<Vec<_>>(),
+      [3, 7, 9, 2]
+    );
+    let p = &visible[0];
+    assert_eq!(
+      p.bounds,
+      gpui::Bounds::new(
+        gpui::point(gpui::px(10.), gpui::px(-20.)),
+        gpui::size(gpui::px(8.), gpui::px(25.))
+      )
+    );
+    assert_eq!(
+      p.image_bounds,
+      gpui::Bounds::new(
+        gpui::point(gpui::px(8.), gpui::px(-30.)),
+        gpui::size(gpui::px(20.), gpui::px(40.))
+      )
+    );
+    assert!(std::sync::Arc::ptr_eq(
+      &p.render_image,
+      &storage.peek(3).unwrap().render_image
+    ));
+
+    for (z, expected) in [
+      (i32::MIN, GraphicsLayer::BelowBackground),
+      (i32::MIN / 2 - 1, GraphicsLayer::BelowBackground),
+      (i32::MIN / 2, GraphicsLayer::BelowText),
+      (-1, GraphicsLayer::BelowText),
+      (0, GraphicsLayer::AboveText),
+      (i32::MAX, GraphicsLayer::AboveText),
+    ] {
+      assert_eq!(GraphicsLayer::for_z_index(z), expected);
+    }
+  }
+
+  #[test]
+  fn resizing_graphics_updates_deletion_coverage_without_rescaling_native_pixels() {
+    use super::super::command::KittyCommand;
+
+    let mut storage = KittyImageStorage::new();
+    storage
+      .store(&KittyCommand {
+        image_id: 1,
+        source_width: 20,
+        source_height: 40,
+        payload: vec![0; 20 * 40 * 4],
+        ..KittyCommand::default()
+      })
+      .unwrap();
+    let mut mgr = PlacementManager::new();
+    let mut p = make_placement(1, 0, 0);
+    p.display_columns = 0;
+    p.display_rows = 0;
+    p.update_cell_coverage((20, 40), (10., 20.));
+    mgr.add(p);
+    assert!(!placement_contains(&mgr.placements[0], 3, 3));
+    mgr.resize(&storage, (5., 10.));
+    assert!(placement_contains(&mgr.placements[0], 3, 3));
+    let visible = mgr.visible_placements(&storage, 0, 10, (5., 10.));
+    assert_eq!(
+      visible[0].bounds.size,
+      gpui::size(gpui::px(20.), gpui::px(40.))
+    );
+    mgr.remove_at_cursor(3, 3);
+    assert_eq!(mgr.placement_count(), 0);
+    assert_eq!(storage.image_count(), 1);
   }
 
   #[test]

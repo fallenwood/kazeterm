@@ -10,7 +10,7 @@ use std::sync::mpsc::Receiver;
 use crate::event::WindowSize;
 use crate::grid::Dimensions;
 use crate::program_status::ProgramStatusTracker;
-use crate::protocols::RawGraphicsCommand;
+use crate::protocols::RawGraphicsEvent;
 use crate::term::Osc52;
 use crate::vte::ansi::CursorStyle;
 use crate::{PtyProcessInfo, TerminalBackend};
@@ -84,7 +84,7 @@ pub struct TerminalSession {
   pub pty_tx: Box<dyn PtySender>,
   pub backend: Box<dyn TerminalBackend>,
   pub pty_info: PtyProcessInfo,
-  pub graphics_rx: Option<Receiver<RawGraphicsCommand>>,
+  pub graphics_rx: Option<futures::channel::mpsc::UnboundedReceiver<RawGraphicsEvent>>,
   pub pending_cnl: Option<Arc<AtomicU32>>,
   pub keyboard_protocol_flags: Arc<AtomicU32>,
   pub osc7_rx: Option<Receiver<PathBuf>>,

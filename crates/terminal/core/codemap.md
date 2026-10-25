@@ -17,7 +17,11 @@ layer and concrete backends. No dependency on GPUI, config, or theming.
 - `events.rs`: channel-based `TerminalEventListener` for emulator notifications.
 - `pty_info.rs`: PTY foreground-process identity and cached process metadata.
 - `protocols/`: OSC 7/7501 observers, keyboard/DSR negotiation, Unix graphics and
-  Windows DSR PTY filters, and raw graphics command transport.
+  Windows DSR PTY filters, and raw graphics command transport. Unix APC capture
+  is bounded; cursor feedback comes from validated placements, never a height
+  estimate on the first upload chunk. A typed async `RawGraphicsEvent` FIFO
+  orders commands, clear/reset markers, and deferred filter replies, so DA does
+  not overtake a graphics probe; no GPUI work or UI waits occur in the filter.
 - `lib.rs`: common Alacritty grid/event/selection/PTY/ANSI vocabulary and color
   table constants/default-color predicates.
 

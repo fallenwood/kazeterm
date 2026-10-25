@@ -76,7 +76,18 @@ are never replaced. Emulator and event-loop setup remain backend-specific.
 The core owns OSC 7/7501 observation, keyboard/DSR negotiation, and raw graphics
 interception. The view retains Kitty command decoding, GPU image storage,
 placements, and painting. Existing protocol/PTY exports under `terminal` remain
-available as re-exports for application code and tests.
+available as re-exports for application code and tests. See
+[Kitty graphics status](kitty-graphics.md) for the static transfer pipeline,
+resource limits, reference implementation, and remaining compatibility gaps.
+Graphics commands, clear/reset markers, and deferred Unix-filter replies share
+an async `RawGraphicsEvent` FIFO. Terminal-owned decoder/consumer tasks start
+when the view is constructed (not first painted) and preserve graphics-query/DA
+reply order without blocking the PTY thread or adding GUI dependencies to core.
+Static placement geometry retains crop/native/automatic sizing independently of
+cell coverage, recomputes coverage on cell-size changes, and resolves two image
+bounds for texture sampling without allocating cropped copies. Visible images
+sort by z-index/internal creation identity and paint in three layers separated
+by non-default cell backgrounds and text, clipped to the terminal cell grid.
 
 ## Platform boundaries
 

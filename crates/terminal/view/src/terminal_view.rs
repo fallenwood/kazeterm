@@ -241,6 +241,8 @@ impl TerminalView {
     index: usize,
     cx: &mut Context<Self>,
   ) -> Self {
+    // Start protocol handling even if this view is an unpainted/background tab.
+    terminal.update(cx, |terminal, cx| terminal.start_graphics_worker(cx));
     let terminal_subscriptions = subscribe_for_terminal_events(&terminal, window, cx);
 
     let focus_handle = cx.focus_handle();

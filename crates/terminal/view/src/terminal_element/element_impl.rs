@@ -12,6 +12,7 @@ use themeing::ActiveTheme as _;
 use crate::{
   cursor_layout::CursorLayout,
   highlighted_range_line::HighlightedRange,
+  kitty_graphics::{VisiblePlacement, command::GraphicsLayer},
   mappings::colors::resolve_palette_index,
   minimap::{
     MINIMAP_WIDTH, MinimapState, minimap_column_capacity, minimap_line_capacity, paint_minimap,
@@ -514,17 +515,25 @@ impl Element for TerminalElement {
         |_, window, cx| {
           window.handle_input(&self.focus, terminal_input_handler, cx);
 
+          paint_image_layer(
+            &layout.image_placements,
+            GraphicsLayer::BelowBackground,
+            origin,
+            &layout.dimensions,
+            window,
+          );
+
           for rect in layout.rects.iter() {
             rect.paint(origin, &layout.dimensions, window);
           }
 
-          // Paint Kitty graphics images with negative z-index (behind text).
-          for placement in &layout.image_placements {
-            if placement.z_index >= 0 {
-              continue;
-            }
-            paint_image_placement(placement, origin, &layout.dimensions, window);
-          }
+          paint_image_layer(
+            &layout.image_placements,
+            GraphicsLayer::BelowText,
+            origin,
+            &layout.dimensions,
+            window,
+          );
 
           for (relative_highlighted_range, color) in layout.relative_highlighted_ranges.iter() {
             if let Some((start_y, highlighted_range_lines)) =
@@ -568,13 +577,13 @@ impl Element for TerminalElement {
             cursor.paint(origin, window, cx);
           }
 
-          // Paint Kitty graphics images with non-negative z-index (on top of text).
-          for placement in &layout.image_placements {
-            if placement.z_index < 0 {
-              continue;
-            }
-            paint_image_placement(placement, origin, &layout.dimensions, window);
-          }
+          paint_image_layer(
+            &layout.image_placements,
+            GraphicsLayer::AboveText,
+            origin,
+            &layout.dimensions,
+            window,
+          );
         },
       );
 
@@ -739,38 +748,53 @@ impl Element for TerminalElement {
   }
 }
 
-/// Paint a single Kitty graphics image placement at its grid position.
-fn paint_image_placement(
-  placement: &crate::kitty_graphics::VisiblePlacement,
+/// Placements arrive sorted by (z-index, internal image ID); preserve that order within
+/// each layer. The terminal background is already painted before all three.
+fn paint_image_layer(
+  placements: &[VisiblePlacement],
+  layer: GraphicsLayer,
   origin: Point<Pixels>,
   dimensions: &TerminalBounds,
   window: &mut Window,
 ) {
-  let x = origin.x
-    + placement.column as f32 * dimensions.cell_width()
-    + gpui::px(placement.x_offset as f32);
-  let y = origin.y
-    + placement.viewport_line as f32 * dimensions.line_height()
-    + gpui::px(placement.y_offset as f32);
-  let w = placement.width_cells as f32 * dimensions.cell_width();
-  let h = placement.height_cells as f32 * dimensions.line_height();
+  for placement in placements {
+    if GraphicsLayer::for_z_index(placement.z_index) != layer {
+      continue;
+    }
+    let (bounds, image_bounds) = image_paint_bounds(placement, origin, dimensions);
+    let _ = window.paint_image(
+      bounds,
+      image_bounds,
+      gpui::Corners::default(),
+      placement.render_image.clone(),
+      0,
+      false,
+    );
+  }
+}
 
-  let img_bounds = Bounds::new(
-    Point::new(x, y),
-    gpui::Size {
-      width: w,
-      height: h,
-    },
+/// Clip to the cell grid, not the whole element (which includes gutter/chrome).
+/// Keep the full image transform unchanged so viewport clipping samples the
+/// correct portion of a crop, including placements starting above the viewport.
+fn image_paint_bounds(
+  placement: &VisiblePlacement,
+  origin: Point<Pixels>,
+  dimensions: &TerminalBounds,
+) -> (Bounds<Pixels>, Bounds<Pixels>) {
+  let viewport = Bounds::new(
+    dimensions.bounds.origin,
+    gpui::size(
+      dimensions.cell_width() * dimensions.num_columns() as f32,
+      dimensions.line_height() * dimensions.num_lines() as f32,
+    ),
   );
-
-  let _ = window.paint_image(
-    img_bounds,
-    img_bounds,
-    gpui::Corners::default(),
-    placement.render_image.clone(),
-    0,
-    false,
-  );
+  (
+    Bounds::new(placement.bounds.origin + origin, placement.bounds.size).intersect(&viewport),
+    Bounds::new(
+      placement.image_bounds.origin + origin,
+      placement.image_bounds.size,
+    ),
+  )
 }
 
 /// Blend a color toward grey based on an opacity factor.
@@ -812,5 +836,50 @@ fn desaturate_layout_chrome(layout: &mut LayoutState, factor: f32) {
 
   if let Some(cursor) = &mut layout.cursor {
     cursor.color = desaturate_color(cursor.color, factor);
+  }
+}
+
+#[cfg(test)]
+mod graphics_tests {
+  use super::*;
+
+  #[test]
+  fn graphics_paint_clips_to_grid_without_changing_source_sampling() {
+    use crate::kitty_graphics::{KittyCommand, KittyImageStorage};
+    use gpui::{point, size};
+
+    let mut storage = KittyImageStorage::new();
+    storage
+      .store(&KittyCommand {
+        image_id: 1,
+        source_width: 1,
+        source_height: 1,
+        payload: vec![0; 4],
+        ..KittyCommand::default()
+      })
+      .unwrap();
+    let placement = VisiblePlacement {
+      image_id: 1,
+      internal_image_id: storage.peek(1).unwrap().internal_id,
+      render_image: storage.peek(1).unwrap().render_image.clone(),
+      bounds: Bounds::new(point(px(-10.), px(-15.)), size(px(120.), px(90.))),
+      image_bounds: Bounds::new(point(px(-30.), px(-35.)), size(px(160.), px(130.))),
+      z_index: 0,
+    };
+    let dimensions = TerminalBounds::new(
+      px(20.),
+      px(10.),
+      Bounds::new(point(px(20.), px(30.)), size(px(99.), px(49.))),
+    );
+    // Includes smooth scrolling; the clip stays anchored to the viewport.
+    let (clip, image) = image_paint_bounds(&placement, point(px(20.), px(25.)), &dimensions);
+    assert_eq!(
+      clip,
+      Bounds::new(point(px(20.), px(30.)), size(px(90.), px(40.)))
+    );
+    assert_eq!(
+      image,
+      Bounds::new(point(px(-10.), px(-10.)), size(px(160.), px(130.)))
+    );
   }
 }

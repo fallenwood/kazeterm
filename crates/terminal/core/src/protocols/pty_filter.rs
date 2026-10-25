@@ -16,7 +16,7 @@
 //!                         │            │
 //!                   graphics_tx    returned to caller
 //!                         │            │
-//!                   Terminal::sync()   VTE parser
+//!                 graphics worker      VTE parser
 //! ```
 //!
 //! No pipe or filter thread is needed. The filtering happens inline in
@@ -39,6 +39,10 @@ pub const KITTY_KEYBOARD_REPORT_ALTERNATE_KEYS: u32 = 0b100;
 pub const KITTY_KEYBOARD_REPORT_ALL_KEYS_AS_ESCAPE_CODES: u32 = 0b1000;
 pub const KITTY_KEYBOARD_REPORT_ASSOCIATED_TEXT: u32 = 0b10000;
 pub const WINDOWS_CONPTY_WIN32_INPUT_MODE: u32 = 1 << 30;
+
+/// Maximum retained APC bytes, including the G prefix. Oversized commands are
+/// consumed through ST but remain large enough for the presentation parser to reject.
+pub const MAX_GRAPHICS_APC_BYTES: usize = 8192;
 
 const MAX_KITTY_KEYBOARD_STACK_DEPTH: usize = 16;
 
@@ -194,8 +198,6 @@ mod unix {
   use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
   use std::sync::atomic::{AtomicU32, Ordering};
 
-  /// Extra blank lines inserted below an image before the next prompt.
-  const IMAGE_BOTTOM_PADDING: u32 = 2;
   use std::sync::Arc;
   use std::sync::mpsc;
 
@@ -203,10 +205,11 @@ mod unix {
   use crate::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
   use polling::{Event, PollMode, Poller};
 
-  use super::super::RawGraphicsCommand;
+  use super::super::{RawGraphicsCommand, RawGraphicsEvent};
   use super::KeyboardModeTracker;
   use crate::osc7;
   use crate::program_status::{ProgramStatusParser, ProgramStatusTracker};
+  use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
   /// Callback that tries to get the cursor position from the terminal.
   /// Returns `Some((absolute_line, column))` on success, `None` if lock unavailable.
@@ -244,14 +247,15 @@ mod unix {
     /// Filtered bytes not yet returned to the caller.
     pending: Vec<u8>,
     pending_pos: usize,
-    graphics_tx: mpsc::Sender<RawGraphicsCommand>,
+    graphics_tx: UnboundedSender<RawGraphicsEvent>,
+    /// Once graphics work is queued, route subsequent filter replies through
+    /// the same consumer. No thread waits for the UI while holding emulator locks.
+    defer_replies: bool,
     osc7_tx: mpsc::Sender<std::path::PathBuf>,
     /// Callback to try-lock the terminal and get cursor position.
     cursor_fn: CursorFn,
     /// Cached cursor position from last successful try-lock.
     last_cursor: (i32, i32),
-    /// Whether we've already injected CNL for the current image sequence.
-    cnl_injected: bool,
     /// Shared atomic: terminal sets this to height_cells after place_image().
     /// Filter injects CNL on next read and resets to 0.
     pending_cnl: Arc<AtomicU32>,
@@ -265,99 +269,34 @@ mod unix {
     keyboard_flags: Arc<AtomicU32>,
   }
 
-  /// Parsed APC parameters relevant to cursor advancement.
-  struct ApcParams {
-    display_rows: u32,
-    source_height: u32,
-    format: u32,
-    more_chunks: bool,
-    is_display: bool,
-  }
-
-  /// Parse APC params relevant to cursor advancement and image dimensions.
-  fn parse_apc_params(apc_content: &[u8]) -> ApcParams {
-    let params_end = apc_content
-      .iter()
-      .position(|&b| b == b';')
-      .unwrap_or(apc_content.len());
-    let params = std::str::from_utf8(&apc_content[..params_end]).unwrap_or("");
-    let mut result = ApcParams {
-      display_rows: 0,
-      source_height: 0,
-      format: 32, // default: RGBA
-      more_chunks: false,
-      is_display: true, // default action is TransmitAndDisplay
-    };
-    for pair in params.split(',') {
-      if let Some((key, value)) = pair.split_once('=') {
-        match key.trim() {
-          "r" => result.display_rows = value.parse().unwrap_or(0),
-          "v" => result.source_height = value.parse().unwrap_or(0),
-          "f" => result.format = value.parse().unwrap_or(32),
-          "m" => result.more_chunks = value == "1",
-          "a" => result.is_display = matches!(value, "T" | "p"),
-          _ => {}
-        }
-      }
+  fn route_reply(
+    inner: &mut impl Write,
+    defer_replies: &mut bool,
+    graphics_tx: &UnboundedSender<RawGraphicsEvent>,
+    reply: &[u8],
+  ) {
+    if *defer_replies
+      && graphics_tx
+        .unbounded_send(RawGraphicsEvent::Reply(reply.to_vec()))
+        .is_ok()
+    {
+      return;
     }
-    result
-  }
-
-  /// Try to extract image height from PNG header in base64-encoded payload.
-  /// PNG IHDR: sig(8) + len(4) + "IHDR"(4) + width(4) + height(4) = 24 bytes.
-  /// 24 bytes needs 32 base64 chars.
-  fn try_png_height_from_payload(apc_content: &[u8]) -> u32 {
-    let sep = match apc_content.iter().position(|&b| b == b';') {
-      Some(p) => p,
-      None => return 0,
-    };
-    let b64 = &apc_content[sep + 1..];
-    if b64.len() < 32 {
-      return 0;
-    }
-
-    // Decode first 32 base64 chars → 24 bytes.
-    let mut decoded = [0u8; 24];
-    let mut di = 0;
-    let mut buf = [0u8; 4];
-    let mut bi = 0;
-
-    for &ch in &b64[..32] {
-      let val = match ch {
-        b'A'..=b'Z' => ch - b'A',
-        b'a'..=b'z' => ch - b'a' + 26,
-        b'0'..=b'9' => ch - b'0' + 52,
-        b'+' => 62,
-        b'/' => 63,
-        b'=' => 0,
-        _ => continue,
-      };
-      buf[bi] = val;
-      bi += 1;
-      if bi == 4 {
-        if di < 24 {
-          decoded[di] = (buf[0] << 2) | (buf[1] >> 4);
-        }
-        if di + 1 < 24 {
-          decoded[di + 1] = (buf[1] << 4) | (buf[2] >> 2);
-        }
-        if di + 2 < 24 {
-          decoded[di + 2] = (buf[2] << 6) | buf[3];
-        }
-        di += 3;
-        bi = 0;
-      }
-    }
-
-    // Check PNG signature: 89 50 4E 47 0D 0A 1A 0A
-    if decoded[0..8] != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
-      return 0;
-    }
-    // IHDR height is at bytes 20-23 (big-endian u32).
-    u32::from_be_bytes([decoded[20], decoded[21], decoded[22], decoded[23]])
+    // No graphics consumer (or none needed yet): retain standalone PTY replies.
+    *defer_replies = false;
+    let _ = inner.write_all(reply);
   }
 
   impl FilteringReader {
+    fn reply(&mut self, reply: &[u8]) {
+      route_reply(
+        &mut self.inner,
+        &mut self.defer_replies,
+        &self.graphics_tx,
+        reply,
+      );
+    }
+
     /// Try to capture cursor position. Updates cache on success.
     fn capture_cursor(&mut self) -> (i32, i32) {
       if let Some(pos) = (self.cursor_fn)() {
@@ -381,9 +320,9 @@ mod unix {
     }
 
     /// Handle a completed CSI sequence. Intercepts Device Attributes (DA),
-    /// XTVERSION, Kitty keyboard protocol negotiation, and private DSR
-    /// queries, writing responses directly to the PTY. Returns true if the
-    /// sequence was consumed.
+    /// XTVERSION, Kitty keyboard protocol negotiation, and private DSR queries.
+    /// After graphics work starts, replies join its FIFO instead of overtaking
+    /// asynchronous query results. Returns true if the sequence was consumed.
     fn handle_csi_final(&mut self, final_byte: u8) -> bool {
       if matches!(final_byte, b'h' | b'l') {
         let consume_conpty_win32_mode = self.csi_buf == b"?9001";
@@ -399,6 +338,10 @@ mod unix {
         b'q' => self.handle_xtversion(),
         b'u' => self.handle_keyboard_protocol(),
         b'n' => self.handle_private_dsr(),
+        b'J' if self.csi_buf == b"2" || self.csi_buf == b"3" => {
+          let _ = self.graphics_tx.unbounded_send(RawGraphicsEvent::ClearAll);
+          false // The emulator must still erase the text.
+        }
         _ => false,
       }
     }
@@ -411,9 +354,8 @@ mod unix {
           true
         }
         super::KeyboardProtocolAction::Reply(resp) => {
-          use std::io::Write;
           self.sync_keyboard_flags();
-          let _ = self.inner.write(resp.as_bytes());
+          self.reply(resp.as_bytes());
           true
         }
       }
@@ -448,8 +390,7 @@ mod unix {
       };
 
       if let Some(resp) = response {
-        use std::io::Write;
-        let _ = self.inner.write(resp.as_bytes());
+        self.reply(resp.as_bytes());
         true
       } else {
         false
@@ -466,8 +407,7 @@ mod unix {
         return false;
       }
       let resp = format!("\x1bP>|kazeterm({})\x1b\\", env!("CARGO_PKG_VERSION"));
-      use std::io::Write;
-      let _ = self.inner.write(resp.as_bytes());
+      self.reply(resp.as_bytes());
       true
     }
 
@@ -513,8 +453,7 @@ mod unix {
       };
 
       if let Some(resp) = response {
-        use std::io::Write;
-        let _ = self.inner.write(resp.as_bytes());
+        self.reply(resp.as_bytes());
         true
       } else {
         false
@@ -532,13 +471,9 @@ mod unix {
       self.csi_buf.clear();
     }
 
-    /// Inject CNL escape into the pending buffer to advance cursor past image.
-    fn inject_cnl(&mut self, rows: u32) {
-      if rows > 0 {
-        // Add 2 lines of padding below the image before the next prompt.
-        let cnl = format!("\x1b[{}E", rows + IMAGE_BOTTOM_PADDING);
-        self.pending.extend_from_slice(cnl.as_bytes());
-        self.cnl_injected = true;
+    fn push_apc_byte(&mut self, byte: u8) {
+      if self.apc_buf.len() < super::MAX_GRAPHICS_APC_BYTES {
+        self.apc_buf.push(byte);
       }
     }
   }
@@ -547,8 +482,8 @@ mod unix {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
       // Check for terminal-computed CNL feedback (from place_image).
       let feedback_rows = self.pending_cnl.swap(0, Ordering::AcqRel);
-      if feedback_rows > 0 && !self.cnl_injected {
-        let cnl = format!("\x1b[{}E", feedback_rows + IMAGE_BOTTOM_PADDING);
+      if feedback_rows > 0 {
+        let cnl = format!("\x1b[{}E", feedback_rows);
         // Prepend to any existing pending data.
         let mut new_pending = Vec::with_capacity(cnl.len() + self.pending.len());
         new_pending.extend_from_slice(cnl.as_bytes());
@@ -557,7 +492,6 @@ mod unix {
         }
         self.pending = new_pending;
         self.pending_pos = 0;
-        self.cnl_injected = true;
       }
 
       // Drain any leftover filtered bytes from a previous read.
@@ -580,15 +514,23 @@ mod unix {
         return Ok(0);
       }
 
-      self.program_status_parser.advance(&raw[..n], |reply| {
-        let _ = self.inner.write_all(reply);
-      });
-
       // Run the APC state machine over the raw bytes.
       self.pending.clear();
       self.pending_pos = 0;
 
       for &byte in &raw[..n] {
+        // Observe in stream order, not in a pre-pass that could answer an OSC
+        // query later in this read before an earlier graphics command.
+        self
+          .program_status_parser
+          .advance(std::slice::from_ref(&byte), |reply| {
+            route_reply(
+              &mut self.inner,
+              &mut self.defer_replies,
+              &self.graphics_tx,
+              reply,
+            );
+          });
         match self.state {
           FilterState::Normal => {
             if byte == 0x1B {
@@ -605,6 +547,9 @@ mod unix {
               self.state = FilterState::CsiCollect;
               self.csi_buf.clear();
             } else {
+              if byte == b'c' {
+                let _ = self.graphics_tx.unbounded_send(RawGraphicsEvent::ClearAll);
+              }
               // Not APC or CSI — pass through the ESC and this byte.
               self.pending.push(0x1B);
               self.pending.push(byte);
@@ -648,7 +593,7 @@ mod unix {
             if byte == 0x1B {
               self.state = FilterState::ApcEscape;
             } else {
-              self.apc_buf.push(byte);
+              self.push_apc_byte(byte);
             }
           }
           FilterState::ApcEscape => {
@@ -657,65 +602,31 @@ mod unix {
               if self.apc_buf.first() == Some(&b'G') {
                 let (cursor_line, cursor_column) = self.capture_cursor();
                 let cmd_data = self.apc_buf[1..].to_vec();
-                let params = parse_apc_params(&cmd_data);
+                // Never move the cursor based on unvalidated metadata or a
+                // partial upload. Only successful placements request feedback.
 
-                // Inject cursor advancement on display actions.
-                // For multi-chunk: inject on first chunk (which has r=/v= params),
-                // skip subsequent chunks via cnl_injected flag.
-                if params.is_display && !self.cnl_injected {
-                  let effective_rows = if params.display_rows > 0 {
-                    params.display_rows
-                  } else if params.source_height > 0 {
-                    // Estimate ~20 pixels per cell row.
-                    (params.source_height + 19) / 20
-                  } else if params.format == 100 && !params.more_chunks {
-                    // PNG: try reading height from image header.
-                    let h = try_png_height_from_payload(&cmd_data);
-                    if h > 0 { (h + 19) / 20 } else { 0 }
-                  } else {
-                    0
-                  };
-                  self.inject_cnl(effective_rows);
+                if self
+                  .graphics_tx
+                  .unbounded_send(RawGraphicsEvent::Command(RawGraphicsCommand {
+                    data: cmd_data,
+                    cursor_line,
+                    cursor_column,
+                  }))
+                  .is_ok()
+                {
+                  self.defer_replies = true;
                 }
-
-                // Reset cnl_injected flag after last chunk so next image can inject.
-                if !params.more_chunks {
-                  self.cnl_injected = false;
-                }
-
-                let _ = self.graphics_tx.send(RawGraphicsCommand {
-                  data: cmd_data,
-                  cursor_line,
-                  cursor_column,
-                  clear_all: false,
-                });
               }
               self.apc_buf.clear();
               self.state = FilterState::Normal;
             } else {
               // ESC inside APC not followed by '\' — keep collecting.
-              self.apc_buf.push(0x1B);
-              self.apc_buf.push(byte);
+              self.push_apc_byte(0x1B);
+              self.push_apc_byte(byte);
               self.state = FilterState::ApcCollect;
             }
           }
         }
-      }
-
-      // Detect terminal clear/reset sequences in pass-through bytes.
-      // ESC[2J (erase display), ESC[3J (erase display+scrollback), ESC c (RIS).
-      let has_clear = self
-        .pending
-        .windows(4)
-        .any(|w| w == b"\x1b[2J" || w == b"\x1b[3J")
-        || self.pending.windows(2).any(|w| w == b"\x1bc");
-      if has_clear {
-        let _ = self.graphics_tx.send(RawGraphicsCommand {
-          data: Vec::new(),
-          cursor_line: 0,
-          cursor_column: 0,
-          clear_all: true,
-        });
       }
 
       if self.pending.is_empty() {
@@ -761,7 +672,7 @@ mod unix {
     /// Returns `(filter, pending_cnl, keyboard_flags, graphics_rx, osc7_rx)`:
     /// - `pending_cnl`: shared atomic for terminal to request cursor advancement
     /// - `keyboard_flags`: shared atomic exposing active kitty keyboard flags
-    /// - `graphics_rx`: receives Kitty graphics commands with cursor positions
+    /// - `graphics_rx`: receives ordered graphics commands, clears, and deferred replies
     /// - `osc7_rx`: receives CWD paths extracted from OSC 7 sequences
     pub fn new(
       pty: Pty,
@@ -772,7 +683,7 @@ mod unix {
       Self,
       Arc<AtomicU32>,
       Arc<AtomicU32>,
-      mpsc::Receiver<RawGraphicsCommand>,
+      UnboundedReceiver<RawGraphicsEvent>,
       mpsc::Receiver<std::path::PathBuf>,
     )> {
       // Dup the master fd so the FilteringReader has its own fd for reading.
@@ -784,7 +695,7 @@ mod unix {
       }
       let read_file = unsafe { File::from_raw_fd(read_fd) };
 
-      let (graphics_tx, graphics_rx) = mpsc::channel();
+      let (graphics_tx, graphics_rx) = unbounded();
       let (osc7_tx, osc7_rx) = mpsc::channel();
       let pending_cnl = Arc::new(AtomicU32::new(0));
       let keyboard_flags = Arc::new(AtomicU32::new(0));
@@ -797,10 +708,10 @@ mod unix {
         pending: Vec::with_capacity(8192),
         pending_pos: 0,
         graphics_tx,
+        defer_replies: false,
         osc7_tx,
         cursor_fn,
         last_cursor: (0, 0),
-        cnl_injected: false,
         pending_cnl: Arc::clone(&pending_cnl),
         csi_buf: Vec::with_capacity(64),
         dsr_cursor_fn,
@@ -883,6 +794,187 @@ mod unix {
     #[inline]
     fn on_resize(&mut self, window_size: WindowSize) {
       self.pty.on_resize(window_size);
+    }
+  }
+
+  #[cfg(test)]
+  mod tests {
+    use super::*;
+    use std::os::{fd::OwnedFd, unix::net::UnixStream};
+
+    fn reader() -> (
+      FilteringReader,
+      UnixStream,
+      UnboundedReceiver<RawGraphicsEvent>,
+    ) {
+      let (input, output) = UnixStream::pair().unwrap();
+      input.set_nonblocking(true).unwrap();
+      let (graphics_tx, graphics_rx) = unbounded();
+      let (osc7_tx, _) = mpsc::channel();
+      let reader = FilteringReader {
+        inner: File::from(OwnedFd::from(input)),
+        program_status_parser: ProgramStatusParser::new(ProgramStatusTracker::default()),
+        state: FilterState::Normal,
+        apc_buf: Vec::new(),
+        pending: Vec::new(),
+        pending_pos: 0,
+        graphics_tx,
+        defer_replies: false,
+        osc7_tx,
+        cursor_fn: Box::new(|| Some((5, 6))),
+        last_cursor: (0, 0),
+        pending_cnl: Arc::new(AtomicU32::new(0)),
+        csi_buf: Vec::new(),
+        dsr_cursor_fn: Box::new(|| Some((1, 1))),
+        last_dsr_cursor: (1, 1),
+        keyboard_mode: KeyboardModeTracker::default(),
+        keyboard_flags: Arc::new(AtomicU32::new(0)),
+      };
+      (reader, output, graphics_rx)
+    }
+
+    #[test]
+    fn graphics_capture_does_not_advance_unvalidated_or_partial_images() {
+      let (mut reader, mut input, mut graphics) = reader();
+      let mut buffer = [0; 256];
+      for command in [
+        b"\x1b_Ga=T,s=1,v=1,r=2,m=1;AAAA\x1b\\".as_slice(),
+        b"\x1b_Gm=0;AAAA\x1b\\",
+        b"\x1b_Ga=T,s=1,v=1,r=2,C=1;AAAA\x1b\\",
+      ] {
+        input.write_all(command).unwrap();
+        assert_eq!(
+          reader.read(&mut buffer).unwrap_err().kind(),
+          io::ErrorKind::WouldBlock
+        );
+        let RawGraphicsEvent::Command(command) = graphics.try_recv().unwrap() else {
+          panic!("expected graphics command")
+        };
+        assert_eq!((command.cursor_line, command.cursor_column), (5, 6));
+        assert!(reader.pending.is_empty());
+      }
+      reader.pending_cnl.store(3, Ordering::Release);
+      let count = reader.read(&mut buffer).unwrap();
+      assert_eq!(&buffer[..count], b"\x1b[3E"); // no invented padding
+      assert_eq!(
+        reader.read(&mut buffer).unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+      );
+    }
+
+    #[test]
+    fn graphics_probe_does_not_send_da_before_graphics_processing() {
+      let (mut reader, mut input, mut graphics) = reader();
+      input.set_nonblocking(true).unwrap();
+      input
+        .write_all(b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c")
+        .unwrap();
+      let mut buffer = [0; 256];
+      assert_eq!(
+        reader.read(&mut buffer).unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+      );
+      assert_eq!(
+        input.read(&mut buffer).unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+      );
+      assert!(
+        matches!(graphics.try_recv().unwrap(), RawGraphicsEvent::Command(command) if command.data.starts_with(b"i=31"))
+      );
+      assert!(
+        matches!(graphics.try_recv().unwrap(), RawGraphicsEvent::Reply(reply) if reply == b"\x1b[?62;22c")
+      );
+    }
+
+    #[test]
+    fn replies_and_clears_keep_stream_order_across_reads() {
+      let (mut reader, mut input, mut graphics) = reader();
+      input.set_nonblocking(true).unwrap();
+      let mut buffer = [0; 256];
+      // Before any graphics command, standalone DA replies remain synchronous.
+      input.write_all(b"\x1b[c").unwrap();
+      assert!(reader.read(&mut buffer).is_err());
+      let count = input.read(&mut buffer).unwrap();
+      assert_eq!(&buffer[..count], b"\x1b[?62;22c");
+      input
+        .write_all(b"\x1b_Ga=q,i=31,f=24,s=1,v=1;AAAA\x1b\\\x1b[2")
+        .unwrap();
+      assert!(reader.read(&mut buffer).is_err());
+      input
+        .write_all(b"J\x1b_Ga=T,i=2;AAAA\x1b\\\x1b[?u\x1b]7501;?\x07\x1bc\x1b[c")
+        .unwrap();
+      let count = reader.read(&mut buffer).unwrap();
+      assert!(buffer[..count].starts_with(b"\x1b[2J"));
+      assert!(matches!(
+        graphics.try_recv().unwrap(),
+        RawGraphicsEvent::Command(_)
+      ));
+      assert!(matches!(
+        graphics.try_recv().unwrap(),
+        RawGraphicsEvent::ClearAll
+      ));
+      assert!(matches!(
+        graphics.try_recv().unwrap(),
+        RawGraphicsEvent::Command(_)
+      ));
+      assert!(
+        matches!(graphics.try_recv().unwrap(), RawGraphicsEvent::Reply(reply) if reply == b"\x1b[?0u")
+      );
+      assert!(
+        matches!(graphics.try_recv().unwrap(), RawGraphicsEvent::Reply(reply) if reply.starts_with(b"\x1b]7501;?:states="))
+      );
+      assert!(matches!(
+        graphics.try_recv().unwrap(),
+        RawGraphicsEvent::ClearAll
+      ));
+      assert!(
+        matches!(graphics.try_recv().unwrap(), RawGraphicsEvent::Reply(reply) if reply == b"\x1b[?62;22c")
+      );
+      assert_eq!(
+        input.read(&mut buffer).unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+      );
+    }
+
+    #[test]
+    fn closed_graphics_consumer_falls_back_without_waiting() {
+      let (mut reader, mut input, graphics) = reader();
+      input.set_nonblocking(true).unwrap();
+      let mut buffer = [0; 256];
+      input
+        .write_all(b"\x1b_Ga=q,i=31,f=24,s=1,v=1;AAAA\x1b\\")
+        .unwrap();
+      assert!(reader.read(&mut buffer).is_err());
+      assert!(reader.defer_replies);
+      drop(graphics);
+      input.write_all(b"\x1b[c").unwrap();
+      assert!(reader.read(&mut buffer).is_err());
+      let count = input.read(&mut buffer).unwrap();
+      assert_eq!(&buffer[..count], b"\x1b[?62;22c");
+      assert!(!reader.defer_replies);
+    }
+
+    #[test]
+    fn oversized_apc_is_bounded_and_consumed_until_split_terminator() {
+      let (mut reader, mut input, mut graphics) = reader();
+      let mut buffer = [0; 256];
+      input.write_all(b"\x1b_Ga=T,i=1;").unwrap();
+      assert!(reader.read(&mut buffer).is_err());
+      for _ in 0..8 {
+        input.write_all(&[b'A'; 2048]).unwrap();
+        assert!(reader.read(&mut buffer).is_err());
+        assert!(reader.apc_buf.len() <= super::super::MAX_GRAPHICS_APC_BYTES);
+      }
+      input.write_all(b"\x1b").unwrap();
+      assert!(reader.read(&mut buffer).is_err());
+      input.write_all(b"\\text").unwrap();
+      let count = reader.read(&mut buffer).unwrap();
+      assert_eq!(&buffer[..count], b"text");
+      let RawGraphicsEvent::Command(command) = graphics.try_recv().unwrap() else {
+        panic!("expected graphics command")
+      };
+      assert_eq!(command.data.len(), super::super::MAX_GRAPHICS_APC_BYTES - 1);
+      assert_eq!(reader.state, FilterState::Normal);
     }
   }
 }

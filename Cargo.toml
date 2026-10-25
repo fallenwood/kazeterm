@@ -55,6 +55,7 @@ notify-rust = "4.18.2"
 which = "8.0.6"
 semver = "1.0.28"
 base64 = "0.23.1"
+flate2 = "1.1.10"
 clap = { version = "4.6.7", features = ["derive"] }
 insta = "1.49.0"
 mimalloc = { version = "0.1.52", default-features = false }

@@ -209,6 +209,87 @@ pub fn new_terminal_window_with_shell(
 mod tests {
   use super::*;
 
+  #[gpui::test]
+  fn unpainted_terminal_processes_graphics_probes_and_preserves_upload_on_view_recreation(
+    cx: &mut gpui::TestAppContext,
+  ) {
+    use futures::channel::mpsc;
+    use std::sync::{Arc, atomic::AtomicU32};
+    use terminal::test_support::fake_terminal_session;
+    use terminal_kernel::protocols::{RawGraphicsCommand, RawGraphicsEvent};
+
+    // Own a TerminalView without ever rendering it as a child. This exercises
+    // background/unpainted setup, not the old lazy start in Terminal::sync().
+    struct UnpaintedTerminal {
+      view: Entity<TerminalView>,
+    }
+    impl gpui::Render for UnpaintedTerminal {
+      fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut Context<Self>,
+      ) -> impl gpui::IntoElement {
+        gpui::div()
+      }
+    }
+    crate::test_support::init_test_app(cx);
+    let (original, _, writes, _) = fake_terminal_session(80, 24);
+    let (tx, rx) = mpsc::unbounded();
+    let model = cx.new(|_| {
+      terminal::Terminal::new(
+        original.pty_tx,
+        original.term,
+        original.pty_info,
+        Some(rx),
+        None,
+        Arc::new(AtomicU32::new(0)),
+        None,
+        None,
+        original.program_status_tracker,
+      )
+    });
+    let window = cx.add_window(|window, cx| UnpaintedTerminal {
+      view: cx.new(|cx| TerminalView::new(model.clone(), window, 0, cx)),
+    });
+    let send = |data: &[u8]| {
+      tx.unbounded_send(RawGraphicsEvent::Command(RawGraphicsCommand {
+        data: data.to_vec(),
+        cursor_line: 0,
+        cursor_column: 0,
+      }))
+      .unwrap()
+    };
+    send(b"a=q,i=31,f=24,s=1,v=1;AAAA");
+    tx.unbounded_send(RawGraphicsEvent::Reply(b"\x1b[?62;22c".to_vec()))
+      .unwrap();
+    cx.run_until_parked();
+    assert_eq!(
+      *writes.lock().unwrap(),
+      [b"\x1b_Gi=31;OK\x1b\\".to_vec(), b"\x1b[?62;22c".to_vec()]
+    );
+    assert_eq!(
+      model.read_with(cx, |terminal, _| terminal.image_storage.image_count()),
+      0
+    );
+
+    send(b"a=t,i=7,p=3,s=1,v=1,m=1;AAAA");
+    window
+      .update(cx, |host, window, cx| {
+        host.view = cx.new(|cx| TerminalView::new(model.clone(), window, 1, cx));
+      })
+      .unwrap();
+    send(b"m=0;AA==");
+    cx.run_until_parked();
+    assert_eq!(
+      writes.lock().unwrap().last().unwrap(),
+      b"\x1b_Gi=7,p=3;OK\x1b\\"
+    );
+    assert_eq!(
+      model.read_with(cx, |terminal, _| terminal.image_storage.image_count()),
+      1
+    );
+  }
+
   #[test]
   fn session_options_preserve_backend_settings_and_fallbacks() {
     let mut config = config::Config::default();

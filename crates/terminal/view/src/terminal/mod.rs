@@ -11,9 +11,8 @@ use crate::{
   TerminalBounds,
   indexed_cell::IndexedCell,
   kitty_graphics::{
-    GRAPHICS_BATCH_SIZE, ImagePlacement, KittyAction, KittyCommand, KittyDelete, KittyImageStorage,
-    PlacementManager, PreparedGraphicsEvent, PreparedImage, RawGraphicsCommand,
-    spawn_graphics_worker,
+    GRAPHICS_BATCH_SIZE, KittyImageStorage, PlacementManager, PreparedGraphicsEvent,
+    RawGraphicsEvent, graphics_worker,
   },
   minimap::{MinimapCell, sampled_line_indices},
   mouse::grid_point_and_side,
@@ -22,7 +21,7 @@ use crate::{
   terminal_content::TerminalContent,
   terminal_hyperlinks::RegexSearches,
 };
-use gpui::{Context, EventEmitter, Pixels, Window, px};
+use gpui::{AppContext as _, Context, EventEmitter, Pixels, Window, px};
 use terminal_kernel::{
   SelectionDisplay, TerminalBackend, TerminalSession,
   event::Event as AlacTermEvent,
@@ -32,6 +31,7 @@ use terminal_kernel::{
 };
 use themeing::ActiveTheme;
 
+mod graphics;
 mod input;
 mod mouse_scroll;
 mod search;
@@ -116,7 +116,9 @@ pub struct Terminal {
   /// Used to determine if a command ran long enough to warrant a notification.
   pub last_input_time: std::time::Instant,
   /// Kitty graphics protocol state.
-  graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
+  graphics_rx: Option<futures::channel::mpsc::UnboundedReceiver<RawGraphicsEvent>>,
+  graphics_task: Option<gpui::Task<()>>,
+  graphics_decoder_task: Option<gpui::Task<()>>,
   pub image_storage: KittyImageStorage,
   pub placement_manager: PlacementManager,
   /// Shared atomic for signaling cursor advancement to the PTY filter.
@@ -164,7 +166,7 @@ impl Terminal {
     pty_tx: Box<dyn PtySender>,
     term: Box<dyn TerminalBackend>,
     pty_info: PtyProcessInfo,
-    graphics_rx: Option<std::sync::mpsc::Receiver<RawGraphicsCommand>>,
+    graphics_rx: Option<futures::channel::mpsc::UnboundedReceiver<RawGraphicsEvent>>,
     pending_cnl: Option<Arc<std::sync::atomic::AtomicU32>>,
     keyboard_protocol_flags: Arc<AtomicU32>,
     osc7_rx: Option<std::sync::mpsc::Receiver<std::path::PathBuf>>,
@@ -200,6 +202,8 @@ impl Terminal {
       touch_state: None,
       last_input_time: std::time::Instant::now(),
       graphics_rx,
+      graphics_task: None,
+      graphics_decoder_task: None,
       image_storage: KittyImageStorage::new(),
       placement_manager: PlacementManager::new(),
       pending_cnl,
@@ -404,19 +408,28 @@ impl Terminal {
     let viewport_top = history_size - display_offset;
     let viewport_lines = self.last_content.terminal_bounds.screen_lines() as u32;
 
-    self.last_content.image_placements =
-      self
-        .placement_manager
-        .visible_placements(&self.image_storage, viewport_top, viewport_lines);
+    let bounds = &self.last_content.terminal_bounds;
+    self.last_content.image_placements = self.placement_manager.visible_placements(
+      &self.image_storage,
+      viewport_top,
+      viewport_lines,
+      (
+        f32::from(bounds.cell_width()),
+        f32::from(bounds.line_height()),
+      ),
+    );
   }
 
-  fn start_graphics_worker(&mut self, cx: &mut Context<Self>) {
+  /// Start once when the terminal is attached to its view, not on first paint.
+  /// The task belongs to this model and survives window rebinding/tab transfers.
+  pub(crate) fn start_graphics_worker(&mut self, cx: &mut Context<Self>) {
     let Some(raw_rx) = self.graphics_rx.take() else {
       return;
     };
-    let prepared_rx = spawn_graphics_worker(raw_rx);
+    let (prepared_rx, decoder) = graphics_worker(raw_rx);
+    self.graphics_decoder_task = Some(cx.background_spawn(decoder));
 
-    cx.spawn(async move |this, cx| {
+    self.graphics_task = Some(cx.spawn(async move |this, cx| {
       while let Ok(first_event) = prepared_rx.recv().await {
         let mut events = Vec::with_capacity(GRAPHICS_BATCH_SIZE);
         events.push(first_event);
@@ -429,11 +442,14 @@ impl Terminal {
 
         if this
           .update(cx, |terminal, cx| {
+            let mut changed = false;
             for event in events {
-              terminal.apply_graphics_event(event);
+              changed |= terminal.apply_graphics_event(event);
             }
-            terminal.mark_content_changed();
-            cx.notify();
+            if changed {
+              terminal.mark_content_changed();
+              cx.notify();
+            }
           })
           .is_err()
         {
@@ -441,22 +457,33 @@ impl Terminal {
         }
         smol::future::yield_now().await;
       }
-    })
-    .detach();
+    }));
   }
 
-  fn apply_graphics_event(&mut self, event: PreparedGraphicsEvent) {
+  fn apply_graphics_event(&mut self, event: PreparedGraphicsEvent) -> bool {
     match event {
       PreparedGraphicsEvent::ClearAll => {
         self.placement_manager.clear();
         self.image_storage.clear();
+        true
+      }
+      PreparedGraphicsEvent::Reply(reply) => {
+        self.write_to_pty(reply);
+        false
+      }
+      PreparedGraphicsEvent::Response(response) => {
+        self.write_to_pty(response.encode());
+        false
       }
       PreparedGraphicsEvent::Command {
         command,
         image,
         cursor_line,
         cursor_column,
-      } => self.execute_graphics_command(&command, image, cursor_line, cursor_column),
+      } => {
+        self.execute_graphics_command(&command, image, cursor_line, cursor_column);
+        true
+      }
     }
   }
 
@@ -519,138 +546,6 @@ impl Terminal {
       }
       self.osc7_cwd = Some(cwd);
       cx.emit(Event::TitleChanged);
-    }
-  }
-
-  fn execute_graphics_command(
-    &mut self,
-    cmd: &KittyCommand,
-    prepared_image: Option<PreparedImage>,
-    cursor_line: i32,
-    cursor_column: i32,
-  ) {
-    match cmd.action {
-      KittyAction::Transmit => {
-        if let Some(image) = prepared_image
-          && let Err(error) = self.image_storage.store_prepared(cmd.image_id, image)
-        {
-          tracing::warn!("Failed to store Kitty image: {error}");
-        }
-      }
-      KittyAction::TransmitAndDisplay => {
-        if let Some(image) = prepared_image {
-          match self.image_storage.store_prepared(cmd.image_id, image) {
-            Ok(id) => self.place_image(id, cmd, cursor_line, cursor_column),
-            Err(error) => tracing::warn!("Failed to store Kitty image: {error}"),
-          }
-        }
-      }
-      KittyAction::Display => {
-        let image_id = cmd.image_id;
-        if self.image_storage.get(image_id).is_some() {
-          self.place_image(image_id, cmd, cursor_line, cursor_column);
-        }
-      }
-      KittyAction::Delete => {
-        self.handle_delete(cmd);
-      }
-      KittyAction::Query => {
-        // We support the protocol but can't send responses back
-        // without them leaking to the shell's stdin.
-      }
-    }
-  }
-
-  fn place_image(
-    &mut self,
-    image_id: u32,
-    cmd: &KittyCommand,
-    cursor_line: i32,
-    cursor_column: i32,
-  ) {
-    // Use cursor position captured at APC intercept time (not current cursor).
-    let line = cursor_line;
-    let column = cursor_column;
-
-    // Determine display size in cells.
-    let (width_cells, height_cells) = if cmd.display_columns > 0 && cmd.display_rows > 0 {
-      (cmd.display_columns, cmd.display_rows)
-    } else if let Some(img) = self.image_storage.peek(image_id) {
-      // Scale to fit terminal width, preserving aspect ratio.
-      let bounds = &self.last_content.terminal_bounds;
-      let cw = f32::from(bounds.cell_width().max(gpui::px(1.0))) as u32;
-      let lh = f32::from(bounds.line_height().max(gpui::px(1.0))) as u32;
-      let terminal_cols = bounds.num_columns() as u32;
-      let terminal_width_px = terminal_cols.saturating_mul(cw).max(1);
-
-      if img.width > terminal_width_px {
-        // Image wider than terminal — scale down to fit.
-        let h_px =
-          ((img.height as u64 * terminal_width_px as u64) / img.width.max(1) as u64) as u32;
-        let h_cells = (h_px + lh - 1) / lh;
-        (terminal_cols.max(1), h_cells.max(1))
-      } else {
-        // Image fits — use native pixel size.
-        let w = (img.width + cw - 1) / cw;
-        let h = (img.height + lh - 1) / lh;
-        (w.max(1), h.max(1))
-      }
-    } else {
-      (1, 1)
-    };
-
-    self.placement_manager.add(ImagePlacement {
-      image_id,
-      placement_id: cmd.placement_id,
-      line,
-      column,
-      width_cells,
-      height_cells,
-      crop: (cmd.crop_x, cmd.crop_y, cmd.crop_width, cmd.crop_height),
-      z_index: cmd.z_index,
-      x_offset: cmd.x_offset,
-      y_offset: cmd.y_offset,
-    });
-
-    // Signal the PTY filter to inject cursor advancement on next read.
-    // This is the fallback mechanism for when the filter couldn't compute
-    // the height from APC params alone (e.g., PNG without r=/v=).
-    if let Some(cnl) = &self.pending_cnl {
-      cnl.store(height_cells, std::sync::atomic::Ordering::Release);
-    }
-  }
-
-  fn handle_delete(&mut self, cmd: &KittyCommand) {
-    let delete = cmd.delete.as_ref().cloned().unwrap_or(KittyDelete::All);
-    match delete {
-      KittyDelete::All => {
-        self.placement_manager.clear();
-        self.image_storage.clear();
-      }
-      KittyDelete::ById {
-        image_id: _,
-        placement_id,
-      } => {
-        let id = cmd.image_id;
-        self.placement_manager.remove_by_id(id, placement_id);
-        if placement_id.is_none() {
-          self.image_storage.remove(id);
-        }
-      }
-      KittyDelete::AtCursor => {
-        let cursor = self.term.cursor_point();
-        let history_size = self.term.history_size() as i32;
-        let line = history_size + cursor.line.0;
-        let col = cursor.column.0 as i32;
-        self.placement_manager.remove_at_cursor(line, col);
-      }
-      KittyDelete::ByZIndex(_) | KittyDelete::AtColumn(_) | KittyDelete::AtRow(_) => {
-        // Simplified: just remove all for these advanced cases.
-        self.placement_manager.clear();
-      }
-      KittyDelete::AnimationFrames => {
-        // Not supported in MVP.
-      }
     }
   }
 
@@ -817,6 +712,13 @@ impl Terminal {
         new_bounds.bounds.size.width = cmp::max(new_bounds.cell_width, new_bounds.width());
 
         self.last_content.terminal_bounds = new_bounds;
+        self.placement_manager.resize(
+          &self.image_storage,
+          (
+            f32::from(new_bounds.cell_width()),
+            f32::from(new_bounds.line_height()),
+          ),
+        );
         self.pty_tx.send_resize(new_bounds.into());
         self
           .term
@@ -977,16 +879,19 @@ mod tests {
     use std::sync::atomic::AtomicU32;
     use std::sync::mpsc;
 
-    use terminal_kernel::{TerminalSession, protocols::RawGraphicsCommand};
+    use terminal_kernel::{
+      TerminalSession,
+      protocols::{RawGraphicsCommand, RawGraphicsEvent},
+    };
 
     let (original, _events, writes, resizes) = fake_terminal_session(80, 24);
     let keyboard_flags = Arc::new(AtomicU32::new(8));
     let pending_cnl = Arc::new(AtomicU32::new(3));
-    let (graphics_tx, graphics_rx) = mpsc::channel();
+    let (graphics_tx, graphics_rx) = futures::channel::mpsc::unbounded();
     let (osc7_tx, osc7_rx) = mpsc::channel();
     let status = crate::program_status::ProgramStatusTracker::default();
     let mut parser = crate::program_status::ProgramStatusParser::new(status.clone());
-    let terminal = super::Terminal::from(TerminalSession {
+    let mut terminal = super::Terminal::from(TerminalSession {
       pty_tx: original.pty_tx,
       backend: original.term,
       pty_info: original.pty_info,
@@ -1014,14 +919,17 @@ mod tests {
     assert!(resizes.lock().unwrap().is_empty());
 
     graphics_tx
-      .send(RawGraphicsCommand {
+      .unbounded_send(RawGraphicsEvent::Command(RawGraphicsCommand {
         data: b"image".to_vec(),
         cursor_line: 3,
         cursor_column: 4,
-        clear_all: false,
-      })
+      }))
       .unwrap();
-    let graphics = terminal.graphics_rx.as_ref().unwrap().try_recv().unwrap();
+    let RawGraphicsEvent::Command(graphics) =
+      terminal.graphics_rx.as_mut().unwrap().try_recv().unwrap()
+    else {
+      panic!("expected command")
+    };
     assert_eq!(graphics.data, b"image");
     assert_eq!((graphics.cursor_line, graphics.cursor_column), (3, 4));
     osc7_tx.send(PathBuf::from("shell-cwd")).unwrap();
