@@ -143,7 +143,7 @@ send_event(AppEvent::Custom {
 });
 ```
 
-Custom events are logged and can be handled by extending `build_default_event_bus` in `crates/kazeterm/src/event_system/mod.rs`.
+Custom events are logged and can be handled by extending `build_default_event_bus` in `apps/kazeterm/src/event_system/mod.rs`.
 
 ## External Event Sources
 
@@ -212,6 +212,6 @@ The event system uses:
 - A global `OnceLock<Sender<AppEvent>>` for thread-safe event sending
 - An async event loop running on GPUI's executor
 - `smol::channel` for efficient async communication
-- Kazeterm-specific handlers registered in `crates/kazeterm/src/event_system/mod.rs`
+- Kazeterm-specific handlers registered in `apps/kazeterm/src/event_system/mod.rs`
 
 Events are processed sequentially to maintain UI consistency.

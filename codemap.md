@@ -1,62 +1,51 @@
-# kazeterm/
-
-<!-- Explorer: Fill in this section with architectural understanding -->
+# Repository Atlas: Kazeterm
 
 ## Responsibility
 
-<!-- What is this folder's job in the system? -->
+Kazeterm is a Rust 2024, GPUI-based cross-platform terminal emulator. The
+workspace separates desktop composition, configuration/theme integration,
+serializable UI state, event ingress, GPUI terminal presentation, and headless
+terminal contracts/backends. See [architecture](docs/architecture.md) for the
+complete dependency policy and session lifecycle.
 
-## Design
-
-<!-- Key patterns, abstractions, architectural decisions -->
-
-## Flow
-
-<!-- How does data/control flow through this module? -->
-
-## Integration
-
-<!-- How does it connect to other parts of the system? -->
-# Repository Atlas: Kazeterm
-
-## Project Responsibility
-
-Kazeterm is a Rust 2024, GPUI-based cross-platform terminal emulator. The workspace separates persisted configuration, theme adaptation, serializable UI state, terminal presentation, backend-neutral terminal contracts, concrete PTY/emulator kernels, external event ingress, and desktop application composition.
-
-## System Entry Points
+## Entry points
 
 | Path | Responsibility |
 | --- | --- |
-| `Cargo.toml` | Defines workspace membership, shared dependency versions, default platform-safe members, lint policy, and release profiles. |
-| `crates/kazeterm/src/main.rs` | Loads configuration, initializes GPUI/themes/keybindings, starts watchers and event sources, and opens the initial window. |
-| `crates/kazeterm/src/components/main_window.rs` | Owns the live application UI, terminal tabs, overlays, transition tasks, and the serializable UI-tree bridge. |
-| `crates/kazeterm/src/reconciler.rs` | Applies validated `UIAction` values to the UI tree and translates semantic diffs into GPUI mutations. |
-| `README.MD` | Documents setup and user-facing configuration, including terminal backends, updates, and animation controls. |
-| `Agent.md` | Records repository architecture, editing constraints, and validation expectations for contributors. |
+| `Cargo.toml` | Workspace membership, centralized internal/external dependencies, profiles, and lints |
+| `apps/kazeterm/src/main.rs` | Desktop bootstrap, configuration/globals, GPUI setup, and first window |
+| `apps/kazeterm/src/components/terminal_window.rs` | Config-to-session adapter, backend selection, and GPUI terminal creation |
+| `apps/kazeterm/src/reconciler.rs` | UI actions and semantic diffs applied to live entities |
+| `scripts/check-workspace.ps1` | Enforced workspace dependency boundaries (PowerShell 7) |
+| `Agents.md` | Contributor constraints and validation requirements |
 
-## Repository Directory Map
+## Directory map
 
 | Directory | Responsibility | Detailed map |
 | --- | --- | --- |
-| `crates/` | Layered Rust workspace containing all runtime libraries and the executable. | [View map](crates/codemap.md) |
-| `crates/config/` | Versioned configuration schema, overlays, migrations, palettes, profiles, shells, and keybindings. | [View map](crates/config/codemap.md) |
-| `crates/kazeterm/` | GPUI application composition, windows/components, workspace state, transitions, update support, and platform integration. | [View map](crates/kazeterm/codemap.md) |
-| `crates/kazeterm-event-system/` | Typed and JSON event ingress with GPUI main-thread dispatch. | [View map](crates/kazeterm-event-system/codemap.md) |
-| `crates/kazeterm-ui-tree/` | Serializable UI aggregate, validated reducer actions, semantic diffs, and reconciliation port. | [View map](crates/kazeterm-ui-tree/codemap.md) |
-| `crates/themeing/` | Active GPUI theme/zoom globals and ANSI-to-HSLA color adaptation. | [View map](crates/themeing/codemap.md) |
-| `crates/terminal/` | Backend-neutral terminal model, GPUI interaction, custom rendering, search, scroll, CWD/process state, and Kitty graphics. | [View map](crates/terminal/codemap.md) |
-| `crates/terminal-kernel/` | Object-safe emulator contract, snapshots, shared primitives, and the common Alacritty adapter. | [View map](crates/terminal-kernel/codemap.md) |
-| `crates/terminal-kernel-alacritty/` | Default Alacritty-backed PTY/session factory and event-loop adapter. | [View map](crates/terminal-kernel-alacritty/codemap.md) |
-| `crates/terminal-kernel-vte/` | Alternative VTE-parser emulator and PTY loop for Linux. | [View map](crates/terminal-kernel-vte/codemap.md) |
-| `crates/terminal-kernel-unix-bundle/` | Target-gated build aggregator that includes the VTE backend on Unix without affecting Windows. | [View map](crates/terminal-kernel-unix-bundle/codemap.md) |
-| `assets/` | Embedded fonts, icons, themes, desktop metadata, and screenshots consumed by the application/build. | — |
-| `memories/` | Iteration notes and verification summaries required by the repository workflow. | — |
+| `apps/` | Executable composition roots | [Map](apps/codemap.md) |
+| `apps/kazeterm/` | GPUI application, windows, services, persistence, and platform integration | [Map](apps/kazeterm/codemap.md) |
+| `crates/` | Reusable libraries and terminal stack | [Map](crates/codemap.md) |
+| `crates/config/` | Configuration schema, imports, migration, profiles, and palette | [Map](crates/config/codemap.md) |
+| `crates/themeing/` | GPUI theme globals and ANSI color resolution | [Map](crates/themeing/codemap.md) |
+| `crates/kazeterm-event-system/` | JSON ingress and GPUI event dispatch | [Map](crates/kazeterm-event-system/codemap.md) |
+| `crates/kazeterm-ui-tree/` | Serializable UI aggregate, reducer, and diffs | [Map](crates/kazeterm-ui-tree/codemap.md) |
+| `crates/terminal/` | Headless core/backends and GPUI view | [Map](crates/terminal/codemap.md) |
+| `crates/terminal/core/` | Backend/session ports, PTY process information, and protocols | [Map](crates/terminal/core/codemap.md) |
+| `crates/terminal/view/` | GPUI terminal model, interaction, and rendering | [Map](crates/terminal/view/codemap.md) |
+| `crates/terminal/backends/alacritty/` | Default cross-platform session factory | [Map](crates/terminal/backends/alacritty/codemap.md) |
+| `crates/terminal/backends/vte/` | Linux-only VTE emulator and factory | [Map](crates/terminal/backends/vte/codemap.md) |
+| `assets/` | Embedded fonts, icons, themes, and platform metadata | — |
+| `memories/` | Iteration summaries and validation records | — |
 
-## Cross-Crate Control Flow
+## Control flow
 
-1. `kazeterm` loads `config::Config`, installs `themeing::SettingsStore`, and initializes GPUI and terminal keybindings.
-2. Window creation selects a concrete terminal kernel, which returns `terminal::Terminal` behind the shared `terminal-kernel` ports.
-3. User and external commands become `kazeterm-ui-tree::UIAction` values; the reducer validates them and the application reconciler applies resulting diffs to `MainWindow`.
-4. Structural UI changes use the shared `[animation]` configuration and `TransitionSpec`; disabling animation applies final state synchronously.
-5. `terminal` maps GPUI input to PTY messages and renders backend snapshots; kernel events flow back into terminal views and application tabs.
-6. Configuration hot reload replaces config/theme globals, refreshes bindings and platform appearance, and transitions all registered windows.
+1. The app loads `config`, installs `themeing` globals, and initializes GPUI.
+2. The app maps terminal settings into headless `SessionOptions`; a backend
+   returns `TerminalSession` resources and `SessionEvents`.
+3. The app moves those resources into `terminal::Terminal` and a `TerminalView`.
+4. Input flows through `PtySender`; emulator/protocol events update the GPUI
+   model and renderer, which consumes `TerminalBackend` snapshots.
+5. User/external commands mutate `kazeterm-ui-tree`; the app reconciles diffs.
+6. Hot reload updates global config/theme state and registered windows without
+   recreating running terminal sessions.

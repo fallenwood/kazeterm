@@ -15,8 +15,8 @@ Loads user-selectable theme TOML from custom, embedded, or development assets; c
 
 ## Flow
 
-1. At startup, `crates/kazeterm/src/main.rs` registers embedded asset callbacks and sets the configured or default custom-theme directory.
-2. `crates/kazeterm/src/config.rs` resolves `ThemeMode` (including system appearance) and calls `load_theme(name, is_dark)`.
+1. At startup, `apps/kazeterm/src/main.rs` registers embedded asset callbacks and sets the configured or default custom-theme directory.
+2. `apps/kazeterm/src/config.rs` resolves `ThemeMode` (including system appearance) and calls `load_theme(name, is_dark)`.
 3. `load_theme_from_assets` follows source priority and parses the selected TOML into `ThemeFile`; `list_available_themes` unions custom filenames with embedded names, deduplicates, and sorts them.
 4. The requested dark variant uses `ThemeFile::dark`; light uses `light` when present and otherwise falls back to that theme's dark variant.
 5. `ThemeColors::to_palette` resolves missing/invalid fields against the appropriate bundled default variant, constructs a seed, and derives a complete `Palette`.
@@ -25,7 +25,7 @@ Loads user-selectable theme TOML from custom, embedded, or development assets; c
 ## Integration
 
 - Depends on `crate::palette::{Palette, ThemeSeed, blend}` and GPUI `Hsla`/`Rgba` color types.
-- Embedded callbacks are supplied by `crates/kazeterm/src/assets.rs`; custom theme paths come from `Config.appearance.themes_path` or the platform config directory.
+- Embedded callbacks are supplied by `apps/kazeterm/src/assets.rs`; custom theme paths come from `Config.appearance.themes_path` or the platform config directory.
 - `config_watcher` watches the custom theme directory and rebuilds `SettingsStore` when theme TOML changes.
 - `alacritty_import` creates a `ThemeFile` compatible with this pipeline and writes it to the custom theme directory.
 - Public functions/types are re-exported from `crate::lib`: parsing, listing, loading, source registration, and custom-path access.

@@ -41,16 +41,16 @@ Key architectural patterns:
 
 - `Config::get_config_file_paths` traverses the same import graph for `config_watcher`; it includes discovered paths even when an imported file cannot currently be read.
 - Updater setters migrate and edit only `[auto_update]`, preserving unrelated raw TOML. The one-shot workspace flag is read and atomically cleared through the same path.
-- `crates/kazeterm/src/components/transitions.rs` converts `Config.animation` into an optional `TransitionSpec`; active schedules drive eased geometry frames, while disabled or zero-duration settings cause callers to apply final state immediately.
+- `apps/kazeterm/src/components/transitions.rs` converts `Config.animation` into an optional `TransitionSpec`; active schedules drive eased geometry frames, while disabled or zero-duration settings cause callers to apply final state immediately.
 - `KeybindingList` normalizes and deduplicates strings, `ParsedKeybinding` maps modifiers/key aliases to GPUI event semantics, and application/terminal layers call `matches` or register each binding.
 - Profile helpers choose the configured default, fall back to detected shells, and combine local, container, and SSH names for UI selection.
 - Alacritty import parses into a sparse patch; the main-app dialog saves any generated theme, applies the patch to the global config, and persists the resulting file.
 
 ## Integration
 
-- `crates/kazeterm/src/main.rs`: calls `Config::load`, registers embedded theme callbacks, configures custom theme paths, and publishes configuration globals.
-- `crates/kazeterm/src/config_watcher.rs`: watches the base file, recursive imports, and custom theme directory; reloads configuration/theme and rebinds terminal keys.
-- `crates/kazeterm/src/components/`: consumes window/tab/pane/profile/keybinding fields, uses `AnimationConfig` for geometry transitions, launches the Alacritty import workflow, and uses the config directory for workspace/support files.
-- `crates/terminal/src/lib.rs`: registers configurable terminal keybindings; terminal views consume color/font/cursor/scrollback/input fields supplied by the app.
-- `crates/kazeterm/src/config.rs` and `crates/themeing`: translate `ColorsConfig`/`AppearanceConfig` plus system appearance into a `SettingsStore` containing the resolved palette.
+- `apps/kazeterm/src/main.rs`: calls `Config::load`, registers embedded theme callbacks, configures custom theme paths, and publishes configuration globals.
+- `apps/kazeterm/src/config_watcher.rs`: watches the base file, recursive imports, and custom theme directory; reloads configuration/theme and rebinds terminal keys.
+- `apps/kazeterm/src/components/`: consumes window/tab/pane/profile/keybinding fields, uses `AnimationConfig` for geometry transitions, launches the Alacritty import workflow, and uses the config directory for workspace/support files. `terminal_window.rs` maps backend-relevant settings into `terminal_kernel::SessionOptions`.
+- `crates/terminal/view/src/lib.rs`: registers configurable terminal keybindings; terminal views consume color/font/cursor/scrollback/input fields supplied by the app.
+- `apps/kazeterm/src/config.rs` and `crates/themeing`: translate `ColorsConfig`/`AppearanceConfig` plus system appearance into a `SettingsStore` containing the resolved palette.
 - Filesystem and process integrations are intentionally best-effort where appropriate: missing imports/themes/shell tools are logged or skipped, while malformed base TOML and unsupported terminal kernels fail `Config::load`.

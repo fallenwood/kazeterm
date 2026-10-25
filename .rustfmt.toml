@@ -1,3 +1,2 @@
 edition = "2024"
 tab_spaces = 2
-trailing_comma = "always"

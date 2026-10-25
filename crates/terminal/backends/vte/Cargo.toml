@@ -1,0 +1,15 @@
+[package]
+name = "terminal-kernel-vte"
+version.workspace = true
+publish.workspace = true
+edition.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+futures.workspace = true
+libc.workspace = true
+parking_lot.workspace = true
+terminal-kernel.workspace = true
+vte.workspace = true
+
+[lints]
+workspace = true
