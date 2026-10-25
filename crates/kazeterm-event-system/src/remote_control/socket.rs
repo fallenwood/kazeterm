@@ -310,7 +310,9 @@ mod tests {
   #[test]
   fn private_socket_permissions_collision_and_owned_cleanup() {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let dir = std::env::temp_dir().join(format!(
+    // macOS TMPDIR can be too long for sockaddr_un.sun_path. Use a short base;
+    // bind() also canonicalizes it (on macOS, /tmp becomes /private/tmp).
+    let dir = Path::new("/tmp").join(format!(
       "kazeterm-rc-{}-{}",
       std::process::id(),
       SystemTime::now()
@@ -320,7 +322,12 @@ mod tests {
     ));
     fs::create_dir(&dir).unwrap();
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
-    let path = dir.join("control.sock");
+    let path = dir.canonicalize().unwrap().join("control.sock");
+    assert!(
+      path.as_os_str().len() < 104,
+      "test socket path must fit macOS's 104-byte sun_path: {}",
+      path.display(),
+    );
     let address = format!("unix:{}", path.display());
     let server = RemoteControlServer::bind(&address).unwrap();
     assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
