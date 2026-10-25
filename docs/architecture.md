@@ -64,6 +64,15 @@ kazeterm (composition root)
 5. Existing event batching, subscriptions, cross-window terminal transfers,
    UI-tree reconciliation, and workspace persistence remain unchanged.
 
+Both factories use core's `ShellLaunch` to prepare PTY options without opening
+another PTY or creating a file. It centralizes terminal environment defaults,
+CWD-reporting paths, OSC 7/133 prompt hooks, and default PowerShell arguments.
+VTE supplies its own `VTE_VERSION=7600` default. User environment settings override
+terminal/backend defaults; integration variables and supported shells' prompt
+hooks are installed afterwards. Bash/sh continue to append the inherited
+`PROMPT_COMMAND`, zsh receives the hook alone, and explicit PowerShell arguments
+are never replaced. Emulator and event-loop setup remain backend-specific.
+
 The core owns OSC 7/7501 observation, keyboard/DSR negotiation, and raw graphics
 interception. The view retains Kitty command decoding, GPU image storage,
 placements, and painting. Existing protocol/PTY exports under `terminal` remain

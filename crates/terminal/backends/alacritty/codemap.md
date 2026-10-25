@@ -7,8 +7,9 @@ returning `TerminalSession` resources and an event stream rather than GPUI state
 
 ## Design
 
-- `create_terminal_session` assembles environment/shell hooks, emulator, PTY,
-  shared protocol observers, event loop, backend, and event channel.
+- `create_terminal_session` uses core's `ShellLaunch` for environment/shell hooks
+  and PTY options, then assembles the emulator, PTY, shared protocol observers,
+  event loop, backend, and event channel.
 - `AlacrittyPtySender` adapts `EventLoopSender` to the core's `PtySender` port.
 - `AlacrittyBackend` from core exposes snapshots and emulator mutations.
 - Core PTY filters provide graphics/CWD support on Unix and DSR/keyboard

@@ -1,9 +1,9 @@
-use std::{borrow::Cow, collections::HashMap, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 use futures::{channel::mpsc::UnboundedReceiver, channel::mpsc::unbounded};
 use terminal_kernel::program_status::ProgramStatusTracker;
 use terminal_kernel::{
-  AlacrittyBackend, PtyProcessInfo, PtySender, SessionEvents, SessionOptions, Term,
+  AlacrittyBackend, PtyProcessInfo, PtySender, SessionEvents, SessionOptions, ShellLaunch, Term,
   TerminalEventListener, TerminalSession,
   event::WindowSize,
   event_loop::{EventLoop, EventLoopSender, Msg},
@@ -41,87 +41,18 @@ pub fn create_terminal_session(
   options: &SessionOptions,
   term_program_version: &str,
 ) -> Result<(TerminalSession, SessionEvents), String> {
-  let mut env = HashMap::new();
-  if std::env::var("LANG").is_err() {
-    env
-      .entry("LANG".to_string())
-      .or_insert_with(|| "en_US.UTF-8".to_string());
-  }
-
-  env.insert("TERM_PROGRAM".to_string(), "kazeterm".to_string());
-  env.insert(
-    "TERM_PROGRAM_VERSION".to_string(),
-    term_program_version.to_string(),
+  let shell_program = program.clone();
+  let ShellLaunch {
+    pty_options,
+    cwd_file,
+  } = ShellLaunch::new(
+    program,
+    args,
+    working_directory,
+    &options.env,
+    term_program_version,
+    &[],
   );
-  env.insert("TERM".to_string(), "xterm-256color".to_string());
-  env.insert("COLORTERM".to_string(), "truecolor".to_string());
-
-  for (key, value) in &options.env {
-    env.insert(key.clone(), value.clone());
-  }
-
-  let cwd_file = std::env::temp_dir().join(format!(
-    "kazeterm-cwd-{}-{}",
-    std::process::id(),
-    std::time::SystemTime::now()
-      .duration_since(std::time::UNIX_EPOCH)
-      .map(|d| d.as_nanos())
-      .unwrap_or(0)
-  ));
-  env.insert(
-    "KAZETERM_CWD_FILE".to_string(),
-    cwd_file.to_string_lossy().to_string(),
-  );
-
-  let shell_name = std::path::Path::new(&program)
-    .file_stem()
-    .and_then(|s| s.to_str())
-    .unwrap_or("")
-    .to_lowercase();
-
-  let cwd_file_str = cwd_file.to_string_lossy();
-  let bash_hook = format!(
-    r#"printf '\e]133;A\e\\\e]7;file://%s%s\e\\' "$(hostname)" "$PWD"; printf '%s' "$PWD" >| "{}""#,
-    cwd_file_str,
-  );
-  env.insert("__KAZETERM_OSC7".to_string(), bash_hook.clone());
-
-  if shell_name == "bash" || shell_name == "sh" {
-    let existing = std::env::var("PROMPT_COMMAND").unwrap_or_default();
-    let prompt_cmd = if existing.is_empty() {
-      bash_hook
-    } else {
-      format!("{bash_hook};{existing}")
-    };
-    env.insert("PROMPT_COMMAND".to_string(), prompt_cmd);
-  } else if shell_name == "zsh" {
-    env.insert("PROMPT_COMMAND".to_string(), bash_hook);
-  }
-
-  let pwsh_init = format!(
-    concat!(
-      r#"$__kazeterm_orig_prompt = $function:prompt; "#,
-      r#"function prompt {{ "#,
-      r#"$cwd = (Get-Location).Path; "#,
-      r#"[System.IO.File]::WriteAllText('{}', $cwd); "#,
-      r#"$esc = [char]27; "#,
-      r#"$host_name = [System.Net.Dns]::GetHostName(); "#,
-      r#"[Console]::Write("${{esc}}]133;A${{esc}}\"); "#,
-      r#"[Console]::Write("${{esc}}]7;file://${{host_name}}${{cwd}}${{esc}}\"); "#,
-      r#"if ($__kazeterm_orig_prompt) {{ & $__kazeterm_orig_prompt }} "#,
-      r#"else {{ "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }} "#,
-      r#"}}"#,
-    ),
-    cwd_file_str,
-  );
-  env.insert("KAZETERM_PWSH_OSC7_INIT".to_string(), pwsh_init.clone());
-
-  let mut args = args;
-  if shell_name == "pwsh" || shell_name == "powershell" {
-    if args.is_empty() {
-      args = vec!["-NoExit".to_string(), "-Command".to_string(), pwsh_init];
-    }
-  }
 
   let (events_tx, events_rx): (
     futures::channel::mpsc::UnboundedSender<terminal_kernel::event::Event>,
@@ -141,20 +72,6 @@ pub fn create_terminal_session(
 
   let term = Arc::new(FairMutex::new(term));
   let program_status_tracker = ProgramStatusTracker::default();
-
-  let shell_program = program.clone();
-  let pty_options = {
-    let shell = tty::Shell::new(program, args);
-
-    tty::Options {
-      shell: Some(shell),
-      working_directory,
-      drain_on_exit: true,
-      env,
-      #[cfg(windows)]
-      escape_args: true,
-    }
-  };
 
   let pty = tty::new(&pty_options, options.size.into(), 1)
     .map_err(|e| format!("Could not start shell '{}': {}", shell_program, e))?;

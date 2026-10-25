@@ -11,6 +11,9 @@ layer and concrete backends. No dependency on GPUI, config, or theming.
   selection state, and the existing `AlacrittyBackend` lock-owning adapter.
 - `session.rs`: GUI-independent `TerminalSize`, `SessionOptions`, `PtySender`, and
   `TerminalSession` resource bundle.
+- `shell.rs`: shared `ShellLaunch` preparation for terminal/backend environment
+  defaults, user overrides, shell prompt hooks, and PTY options; no process or
+  file is created during preparation.
 - `events.rs`: channel-based `TerminalEventListener` for emulator notifications.
 - `pty_info.rs`: PTY foreground-process identity and cached process metadata.
 - `protocols/`: OSC 7/7501 observers, keyboard/DSR negotiation, Unix graphics and

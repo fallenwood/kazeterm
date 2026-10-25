@@ -7,11 +7,13 @@ mod events;
 pub mod protocols;
 pub mod pty_info;
 mod session;
+mod shell;
 
 pub use events::TerminalEventListener;
 pub use protocols::{osc7, program_status};
 pub use pty_info::PtyProcessInfo;
 pub use session::{PtySender, SessionOptions, TerminalSession, TerminalSize};
+pub use shell::ShellLaunch;
 
 pub use alacritty_terminal::Term;
 
