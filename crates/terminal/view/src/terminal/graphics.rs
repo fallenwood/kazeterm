@@ -20,19 +20,27 @@ impl Terminal {
         let Some(image) = prepared_image else {
           return;
         };
+        self
+          .image_storage
+          .gc_anonymous(|internal_id| self.placement_manager.has_internal_image(internal_id));
         match self
           .image_storage
           .store_prepared(cmd.image_id, cmd.image_number, image)
         {
-          Ok(id) => {
-            // Retransmitting an ID invalidates all old placements. Evicted
-            // images must not leave placements that can reappear on ID reuse.
-            self.placement_manager.remove_by_image(id);
+          Ok(internal_id) => {
+            let client_id = self
+              .image_storage
+              .peek_by_internal(internal_id)
+              .expect("newly stored image must exist")
+              .id;
+            // Replacement retains the internal identity, whereas anonymous
+            // uploads always get a new one and never replace a client's image.
+            self.placement_manager.remove_by_internal_image(internal_id);
             self.placement_manager.gc(&self.image_storage);
             if cmd.action == KittyAction::TransmitAndDisplay {
-              self.place_image(id, cmd, cursor_line, cursor_column);
+              self.place_image(internal_id, cmd, cursor_line, cursor_column);
             }
-            Ok(id)
+            Ok(client_id)
           }
           Err(error) => {
             tracing::warn!("Failed to store Kitty image: {error}");
@@ -47,9 +55,10 @@ impl Terminal {
           (cmd.image_id != 0).then_some(cmd.image_id)
         };
         if let Some(id) = id
-          && self.image_storage.get(id).is_some()
+          && let Some(image) = self.image_storage.get(id)
         {
-          self.place_image(id, cmd, cursor_line, cursor_column);
+          let internal_id = image.internal_id;
+          self.place_image(internal_id, cmd, cursor_line, cursor_column);
           Ok(id)
         } else {
           Err("ENOENT:Image not found".into())
@@ -66,19 +75,16 @@ impl Terminal {
     }
   }
 
-  fn place_image(&mut self, image_id: u32, cmd: &KittyCommand, line: i32, column: i32) {
-    let Some(image) = self.image_storage.peek(image_id) else {
+  fn place_image(&mut self, internal_id: u64, cmd: &KittyCommand, line: i32, column: i32) {
+    let Some(image) = self.image_storage.peek_by_internal(internal_id) else {
       return;
     };
     let bounds = &self.last_content.terminal_bounds;
     let mut placement = ImagePlacement {
-      image_id,
+      image_id: image.id,
+      internal_image_id: internal_id,
       // Anonymous images cannot have a client-addressable placement ID.
-      placement_id: if cmd.image_id == 0 && cmd.image_number == 0 {
-        0
-      } else {
-        cmd.placement_id
-      },
+      placement_id: if image.id == 0 { 0 } else { cmd.placement_id },
       line,
       column,
       display_columns: cmd.display_columns,
@@ -111,25 +117,27 @@ impl Terminal {
     let delete = cmd.delete.as_ref().cloned().unwrap_or(KittyDelete::All);
     let screen_top = self.term.history_size() as i64;
     let screen_bottom = screen_top + self.term.screen_lines() as i64;
-    let numbered_id = match delete {
-      KittyDelete::ByNumber { image_number, .. } => {
-        self.image_storage.newest_for_number(image_number)
-      }
+    let selected_internal_id = match &delete {
+      KittyDelete::ById { image_id, .. } => self.image_storage.peek(*image_id),
+      KittyDelete::ByNumber { image_number, .. } => self
+        .image_storage
+        .newest_for_number(*image_number)
+        .and_then(|id| self.image_storage.peek(id)),
       _ => None,
-    };
+    }
+    .map(|image| image.internal_id);
     let mut affected = self.placement_manager.remove_matching(|p| match &delete {
       KittyDelete::All => {
         i64::from(p.line) < screen_bottom
           && i64::from(p.line) + i64::from(p.height_cells) > screen_top
       }
-      KittyDelete::ById {
-        image_id,
-        placement_id,
-      } => p.image_id == *image_id && placement_id.is_none_or(|id| p.placement_id == id),
-      KittyDelete::ByNumber { placement_id, .. } => {
-        Some(p.image_id) == numbered_id && placement_id.is_none_or(|id| p.placement_id == id)
+      KittyDelete::ById { placement_id, .. } | KittyDelete::ByNumber { placement_id, .. } => {
+        Some(p.internal_image_id) == selected_internal_id
+          && placement_id.is_none_or(|id| p.placement_id == id)
       }
-      KittyDelete::IdRange { first, last } => p.image_id >= *first && p.image_id <= *last,
+      KittyDelete::IdRange { first, last } => {
+        p.image_id != 0 && p.image_id >= *first && p.image_id <= *last
+      }
       KittyDelete::AtCursor => {
         placement_contains(p, i64::from(cursor_line), i64::from(cursor_column))
       }
@@ -157,26 +165,33 @@ impl Terminal {
       // selectors only free images whose placements they actually removed.
       match delete {
         KittyDelete::ById {
-          image_id,
-          placement_id: None,
-        } => affected.push(image_id),
-        KittyDelete::ByNumber {
           placement_id: None, ..
-        } => affected.extend(numbered_id),
+        }
+        | KittyDelete::ByNumber {
+          placement_id: None, ..
+        } => affected.extend(selected_internal_id),
         KittyDelete::IdRange { first, last } => affected.extend(
           self
             .image_storage
             .image_ids()
-            .filter(|id| *id >= first && *id <= last),
+            .filter(|id| *id >= first && *id <= last)
+            .filter_map(|id| self.image_storage.peek(id).map(|image| image.internal_id)),
         ),
         _ => {}
       }
-      affected.sort_unstable();
-      affected.dedup();
-      for id in affected {
-        if !self.placement_manager.has_image(id) {
-          self.image_storage.remove(id);
-        }
+    }
+    affected.sort_unstable();
+    affected.dedup();
+    for internal_id in affected {
+      if !self.placement_manager.has_internal_image(internal_id)
+        && self
+          .image_storage
+          .peek_by_internal(internal_id)
+          .is_some_and(|image| cmd.delete_data || image.id == 0)
+      {
+        // Unaddressable data has no reuse path after its last placement is gone,
+        // even for lowercase deletion (Kitty filter_refs).
+        self.image_storage.remove_by_internal(internal_id);
       }
     }
   }
@@ -201,6 +216,133 @@ mod tests {
     )
     .then(|| prepare_image(&mut command).unwrap());
     terminal.execute_graphics_command(&command, image, line, column);
+  }
+
+  #[test]
+  fn anonymous_images_cannot_be_addressed_or_replaced_by_client_ids() {
+    let (mut terminal, _, writes, _) = fake_terminal_session(80, 24);
+    apply(
+      &mut terminal,
+      b"a=T,p=77,s=1,v=1,c=1,r=1,C=1;AAAAAA==",
+      0,
+      0,
+    );
+    assert!(writes.lock().unwrap().is_empty());
+    apply(&mut terminal, b"a=p,i=1,p=3,C=1", 1, 0);
+    assert_eq!(
+      *writes.lock().unwrap(),
+      [b"\x1b_Gi=1,p=3;ENOENT:Image not found\x1b\\".to_vec()]
+    );
+    apply(&mut terminal, b"a=d,d=I,i=1", 0, 0);
+    assert_eq!(terminal.image_storage.image_count(), 1);
+    assert_eq!(terminal.placement_manager.placement_count(), 1);
+
+    apply(
+      &mut terminal,
+      b"a=T,i=1,p=77,s=1,v=1,c=1,r=1,C=1;AAAAAA==",
+      1,
+      0,
+    );
+    assert_eq!(terminal.image_storage.image_count(), 2);
+    assert_eq!(terminal.placement_manager.placement_count(), 2);
+    // Lowercase deletes retain named data, but unreachable anonymous data must
+    // be released when its last placement disappears (Kitty filter_refs).
+    apply(&mut terminal, b"a=d,d=a", 0, 0);
+    assert_eq!(terminal.placement_manager.placement_count(), 0);
+    assert_eq!(terminal.image_storage.image_count(), 1);
+    assert!(terminal.image_storage.peek(1).is_some());
+  }
+
+  #[test]
+  fn client_selectors_ignore_anonymous_images_including_zero_and_id_ranges() {
+    let (mut terminal, _, writes, _) = fake_terminal_session(80, 24);
+    for (raw, row) in [
+      ("a=T,p=77,s=1,v=1,c=1,r=1,C=1;AAAAAA==", 0),
+      ("a=T,i=50,p=77,s=1,v=1,c=1,r=1,C=1;AAAAAA==", 2),
+      ("a=T,p=77,s=1,v=1,c=1,r=1,C=1;AAAAAA==", 4),
+      ("a=T,I=9,p=77,s=1,v=1,c=1,r=1,C=1;AAAAAA==", 6),
+    ] {
+      apply(&mut terminal, raw.as_bytes(), row, 0);
+    }
+    assert_eq!(terminal.image_storage.image_count(), 4);
+    assert_eq!(terminal.placement_manager.placement_count(), 4);
+    assert_eq!(terminal.image_storage.newest_for_number(9), Some(1));
+    // Neither the client reply nor ID lookup may expose the internal identity.
+    assert_eq!(
+      *writes.lock().unwrap(),
+      [
+        b"\x1b_Gi=50,p=77;OK\x1b\\".to_vec(),
+        b"\x1b_Gi=1,I=9,p=77;OK\x1b\\".to_vec(),
+      ]
+    );
+    for selector in [
+      "a=d,d=i,i=0",
+      "a=d,d=I,i=0",
+      "a=d,d=R,x=0,y=0",
+      "a=d,d=N,I=404",
+    ] {
+      apply(&mut terminal, selector.as_bytes(), 0, 0);
+      assert_eq!(terminal.image_storage.image_count(), 4, "{selector}");
+      assert_eq!(
+        terminal.placement_manager.placement_count(),
+        4,
+        "{selector}"
+      );
+    }
+    apply(&mut terminal, b"a=p,i=3,C=1", 0, 0); // Third internal image is anonymous.
+    assert_eq!(
+      writes.lock().unwrap().last().unwrap(),
+      b"\x1b_Gi=3;ENOENT:Image not found\x1b\\"
+    );
+    // Named replacement collects only that internal image's placements.
+    apply(&mut terminal, b"i=50,s=1,v=1,q=2;AAAAAA==", 0, 0);
+    assert_eq!(terminal.image_storage.image_count(), 4);
+    assert_eq!(terminal.placement_manager.placement_count(), 3);
+    apply(&mut terminal, b"a=d,d=R,x=0,y=4294967295", 0, 0);
+    assert_eq!(terminal.image_storage.image_count(), 2); // Only anonymous images survive.
+    assert_eq!(terminal.placement_manager.placement_count(), 2);
+    // Anonymous IDs are distinct even though both expose image_id=0,p=0.
+    let visible =
+      terminal
+        .placement_manager
+        .visible_placements(&terminal.image_storage, 0, 24, (10., 20.));
+    assert_eq!(
+      visible.iter().map(|p| p.image_id).collect::<Vec<_>>(),
+      [0, 0]
+    );
+    assert_ne!(visible[0].internal_image_id, visible[1].internal_image_id);
+    apply(&mut terminal, b"a=d,d=y,y=1", 0, 0);
+    assert_eq!(terminal.image_storage.image_count(), 1);
+    assert_eq!(terminal.placement_manager.placement_count(), 1);
+    apply(&mut terminal, b"a=d,d=c", 4, 0);
+    assert_eq!(terminal.image_storage.image_count(), 0);
+    assert_eq!(terminal.placement_manager.placement_count(), 0);
+  }
+
+  #[test]
+  fn unplaced_anonymous_data_is_pruned_before_upload_but_visible_data_survives() {
+    let (mut terminal, _, writes, _) = fake_terminal_session(80, 24);
+    apply(&mut terminal, b"s=1,v=1;AAAAAA==", 0, 0);
+    assert_eq!(terminal.image_storage.image_count(), 1);
+    assert_eq!(terminal.placement_manager.placement_count(), 0);
+    for row in [3, 5] {
+      apply(
+        &mut terminal,
+        b"a=T,p=7,s=1,v=1,c=1,r=1,C=1;AAAAAA==",
+        row,
+        0,
+      );
+    }
+    assert_eq!(terminal.image_storage.image_count(), 2);
+    assert_eq!(terminal.placement_manager.placement_count(), 2);
+    assert!(writes.lock().unwrap().is_empty());
+    apply(&mut terminal, b"I=9,s=1,v=1;AAAAAA==", 0, 0);
+    assert_eq!(terminal.image_storage.image_count(), 3);
+    assert_eq!(terminal.image_storage.newest_for_number(9), Some(1));
+    assert_eq!(
+      *writes.lock().unwrap(),
+      [b"\x1b_Gi=1,I=9;OK\x1b\\".to_vec()]
+    );
   }
 
   #[test]

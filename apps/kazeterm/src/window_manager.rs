@@ -137,6 +137,15 @@ fn registered_windows_front_to_back(cx: &App) -> Vec<RegisteredWindow> {
   ordered
 }
 
+/// Snapshot live windows in dispatch order for process-wide control APIs.
+pub(crate) fn event_targets(cx: &App) -> Vec<(WeakEntity<MainWindow>, AnyWindowHandle)> {
+  registered_windows_front_to_back(cx)
+    .into_iter()
+    .filter(|registered| registered.view.upgrade().is_some())
+    .map(|registered| (registered.view, registered.handle))
+    .collect()
+}
+
 /// Resolve the live frontmost window for process-wide event dispatch.
 pub(crate) fn active_event_target(cx: &App) -> Option<(WeakEntity<MainWindow>, AnyWindowHandle)> {
   registered_windows_front_to_back(cx)

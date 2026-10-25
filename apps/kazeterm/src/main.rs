@@ -33,6 +33,7 @@ mod config;
 mod config_watcher;
 pub mod event_system;
 pub mod reconciler;
+mod remote_control;
 mod window_manager;
 
 #[cfg(test)]
@@ -56,6 +57,16 @@ struct Args {
   /// Path to the event socket/pipe (required when event-source is "socket")
   #[arg(long)]
   event_socket: Option<PathBuf>,
+
+  /// Listen for Kitty-compatible local remote control (unix:/absolute/path).
+  /// The socket's parent must be a private current-user-owned directory.
+  #[arg(long, requires = "allow_remote_control")]
+  listen_on: Option<String>,
+
+  /// Explicitly authorize local socket clients to read terminals and send input.
+  /// Does not enable remote control through terminal output or over TCP.
+  #[arg(long, requires = "listen_on")]
+  allow_remote_control: bool,
 }
 
 /// Event source type for command-line parsing
@@ -68,6 +79,38 @@ enum EventSource {
 }
 
 impl Args {
+  fn validate_control_endpoints(&self) -> Result<(), String> {
+    if let (Some(address), Some(event_path)) = (&self.listen_on, &self.event_socket)
+      && matches!(self.event_source, Some(EventSource::Socket))
+      && let Some(remote_path) = address.strip_prefix("unix:")
+    {
+      fn normalize(path: &std::path::Path) -> std::io::Result<PathBuf> {
+        let path = if path.is_absolute() {
+          path.to_path_buf()
+        } else {
+          std::env::current_dir()?.join(path)
+        };
+        let parent = path
+          .parent()
+          .ok_or_else(|| std::io::Error::other("Missing socket parent"))?
+          .canonicalize()?;
+        Ok(
+          parent.join(
+            path
+              .file_name()
+              .ok_or_else(|| std::io::Error::other("Missing socket filename"))?,
+          ),
+        )
+      }
+      let remote = normalize(std::path::Path::new(remote_path)).map_err(|e| e.to_string())?;
+      let event = normalize(event_path).map_err(|e| e.to_string())?;
+      if remote == event {
+        return Err("Kitty remote control and legacy events must use distinct socket paths".into());
+      }
+    }
+    Ok(())
+  }
+
   /// Convert command-line arguments to EventSourceConfig
   fn to_event_source_config(&self) -> EventSourceConfig {
     match self.event_source {
@@ -151,6 +194,29 @@ fn main() {
   // Parse command-line arguments
   let args = Args::parse();
   let event_source_config = args.to_event_source_config();
+  if let Err(error) = args.validate_control_endpoints() {
+    eprintln!("Invalid control endpoints: {error}");
+    std::process::exit(1);
+  }
+
+  #[cfg(unix)]
+  let remote_server = match args
+    .listen_on
+    .as_deref()
+    .map(kazeterm_event_system::remote_control::RemoteControlServer::bind)
+    .transpose()
+  {
+    Ok(server) => server,
+    Err(error) => {
+      eprintln!("Cannot start remote control: {error}");
+      std::process::exit(1);
+    }
+  };
+  #[cfg(not(unix))]
+  if args.listen_on.is_some() {
+    eprintln!("Kitty remote-control sockets are currently supported only on Unix platforms");
+    std::process::exit(1);
+  }
 
   // Initialize tracing
   tracing_subscriber::fmt()
@@ -304,5 +370,9 @@ fn main() {
     ]);
 
     window_manager::open_kazeterm_window(event_source_config.clone(), cx);
+    #[cfg(unix)]
+    if let Some(server) = remote_server {
+      remote_control::start(server, cx);
+    }
   });
 }

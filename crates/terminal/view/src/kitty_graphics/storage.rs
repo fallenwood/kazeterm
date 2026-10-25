@@ -17,17 +17,18 @@ pub struct PreparedImage {
 
 /// Image storage with LRU eviction.
 pub struct KittyImageStorage {
-  images: HashMap<u32, StoredImage>,
+  /// Internal identities include anonymous images and are never sent on the wire.
+  images: HashMap<u64, StoredImage>,
+  /// Only nonzero client IDs are addressable by protocol commands.
+  client_ids: HashMap<u32, u64>,
   /// Image numbers resolve to the newest surviving transmission, not LRU order.
-  image_numbers: HashMap<u32, Vec<u32>>,
+  image_numbers: HashMap<u32, Vec<u64>>,
   /// Access order for LRU eviction (most recently used at the back).
-  access_order: Vec<u32>,
+  access_order: Vec<u64>,
   /// Total memory used by stored images.
   total_memory: usize,
   /// Maximum memory before eviction.
   max_memory: usize,
-  /// Next auto-assigned client/storage image ID.
-  next_id: u32,
   /// Last internal creation identity; independent of LRU and client-ID reuse.
   last_internal_id: u64,
 }
@@ -36,29 +37,32 @@ impl KittyImageStorage {
   pub fn new() -> Self {
     Self {
       images: HashMap::new(),
+      client_ids: HashMap::new(),
       image_numbers: HashMap::new(),
       access_order: Vec::new(),
       total_memory: 0,
       max_memory: MAX_IMAGE_BYTES,
-      next_id: 1,
       last_internal_id: 0,
     }
   }
 
   /// Store a decoded image from a completed Kitty command.
-  /// Returns the assigned image ID, or an error message.
+  /// Returns the client ID (zero for anonymous uploads), or an error message.
   pub fn store(&mut self, cmd: &KittyCommand) -> Result<u32, String> {
     let mut command = cmd.clone();
     let prepared = prepare_image(&mut command)?;
-    self.store_prepared(cmd.image_id, cmd.image_number, prepared)
+    let internal_id = self.store_prepared(cmd.image_id, cmd.image_number, prepared)?;
+    Ok(self.images[&internal_id].id)
   }
 
+  /// Store prepared pixels and return an internal identity for placement.
+  /// Callers must resolve the client ID separately before acknowledging an upload.
   pub fn store_prepared(
     &mut self,
     requested_image_id: u32,
     image_number: u32,
     prepared: PreparedImage,
-  ) -> Result<u32, String> {
+  ) -> Result<u64, String> {
     if prepared.memory_bytes > self.max_memory {
       return Err(format!(
         "Decoded image uses {} bytes, exceeding the {} byte storage limit",
@@ -66,15 +70,15 @@ impl KittyImageStorage {
       ));
     }
 
-    let image_id = if requested_image_id == 0 {
-      self.allocate_id()
+    let image_id = if requested_image_id == 0 && image_number != 0 {
+      self.allocate_client_id()?
     } else {
-      requested_image_id
+      requested_image_id // Anonymous images retain client ID zero.
     };
 
-    let internal_id = if let Some(image) = self.images.get(&image_id) {
+    let internal_id = if let Some(&internal_id) = self.client_ids.get(&image_id) {
       // Kitty's find_or_create_image retains identity on explicit replacement.
-      image.internal_id
+      internal_id
     } else {
       self.last_internal_id = self
         .last_internal_id
@@ -85,7 +89,7 @@ impl KittyImageStorage {
 
     // Replacing an image must release its old allocation before quota checks,
     // otherwise an unrelated image can be evicted unnecessarily.
-    self.remove(image_id);
+    self.remove_by_internal(internal_id);
 
     // Evict old images if needed.
     while self.total_memory + prepared.memory_bytes > self.max_memory
@@ -95,7 +99,7 @@ impl KittyImageStorage {
     }
 
     self.images.insert(
-      image_id,
+      internal_id,
       StoredImage {
         id: image_id,
         internal_id,
@@ -105,49 +109,78 @@ impl KittyImageStorage {
         memory_bytes: prepared.memory_bytes,
       },
     );
-    self.access_order.push(image_id);
+    self.access_order.push(internal_id);
+    if image_id != 0 {
+      self.client_ids.insert(image_id, internal_id);
+    }
     if image_number != 0 {
       self
         .image_numbers
         .entry(image_number)
         .or_default()
-        .push(image_id);
+        .push(internal_id);
     }
     self.total_memory += prepared.memory_bytes;
 
-    Ok(image_id)
+    Ok(internal_id)
   }
 
   pub fn newest_for_number(&self, image_number: u32) -> Option<u32> {
-    self.image_numbers.get(&image_number)?.last().copied()
+    let internal_id = self.image_numbers.get(&image_number)?.last()?;
+    self.images.get(internal_id).map(|image| image.id)
   }
 
   pub fn image_ids(&self) -> impl Iterator<Item = u32> + '_ {
-    self.images.keys().copied()
+    self.client_ids.keys().copied()
+  }
+
+  /// Like Kitty's add_trim_predicate, discard unreachable anonymous data before
+  /// another upload. Placement ownership stays in the terminal, not storage.
+  pub(crate) fn gc_anonymous(&mut self, mut is_referenced: impl FnMut(u64) -> bool) {
+    let orphaned: Vec<_> = self
+      .images
+      .values()
+      .filter(|image| image.id == 0 && !is_referenced(image.internal_id))
+      .map(|image| image.internal_id)
+      .collect();
+    for internal_id in orphaned {
+      self.remove_by_internal(internal_id);
+    }
   }
 
   /// Get a stored image, updating access order for LRU.
   pub fn get(&mut self, image_id: u32) -> Option<&StoredImage> {
-    if self.images.contains_key(&image_id) {
-      self.touch(image_id);
-      self.images.get(&image_id)
-    } else {
-      None
-    }
+    let internal_id = *self.client_ids.get(&image_id)?;
+    self.touch(internal_id);
+    self.peek_by_internal(internal_id)
   }
 
-  /// Get without updating LRU (for rendering).
+  /// Look up a client-addressable image without updating LRU. Zero never matches.
   pub fn peek(&self, image_id: u32) -> Option<&StoredImage> {
-    self.images.get(&image_id)
+    self.peek_by_internal(*self.client_ids.get(&image_id)?)
   }
 
-  /// Delete an image by ID.
+  /// Resolve a placement's internal identity, including anonymous images.
+  pub(crate) fn peek_by_internal(&self, internal_id: u64) -> Option<&StoredImage> {
+    self.images.get(&internal_id)
+  }
+
+  /// Delete a client-addressable image. Zero never selects anonymous images.
   pub fn remove(&mut self, image_id: u32) -> bool {
-    if let Some(img) = self.images.remove(&image_id) {
+    self
+      .client_ids
+      .get(&image_id)
+      .copied()
+      .is_some_and(|internal_id| self.remove_by_internal(internal_id))
+  }
+
+  pub(crate) fn remove_by_internal(&mut self, internal_id: u64) -> bool {
+    if let Some(img) = self.images.remove(&internal_id) {
       self.total_memory = self.total_memory.saturating_sub(img.memory_bytes);
-      self.access_order.retain(|&id| id != image_id);
+      self.client_ids.remove(&img.id);
+      self.access_order.retain(|&id| id != internal_id);
       self.image_numbers.retain(|_, ids| {
-        ids.retain(|&id| id != image_id);
+        ids.retain(|&id| id != internal_id);
         !ids.is_empty()
       });
       true
@@ -159,6 +192,7 @@ impl KittyImageStorage {
   /// Delete all images.
   pub fn clear(&mut self) {
     self.images.clear();
+    self.client_ids.clear();
     self.image_numbers.clear();
     self.access_order.clear();
     self.total_memory = 0;
@@ -168,23 +202,26 @@ impl KittyImageStorage {
     self.images.len()
   }
 
-  fn allocate_id(&mut self) -> u32 {
-    while self.images.contains_key(&self.next_id) {
-      self.next_id = self.next_id.wrapping_add(1).max(1);
+  fn allocate_client_id(&self) -> Result<u32, String> {
+    // Kitty get_free_client_id chooses the smallest free nonzero ID. Anonymous
+    // storage identities must not reserve client IDs or influence this search.
+    let mut id = 1u32;
+    while self.client_ids.contains_key(&id) {
+      id = id
+        .checked_add(1)
+        .ok_or_else(|| "Client image ID space exhausted".to_string())?;
     }
-    let id = self.next_id;
-    self.next_id = self.next_id.wrapping_add(1).max(1);
-    id
+    Ok(id)
   }
 
-  fn touch(&mut self, image_id: u32) {
+  fn touch(&mut self, image_id: u64) {
     self.access_order.retain(|&id| id != image_id);
     self.access_order.push(image_id);
   }
 
   fn evict_oldest(&mut self) {
     if let Some(oldest_id) = self.access_order.first().copied() {
-      self.remove(oldest_id);
+      self.remove_by_internal(oldest_id);
     }
   }
 }
@@ -369,11 +406,29 @@ mod tests {
   }
 
   #[test]
-  fn test_auto_id() {
+  fn anonymous_uploads_have_zero_client_id_and_distinct_storage_identities() {
     let mut storage = KittyImageStorage::new();
     let cmd = make_test_command(0, 2, 2);
-    let id = storage.store(&cmd).unwrap();
-    assert!(id > 0);
+    assert_eq!(storage.store(&cmd).unwrap(), 0);
+    assert_eq!(storage.store(&cmd).unwrap(), 0);
+    assert_eq!(storage.image_count(), 2);
+    assert_eq!(
+      storage
+        .images
+        .values()
+        .filter(|image| image.id == 0)
+        .count(),
+      2
+    );
+    assert!(storage.peek(0).is_none());
+    assert!(storage.get(0).is_none());
+    assert!(!storage.remove(0));
+    assert!(storage.image_ids().next().is_none());
+
+    storage.store(&make_test_command(1, 1, 1)).unwrap();
+    assert_eq!(storage.image_count(), 3);
+    assert_ne!(storage.peek(1).unwrap().internal_id, 1);
+    assert_eq!(storage.client_ids.len(), 1);
   }
 
   #[test]
@@ -399,21 +454,47 @@ mod tests {
   }
 
   #[test]
-  fn auto_ids_do_not_replace_explicit_ids() {
+  fn numbered_uploads_use_the_smallest_free_client_id_without_collisions() {
     let mut storage = KittyImageStorage::new();
-    storage.store(&make_test_command(1, 1, 1)).unwrap();
-    let id = storage.store(&make_test_command(0, 1, 1)).unwrap();
-    assert_ne!(id, 1);
-    assert_eq!(storage.image_count(), 2);
-    storage.next_id = u32::MAX;
-    assert_eq!(
-      storage.store(&make_test_command(0, 1, 1)).unwrap(),
-      u32::MAX
-    );
-    let wrapped = storage.store(&make_test_command(0, 1, 1)).unwrap();
-    assert_ne!(wrapped, 1);
-    assert_ne!(wrapped, id);
+    for id in [1, u32::MAX] {
+      storage.store(&make_test_command(id, 1, 1)).unwrap();
+    }
+    let mut cmd = make_test_command(0, 1, 1);
+    cmd.image_number = 9;
+    assert_eq!(storage.store(&cmd).unwrap(), 2);
+    assert_eq!(storage.store(&cmd).unwrap(), 3);
+    assert!(storage.remove(2));
+    assert_eq!(storage.store(&cmd).unwrap(), 2);
+    assert_eq!(storage.newest_for_number(9), Some(2));
     assert_eq!(storage.image_count(), 4);
+    assert!(storage.peek(1).is_some());
+    assert!(storage.peek(u32::MAX).is_some());
+  }
+
+  #[test]
+  fn anonymous_and_numbered_images_share_quota_but_not_lookup_or_lru_identity() {
+    let mut storage = KittyImageStorage::new();
+    storage.max_memory = 8;
+    let mut cmd = make_test_command(0, 1, 1);
+    let prepared = prepare_image(&mut cmd).unwrap();
+    let anonymous = storage.store_prepared(0, 0, prepared.clone()).unwrap();
+    let named = storage.store_prepared(0, 9, prepared.clone()).unwrap();
+    let client = storage.newest_for_number(9).unwrap();
+    assert_eq!(client, 1); // Anonymous storage did not reserve client ID 1.
+    assert_ne!(anonymous, named);
+    storage.get(client);
+    let newest = storage.store_prepared(0, 0, prepared.clone()).unwrap();
+    assert!(storage.peek_by_internal(anonymous).is_none());
+    assert!(storage.peek(client).is_some());
+    storage.store_prepared(0, 0, prepared).unwrap();
+    assert!(storage.peek_by_internal(named).is_none());
+    assert!(storage.peek_by_internal(newest).is_some());
+    assert!(storage.peek(client).is_none());
+    assert!(storage.newest_for_number(9).is_none());
+    assert!(storage.client_ids.is_empty());
+    assert!(storage.image_numbers.is_empty());
+    assert_eq!(storage.total_memory, 8);
+    assert_eq!(storage.image_count(), 2);
   }
 
   #[test]

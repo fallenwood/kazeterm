@@ -88,6 +88,11 @@ cell coverage, recomputes coverage on cell-size changes, and resolves two image
 bounds for texture sampling without allocating cropped copies. Visible images
 sort by z-index/internal creation identity and paint in three layers separated
 by non-default cell backgrounds and text, clipped to the terminal cell grid.
+Image storage and placements use internal identities independently of client
+IDs: anonymous images retain client ID zero, numbered uploads obtain free
+nonzero IDs, and replies/selectors resolve only the client namespace. Anonymous
+data is collected when its last placement is removed or before another upload
+if unplaced; all images still share the same storage quota and LRU.
 
 ## Platform boundaries
 

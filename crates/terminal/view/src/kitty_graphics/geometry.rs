@@ -119,6 +119,7 @@ mod tests {
   fn placement() -> ImagePlacement {
     ImagePlacement {
       image_id: 1,
+      internal_image_id: 1,
       placement_id: 0,
       line: 0,
       column: 0,

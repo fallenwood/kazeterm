@@ -15,10 +15,12 @@ impl PlacementManager {
 
   /// Add a new image placement.
   pub fn add(&mut self, placement: ImagePlacement) {
-    // Remove existing placement with same image_id + placement_id combo.
+    // Replacement is scoped to internal storage identity, never to the shared
+    // client ID zero of anonymous images.
     if placement.placement_id != 0 {
       self.placements.retain(|p| {
-        !(p.image_id == placement.image_id && p.placement_id == placement.placement_id)
+        !(p.internal_image_id == placement.internal_image_id
+          && p.placement_id == placement.placement_id)
       });
     }
     self.placements.push(placement);
@@ -26,13 +28,21 @@ impl PlacementManager {
 
   /// Remove all placements for a given image ID.
   pub fn remove_by_image(&mut self, image_id: u32) {
-    self.placements.retain(|p| p.image_id != image_id);
+    self
+      .placements
+      .retain(|p| image_id == 0 || p.image_id != image_id);
+  }
+
+  pub(crate) fn remove_by_internal_image(&mut self, internal_id: u64) {
+    self
+      .placements
+      .retain(|p| p.internal_image_id != internal_id);
   }
 
   /// Remove a specific placement.
   pub fn remove_by_id(&mut self, image_id: u32, placement_id: Option<u32>) {
     self.placements.retain(|p| {
-      if p.image_id != image_id {
+      if image_id == 0 || p.image_id != image_id {
         return true;
       }
       if let Some(pid) = placement_id {
@@ -50,12 +60,12 @@ impl PlacementManager {
       .retain(|p| !placement_contains(p, line as i64, column as i64));
   }
 
-  /// Remove matching placements and return the affected image IDs.
-  pub fn remove_matching(&mut self, mut matches: impl FnMut(&ImagePlacement) -> bool) -> Vec<u32> {
+  /// Remove matching placements and return affected internal image identities.
+  pub fn remove_matching(&mut self, mut matches: impl FnMut(&ImagePlacement) -> bool) -> Vec<u64> {
     let mut affected = Vec::new();
     self.placements.retain(|p| {
       if matches(p) {
-        affected.push(p.image_id);
+        affected.push(p.internal_image_id);
         false
       } else {
         true
@@ -65,7 +75,14 @@ impl PlacementManager {
   }
 
   pub fn has_image(&self, image_id: u32) -> bool {
-    self.placements.iter().any(|p| p.image_id == image_id)
+    image_id != 0 && self.placements.iter().any(|p| p.image_id == image_id)
+  }
+
+  pub(crate) fn has_internal_image(&self, internal_id: u64) -> bool {
+    self
+      .placements
+      .iter()
+      .any(|p| p.internal_image_id == internal_id)
   }
 
   /// Remove all placements.
@@ -77,13 +94,13 @@ impl PlacementManager {
   pub fn gc(&mut self, storage: &KittyImageStorage) {
     self
       .placements
-      .retain(|p| storage.peek(p.image_id).is_some());
+      .retain(|p| storage.peek_by_internal(p.internal_image_id).is_some());
   }
 
   /// Recompute automatic cell coverage after font/cell metrics change.
   pub fn resize(&mut self, storage: &KittyImageStorage, cell_size: (f32, f32)) {
     for p in &mut self.placements {
-      if let Some(image) = storage.peek(p.image_id) {
+      if let Some(image) = storage.peek_by_internal(p.internal_image_id) {
         p.update_cell_coverage((image.width, image.height), cell_size);
       }
     }
@@ -105,7 +122,7 @@ impl PlacementManager {
       .placements
       .iter()
       .filter_map(|p| {
-        let stored = storage.peek(p.image_id)?;
+        let stored = storage.peek_by_internal(p.internal_image_id)?;
         let geometry = p.geometry((stored.width, stored.height), cell_size)?;
         let origin = gpui::point(
           gpui::px(p.column as f32 * cell_size.0),
@@ -152,6 +169,7 @@ mod tests {
   fn make_placement(image_id: u32, line: i32, col: i32) -> ImagePlacement {
     ImagePlacement {
       image_id,
+      internal_image_id: u64::from(image_id),
       placement_id: 0,
       line,
       column: col,
@@ -183,6 +201,7 @@ mod tests {
         })
         .unwrap();
       let mut p = make_placement(id, -1, 1);
+      p.internal_image_id = storage.peek(id).unwrap().internal_id;
       p.display_columns = 0;
       p.display_rows = 0;
       p.crop = (2, 10, 8, 25);
@@ -190,9 +209,12 @@ mod tests {
       p.update_cell_coverage((20, 40), (10., 20.));
       mgr.add(p);
     }
-    mgr.add(make_placement(2, 2, 0)); // Starts below the viewport.
+    let mut below = make_placement(2, 2, 0); // Starts below the viewport.
+    below.internal_image_id = storage.peek(2).unwrap().internal_id;
+    mgr.add(below);
     mgr.add(make_placement(404, 0, 0)); // Missing image data.
     let mut empty = make_placement(2, 0, 0);
+    empty.internal_image_id = storage.peek(2).unwrap().internal_id;
     empty.crop = (20, 0, 0, 0);
     mgr.add(empty);
 
@@ -264,6 +286,36 @@ mod tests {
     mgr.remove_at_cursor(3, 3);
     assert_eq!(mgr.placement_count(), 0);
     assert_eq!(storage.image_count(), 1);
+  }
+
+  #[test]
+  fn reusing_client_ids_does_not_revive_stale_placements() {
+    use super::super::command::KittyCommand;
+    let mut storage = KittyImageStorage::new();
+    let command = KittyCommand {
+      image_id: 7,
+      source_width: 1,
+      source_height: 1,
+      payload: vec![0; 4],
+      ..KittyCommand::default()
+    };
+    storage.store(&command).unwrap();
+    let old_identity = storage.peek(7).unwrap().internal_id;
+    let mut mgr = PlacementManager::new();
+    let mut p = make_placement(7, 0, 0);
+    p.internal_image_id = old_identity;
+    mgr.add(p);
+    storage.remove(7);
+    storage.store(&command).unwrap();
+    assert_ne!(storage.peek(7).unwrap().internal_id, old_identity);
+    assert!(
+      mgr
+        .visible_placements(&storage, 0, 24, (10., 20.))
+        .is_empty()
+    );
+    mgr.gc(&storage);
+    assert_eq!(mgr.placement_count(), 0);
+    assert!(storage.peek(7).is_some());
   }
 
   #[test]

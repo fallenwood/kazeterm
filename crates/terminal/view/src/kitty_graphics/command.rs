@@ -93,7 +93,7 @@ pub struct KittyCommand {
   pub action: KittyAction,
   pub format: KittyFormat,
   pub transmission: KittyTransmission,
-  /// Image ID (0 = auto-assign).
+  /// Client image ID (0 = anonymous, or assigned only when I is nonzero).
   pub image_id: u32,
   /// Non-unique image number, distinct from a placement ID.
   pub image_number: u32,
@@ -294,6 +294,7 @@ impl KittyResponse {
 /// A decoded image ready for rendering.
 #[derive(Clone)]
 pub struct StoredImage {
+  /// Client-visible image ID, zero for anonymous images.
   pub id: u32,
   /// Kitty sorts equal-z images by creation identity, not client IDs or LRU.
   pub(crate) internal_id: u64,
@@ -307,7 +308,10 @@ pub struct StoredImage {
 /// An active image placement in the terminal grid.
 #[derive(Debug, Clone)]
 pub struct ImagePlacement {
+  /// Client ID for selectors; zero is never addressable by ID/range commands.
   pub image_id: u32,
+  /// Distinct storage identity, including for multiple anonymous images.
+  pub(crate) internal_image_id: u64,
   pub placement_id: u32,
   /// Absolute line in the terminal grid (includes scrollback).
   pub line: i32,

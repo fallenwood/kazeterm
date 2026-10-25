@@ -3942,6 +3942,7 @@ name = "kazeterm"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "clap",
  "config",
  "dirs 7.0.0",
@@ -3983,7 +3984,9 @@ name = "kazeterm-event-system"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "futures",
  "gpui-fast",
+ "libc",
  "serde",
  "serde_json",
  "smol",

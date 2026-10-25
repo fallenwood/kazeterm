@@ -15,6 +15,8 @@ The reference for these iterations is Kitty commit
 - `i` is an image ID, `I` is a non-unique image number, and `p` is a placement ID.
   Uploading with a number creates a new image; subsequent number-based commands
   select the newest surviving upload, independently of LRU access order.
+  Number-based uploads receive the smallest free nonzero client ID, as in
+  Kitty's `get_free_client_id`; deleted client IDs can be reused.
 - Direct `t=d` transfers decode RGB (`f=24`), RGBA (`f=32`, the default), and PNG
   (`f=100`). PNG commands do not fall back to accepting another image format.
 - `o=z` supports zlib-compressed raw pixels and PNG. Raw dimensions determine
@@ -29,15 +31,25 @@ The reference for these iterations is Kitty commit
   are bounded at 320 MiB. The Unix PTY filter retains at most 8 KiB per APC,
   consumes excess bytes through ST, and lets the decoder reject the command.
   These are per-command/image limits, not a global bound on the raw event queue.
-- Lowercase deletion removes matching placements but retains image data.
-  Uppercase deletion also frees affected data when no placements remain.
+- Lowercase deletion removes matching placements and retains named image data.
+  Anonymous data is freed when its last placement is removed, because it has no
+  client-addressable reuse path. Uppercase deletion also frees affected named
+  data when no placements remain.
   Supported selectors are `a`, `i`, `n`, `c`, `p`, `q`, `r`, `x`, `y`, `z`
   and their uppercase variants. Cell selectors are one-based and test rectangle
   intersection, not just the placement origin. Delete-all affects visible
   placements rather than erasing scrollback and all cached images.
-- Replacing an explicit image ID removes its old placements. Auto-assigned IDs
-  skip occupied IDs. Replacing a stored allocation accounts for the released
-  memory before evicting unrelated images; evicted image placements are collected.
+- Replacing an explicit image ID removes its old placements. Number-assigned IDs
+  skip occupied client IDs. Replacing a stored allocation accounts for the released
+  memory before evicting unrelated images; evicted image placements are collected
+  by internal identity so reusing a client ID cannot revive stale placements.
+- Images with neither `i` nor `I` keep client ID zero and distinct internal storage
+  identities. They receive no replies and ignore placement IDs. Guessed nonzero
+  IDs, `i=0`, and ID-range deletion cannot select them; explicit uploads using
+  the same numeric value as their internal identity cannot overwrite them.
+  Unplaced anonymous data is pruned before the next completed upload, following
+  Kitty's `add_trim_predicate`. Named/numbered/anonymous allocations share the
+  same storage quota and LRU, but not the client lookup namespace.
 - `C=1` does not request cursor advancement. The filter no longer guesses image
   height or advances the cursor on an unvalidated first chunk, and no longer adds
   two non-protocol padding rows.
@@ -82,8 +94,8 @@ The reference for these iterations is Kitty commit
 - Images are sorted by z-index and then **internal creation identity**, as in
   `grman_update_layers`, not by client IDs or LRU access. Replacing a surviving
   explicit image retains this identity; deleting and uploading it again creates
-  a new identity. This ordering key does not yet separate anonymous images from
-  the client-addressable storage-ID namespace.
+  a new identity. Storage, placements, rendering, and LRU use internal identities;
+  client IDs are resolved separately for selectors and acknowledgements.
 - `z < -1073741824` paints before non-default cell backgrounds;
   `-1073741824 <= z < 0` paints after those backgrounds but before text;
   `z >= 0` paints above text. The terminal's default background precedes all
@@ -145,9 +157,7 @@ read, and cancels an incomplete upload in the decoder.
 - Cursor movement still uses the existing deferred row-only CNL feedback. Full
   row/column placement movement, ordered processing relative to subsequent text,
   screen-buffer switching and scrolling at margins still need that coordinated
-  boundary, not more metadata guesses in the PTY reader. Anonymous/client
-  image-ID namespaces also remain represented by the existing shared storage-ID
-  mechanism.
+  boundary, not more metadata guesses in the PTY reader.
 
 ## Native image smoke test
 
@@ -174,6 +184,16 @@ smoke test at one display configuration, not a pixel-diff comparison with Kitty,
 a scrolling/resize test, or comprehensive HiDPI/platform validation. Details and
 temporary artifact paths are recorded in
 [`memories/2026-10-25-native-kitty-image-smoke.md`](../memories/2026-10-25-native-kitty-image-smoke.md).
+
+A subsequent native run also verified image-identity isolation: two anonymous
+red/blue images coexisted with a named green `i=1` image, a guessed put before
+that named upload returned `ENOENT`, and an `I=9` upload received client ID 2.
+Zero-ID/range selectors preserved all images; an uppercase full client-ID range
+removed only the green/numbered images while the anonymous red/blue images
+remained visible. The expanded four-scene run sent 155 chunks and retained the
+query-before-DA and `C=1` checks. See the
+[identity iteration record](../memories/2026-10-25-kitty-graphics-identities.md)
+for validation and temporary artifacts.
 
 ## Code and tests
 

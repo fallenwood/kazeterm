@@ -10,7 +10,11 @@ gpui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 smol.workspace = true
+futures.workspace = true
 tracing.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 uds_windows.workspace = true

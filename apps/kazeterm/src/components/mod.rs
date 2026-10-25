@@ -18,6 +18,8 @@ mod main_window_transitions;
 mod main_window_window_lifecycle_tests;
 mod menu_builder;
 mod notifications;
+#[cfg(test)]
+mod remote_control_tests;
 mod search_bar;
 mod settings_page;
 mod shell_error_dialog;
