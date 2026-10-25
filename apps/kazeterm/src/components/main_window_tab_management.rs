@@ -277,6 +277,41 @@ impl MainWindow {
       .and_then(|active_ix| self.items.get_mut(active_ix))
   }
 
+  /// Derive each tab's automatic title from its active pane's debounced metadata.
+  /// Inactive panes still update their own metadata, but cannot rename the tab.
+  pub(crate) fn refresh_tab_titles(&mut self) {
+    let Some(window) = self
+      .ui_tree
+      .window_id()
+      .and_then(|id| self.ui_tree.tree().window(id))
+    else {
+      return;
+    };
+
+    for item in &mut self.items {
+      let Some((_, tab)) = window.tab(&item.ui_tree_id) else {
+        continue;
+      };
+      let pane_id = item
+        .split_container
+        .active_pane_id
+        .map(|id| format!("pane-{}", id.0));
+      let title = pane_id
+        .as_deref()
+        .and_then(|id| tab.pane_tree.find_pane(id))
+        .and_then(|pane| match pane {
+          kazeterm_ui_tree::node::PaneNode::Terminal { title, .. } if !title.trim().is_empty() => {
+            Some(title.as_str())
+          }
+          _ => None,
+        })
+        .unwrap_or_else(|| tab.shell.profile.as_deref().unwrap_or(&item._shell_name));
+      if item.title != title {
+        item.title = title.to_string();
+      }
+    }
+  }
+
   pub(crate) fn focus_terminal(
     &self,
     window: &mut Window,
@@ -407,13 +442,6 @@ impl MainWindow {
         };
 
         let tab_id = this.items[tab_position].ui_tree_id.clone();
-        if this.items[tab_position].custom_title.is_none()
-          && this.items[tab_position].title != new_title
-        {
-          this.items[tab_position].title = new_title.clone();
-          cx.notify();
-        }
-
         let Some(window_id) = this.ensure_ui_tree_window_id(cx) else {
           return;
         };

@@ -105,6 +105,315 @@ fn main_window_creates_initial_tab_with_fake_factory(cx: &mut TestAppContext) {
   clear_terminal_session_factory_for_testing();
 }
 
+fn publish_tab_title(
+  root: &mut MainWindow,
+  terminal_view: &gpui::Entity<terminal::TerminalView>,
+  title: &str,
+  window: &mut gpui::Window,
+  cx: &mut gpui::Context<MainWindow>,
+) {
+  let terminal = terminal_view.read(cx).terminal().clone();
+  terminal.update(cx, |terminal, _| {
+    terminal.title_text = title.to_string();
+  });
+  MainWindow::subscribe_terminal_view_event(
+    root,
+    terminal_view,
+    &terminal::TerminalEvent::UpdateTab,
+    window,
+    cx,
+  );
+}
+
+#[gpui::test]
+fn tab_title_follows_active_split_without_background_overwrites(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+  let handle = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  let second = handle
+    .update(cx, |root, window, cx| {
+      let first = root.active_terminal().unwrap();
+      publish_tab_title(root, &first, "editor", window, cx);
+      root.split_pane_vertical(window, cx);
+      let second = root.active_terminal().unwrap();
+      let second_pane_id = format!(
+        "pane-{}",
+        root.items[0].split_container.active_pane_id.unwrap().0
+      );
+      publish_tab_title(root, &second, "build", window, cx);
+      publish_tab_title(root, &first, "editor updated", window, cx);
+      assert_eq!(root.items[0].display_title(), "build");
+
+      root.focus_prev_pane(window, cx);
+      assert_eq!(root.items[0].display_title(), "editor updated");
+      publish_tab_title(root, &second, "build finished", window, cx);
+      assert_eq!(root.items[0].display_title(), "editor updated");
+
+      let pane = root.ui_tree.tree().windows[0].tabs[0]
+        .pane_tree
+        .find_pane(&second_pane_id)
+        .unwrap();
+      assert!(matches!(pane, PaneNode::Terminal { title, .. } if title == "build finished"));
+      second
+    })
+    .unwrap();
+  cx.run_until_parked();
+
+  // A mouse focus change is synchronized during rendering, without a new title event.
+  handle
+    .update(cx, |_root, window, cx| {
+      let focus = second.read(cx).focus_handle.clone();
+      window.focus(&focus, cx);
+    })
+    .unwrap();
+  cx.run_until_parked();
+  handle
+    .update(cx, |root, window, cx| {
+      assert_eq!(root.items[0].display_title(), "build finished");
+      root.close_active_pane(window, cx);
+      assert_eq!(root.items[0].display_title(), "editor updated");
+    })
+    .unwrap();
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn tab_title_ignores_empty_metadata_and_keeps_auto_title_through_rebuild(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+  let handle = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  cx.run_until_parked();
+
+  handle
+    .update(cx, |root, window, cx| {
+      let terminal = root.active_terminal().unwrap();
+      let fallback = root.items[0].display_title().to_string();
+      publish_tab_title(root, &terminal, "", window, cx);
+      assert_eq!(root.items[0].display_title(), fallback);
+      assert_eq!(first_pane_metadata(root).0, "");
+
+      publish_tab_title(root, &terminal, "automatic title", window, cx);
+      let window_id = root.ensure_ui_tree_window_id(cx).unwrap();
+      let tab_id = root.items[0].ui_tree_id.clone();
+      root
+        .dispatch_ui_action(
+          UIAction::RenameTab {
+            window_id: window_id.clone(),
+            tab_id: tab_id.clone(),
+            title: Some("Custom".into()),
+          },
+          window,
+          cx,
+        )
+        .unwrap();
+      root.split_pane_vertical(window, cx);
+      assert_eq!(root.items[0].display_title(), "Custom");
+      root.focus_prev_pane(window, cx);
+      root
+        .dispatch_ui_action(
+          UIAction::RenameTab {
+            window_id,
+            tab_id,
+            title: None,
+          },
+          window,
+          cx,
+        )
+        .unwrap();
+      assert_eq!(root.items[0].display_title(), "automatic title");
+
+      // Pane-title actions must refresh the tab too, not only its serialized metadata.
+      let window_id = root.ensure_ui_tree_window_id(cx).unwrap();
+      let pane_id = format!(
+        "pane-{}",
+        root.items[0].split_container.active_pane_id.unwrap().0
+      );
+      root
+        .dispatch_ui_action(
+          UIAction::UpdatePaneTitle {
+            window_id,
+            tab_id: root.items[0].ui_tree_id.clone(),
+            pane_id,
+            title: "external title".into(),
+          },
+          window,
+          cx,
+        )
+        .unwrap();
+      assert_eq!(root.items[0].display_title(), "external title");
+    })
+    .unwrap();
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn window_title_tracks_active_tab_and_custom_names(cx: &mut TestAppContext) {
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+  cx.run_until_parked();
+
+  let initial_title = window
+    .update(cx, |root, _window, _cx| {
+      root.items[0].display_title().to_string()
+    })
+    .unwrap();
+  assert_eq!(
+    visual.window_title(),
+    Some(format!("{initial_title} - Kazeterm"))
+  );
+
+  window
+    .update(cx, |root, window, cx| {
+      let window_id = root.ensure_ui_tree_window_id(cx).unwrap();
+      let tab_id = root.items[0].ui_tree_id.clone();
+      root
+        .dispatch_ui_action(
+          UIAction::RenameTab {
+            window_id,
+            tab_id,
+            title: Some("My terminal".into()),
+          },
+          window,
+          cx,
+        )
+        .unwrap();
+    })
+    .unwrap();
+  cx.run_until_parked();
+  assert_eq!(
+    visual.window_title().as_deref(),
+    Some("My terminal - Kazeterm")
+  );
+
+  window
+    .update(cx, |root, window, cx| root.insert_new_tab(window, cx))
+    .unwrap();
+  cx.run_until_parked();
+  assert_eq!(
+    visual.window_title(),
+    Some(format!("{initial_title} - Kazeterm"))
+  );
+
+  window
+    .update(cx, |root, window, cx| root.set_active_tab(0, window, cx))
+    .unwrap();
+  cx.run_until_parked();
+  assert_eq!(
+    visual.window_title().as_deref(),
+    Some("My terminal - Kazeterm")
+  );
+
+  window
+    .update(cx, |root, _window, cx| {
+      root.items.clear();
+      root.active_tab_ix = None;
+      cx.notify();
+    })
+    .unwrap();
+  cx.run_until_parked();
+  assert_eq!(visual.window_title().as_deref(), Some("Kazeterm"));
+  clear_terminal_session_factory_for_testing();
+}
+
+#[gpui::test]
+fn terminal_title_updates_keep_latest_auto_title_under_custom_name(cx: &mut TestAppContext) {
+  use terminal_kernel::event::Event;
+
+  let _guard = test_lock();
+  crate::test_support::init_test_app(cx);
+  install_fake_factory();
+  let window = cx.add_window(|window, cx| MainWindow::new(window, cx));
+  let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+  cx.run_until_parked();
+
+  let (terminal, delay) = window
+    .update(cx, |root, window, cx| {
+      let view = root.active_terminal().unwrap();
+      let terminal = view.read(cx).terminal().clone();
+      let tab_index = root.items[0].index;
+      root.show_rename_dialog(tab_index, window, cx);
+      let dialog = root.rename_dialog.clone().unwrap();
+      root.on_rename_dialog_event(
+        &dialog,
+        &crate::components::tab_rename_dialog::TabRenameEvent {
+          tab_index,
+          new_title: Some("Pinned name".into()),
+        },
+        window,
+        cx,
+      );
+      root.insert_new_tab(window, cx);
+      let delay = cx.global::<::config::Config>().tab.get_title_change_delay();
+      (terminal, delay)
+    })
+    .unwrap();
+  cx.run_until_parked();
+  let active_title = visual.window_title();
+
+  for title in ["intermediate title", "latest title"] {
+    terminal.update(cx, |terminal, cx| {
+      terminal.process_event(Event::Title(title.into()), cx);
+    });
+    cx.run_until_parked();
+  }
+  window
+    .update(cx, |root, _window, _cx| {
+      assert_ne!(
+        root.items[0].title, "latest title",
+        "the configured delay must be preserved"
+      );
+    })
+    .unwrap();
+  cx.executor().advance_clock(delay);
+  cx.run_until_parked();
+  assert_eq!(visual.window_title(), active_title);
+
+  window
+    .update(cx, |root, window, cx| {
+      assert_eq!(root.items[0].title, "latest title");
+      assert_eq!(root.items[0].display_title(), "Pinned name");
+      assert_eq!(first_pane_metadata(root).0, "latest title");
+      root.set_active_tab(0, window, cx);
+    })
+    .unwrap();
+  cx.run_until_parked();
+  assert_eq!(
+    visual.window_title().as_deref(),
+    Some("Pinned name - Kazeterm")
+  );
+
+  window
+    .update(cx, |root, window, cx| {
+      let window_id = root.ensure_ui_tree_window_id(cx).unwrap();
+      let tab_id = root.items[0].ui_tree_id.clone();
+      root
+        .dispatch_ui_action(
+          UIAction::RenameTab {
+            window_id,
+            tab_id,
+            title: None,
+          },
+          window,
+          cx,
+        )
+        .unwrap();
+    })
+    .unwrap();
+  cx.run_until_parked();
+  assert_eq!(
+    visual.window_title().as_deref(),
+    Some("latest title - Kazeterm")
+  );
+  clear_terminal_session_factory_for_testing();
+}
+
 #[gpui::test]
 fn program_status_updates_background_tabs_and_preserves_completed_records(cx: &mut TestAppContext) {
   use terminal::program_status::{ProgramState, ProgramStatusParser};

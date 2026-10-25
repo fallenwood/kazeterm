@@ -204,10 +204,7 @@ impl MainWindow {
 
     let index = self.tab_index.fetch_add(1, Ordering::SeqCst);
     let shell_name = Self::shell_name_for_tab(tab);
-    let title = tab
-      .custom_title
-      .clone()
-      .unwrap_or_else(|| shell_name.clone());
+    let title = shell_name.clone();
 
     let item = TabItem {
       ui_tree_id: tab.id.clone(),
@@ -253,15 +250,9 @@ impl MainWindow {
 
     let was_active = self.active_tab_ix == Some(ix);
     let shell_name = Self::shell_name_for_tab(tab);
-    let title = tab
-      .custom_title
-      .clone()
-      .unwrap_or_else(|| self.items[ix].title.clone());
-
     {
       let item = &mut self.items[ix];
       item.ui_tree_id = tab.id.clone();
-      item.title = title;
       item.custom_title = tab.custom_title.clone();
       item.pinned = tab.pinned;
       item.shell_path = tab.shell.path.clone();

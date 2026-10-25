@@ -304,7 +304,7 @@ impl TerminalView {
   fn schedule_tab_title_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     let delay = tab_title_change_delay(cx);
     self.pending_tab_title_update = cx.spawn_in(window, async move |this, cx| {
-      Timer::after(delay).await;
+      cx.background_executor().timer(delay).await;
       _ = this.update(cx, |_, cx| {
         cx.emit(TerminalEvent::UpdateTab);
       });

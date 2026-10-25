@@ -51,6 +51,8 @@ pub(crate) struct KeyDebugRecentKey {
 pub struct MainWindow {
   pub(crate) focus_handle: FocusHandle,
   pub(crate) active_tab_ix: Option<usize>,
+  /// Last native window title applied, to avoid redundant platform updates on repaint.
+  pub(crate) last_window_title: String,
   #[allow(dead_code)]
   pub(crate) size: Size,
   pub(crate) items: Vec<TabItem>,
@@ -229,6 +231,7 @@ impl MainWindow {
     let mut main_window = Self {
       focus_handle: cx.focus_handle(),
       active_tab_ix: None,
+      last_window_title: String::new(),
       size: Size::default(),
       items: vec![],
       groups: vec![],
@@ -330,6 +333,7 @@ impl MainWindow {
     let mut tree_store = std::mem::replace(&mut self.ui_tree, UITreeStore::new());
     tree_store.capture_from_main_window(self, refresh_working_directories, cx);
     self.ui_tree = tree_store;
+    self.refresh_tab_titles();
   }
 
   /// Dump the current UI tree as a JSON string.
@@ -406,6 +410,7 @@ impl MainWindow {
     let mut tree_store = std::mem::replace(&mut self.ui_tree, UITreeStore::new());
     let result = tree_store.dispatch(action, self, window, cx);
     self.ui_tree = tree_store;
+    self.refresh_tab_titles();
     result
   }
 

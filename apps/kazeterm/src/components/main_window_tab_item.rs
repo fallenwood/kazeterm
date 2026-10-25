@@ -6,7 +6,7 @@ pub struct TabItem {
   pub(crate) ui_tree_id: String,
   pub(crate) index: usize,
   pub(crate) title: String,
-  /// Custom title set by the user. When Some, auto-title updates are ignored.
+  /// Custom display title set by the user, overriding the latest automatic title.
   pub(crate) custom_title: Option<String>,
   pub(crate) pinned: bool,
   pub(crate) group_id: Option<String>,

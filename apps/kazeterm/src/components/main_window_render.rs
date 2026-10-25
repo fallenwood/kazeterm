@@ -875,6 +875,24 @@ fn render_key_debug_overlay(
 
 impl Render for MainWindow {
   fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    // Resolve mouse-driven pane focus before building tab labels and the native title.
+    if self.settings_page.is_none() {
+      self.sync_active_pane_from_focus(window, cx);
+    }
+    self.refresh_tab_titles();
+
+    let title = self
+      .active_tab_ix
+      .and_then(|ix| self.items.get(ix))
+      .map(|item| display_text(item.display_title()))
+      .filter(|title| !title.trim().is_empty())
+      .map(|title| format!("{title} - Kazeterm"))
+      .unwrap_or_else(|| "Kazeterm".to_string());
+    if self.last_window_title != title {
+      window.set_window_title(&title);
+      self.last_window_title = title;
+    }
+
     if let Some(page) = &self.settings_page {
       let view = cx.entity();
       let titlebar = if window.is_fullscreen() {
@@ -1635,9 +1653,6 @@ impl Render for MainWindow {
       })
       .child({
         let active_ix = self.active_tab_ix.unwrap_or_default();
-        // Sync active pane from OS focus so the inactive-pane dimming
-        // reflects the currently focused terminal immediately.
-        self.sync_active_pane_from_focus(window, cx);
         let pane_search_bar = if search_visible { Some(search_bar) } else { None };
         let content = div()
           .flex_1()

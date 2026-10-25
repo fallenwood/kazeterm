@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use gpui::{AppContext, Context, Entity, Focusable, PathPromptOptions, Window};
+use kazeterm_ui_tree::action::UIAction;
 
 use super::main_window::MainWindow;
 use crate::components::about_dialog::{AboutDialog, AboutDialogCloseEvent, AboutDialogEvent};
@@ -89,12 +90,23 @@ impl MainWindow {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) {
-    let tab_index = event.tab_index;
-    let new_title = event.new_title.clone();
-
-    // Find the tab and update its custom_title
-    if let Some(item) = self.items.iter_mut().find(|item| item.index == tab_index) {
-      item.custom_title = new_title;
+    if let Some(tab_id) = self
+      .items
+      .iter()
+      .find(|item| item.index == event.tab_index)
+      .map(|item| item.ui_tree_id.clone())
+      && let Some(window_id) = self.ensure_ui_tree_window_id(cx)
+    {
+      self.dispatch_default_ui_action(
+        UIAction::RenameTab {
+          window_id,
+          tab_id,
+          title: event.new_title.clone(),
+        },
+        "rename tab",
+        window,
+        cx,
+      );
     }
 
     // Close the dialog
