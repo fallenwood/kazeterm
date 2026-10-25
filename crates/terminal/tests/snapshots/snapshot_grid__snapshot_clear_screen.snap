@@ -1,6 +1,0 @@
----
-source: crates/terminal/tests/snapshot_grid.rs
-assertion_line: 78
-expression: frame
----
-fresh

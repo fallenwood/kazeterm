@@ -1,30 +1,17 @@
 [workspace]
 resolver = "2"
 members = [
+  "apps/kazeterm",
   "crates/config",
   "crates/kazeterm-event-system",
-  "crates/kazeterm",
   "crates/kazeterm-ui-tree",
   "crates/themeing",
-  "crates/terminal",
-  "crates/terminal-kernel",
-  "crates/terminal-kernel-alacritty",
-  "crates/terminal-kernel-unix-bundle",
-  "crates/terminal-kernel-vte",
+  "crates/terminal/core",
+  "crates/terminal/view",
+  "crates/terminal/backends/alacritty",
+  "crates/terminal/backends/vte",
 ]
-# Keep the default root build working on Windows while Unix builds still pull
-# in the extra terminal kernels through the unix bundle crate.
-default-members = [
-  "crates/config",
-  "crates/kazeterm-event-system",
-  "crates/kazeterm",
-  "crates/kazeterm-ui-tree",
-  "crates/themeing",
-  "crates/terminal",
-  "crates/terminal-kernel",
-  "crates/terminal-kernel-alacritty",
-  "crates/terminal-kernel-unix-bundle",
-]
+default-members = ["apps/kazeterm"]
 
 [workspace.package]
 version = "0.4.0"
@@ -32,6 +19,16 @@ publish = false
 edition = "2024"
 
 [workspace.dependencies]
+# Internal dependency paths are defined here, never in individual crates.
+config = { path = "crates/config" }
+kazeterm-event-system = { path = "crates/kazeterm-event-system" }
+kazeterm-ui-tree = { path = "crates/kazeterm-ui-tree" }
+themeing = { path = "crates/themeing" }
+terminal = { path = "crates/terminal/view" }
+terminal-kernel = { path = "crates/terminal/core" }
+terminal-kernel-alacritty = { path = "crates/terminal/backends/alacritty" }
+terminal-kernel-vte = { path = "crates/terminal/backends/vte" }
+
 gpui = { package = "gpui-fast", version = "0.1.10", default-features = false }
 gpui-kit = { version = "0.8.0", default-features = false, features = ["component", "gpui-fast"] }
 alacritty_terminal = "0.26.0"
@@ -58,6 +55,7 @@ notify-rust = "4.18.2"
 which = "8.0.6"
 semver = "1.0.28"
 base64 = "0.23.1"
+flate2 = "1.1.10"
 clap = { version = "4.6.7", features = ["derive"] }
 insta = "1.49.0"
 mimalloc = { version = "0.1.52", default-features = false }

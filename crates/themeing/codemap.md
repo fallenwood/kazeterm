@@ -22,5 +22,5 @@ Provides the application's runtime theme model, GPUI global theme state, termina
 ## Integration
 
 - Depends on: `config` for palettes and font configuration; `gpui` and `gpui-kit` for global state and widget styling.
-- Consumed by: `kazeterm` UI components, `terminal` rendering and zoom behavior, and `terminal-kernel` color adapters.
+- Consumed by: `kazeterm` UI components and `terminal` rendering/zoom behavior. Terminal core/backends do not depend on the GPUI theme bridge.
 - Entry points: `src/lib.rs` for public models/converters/globals and `src/defaults.rs` for default theme construction.

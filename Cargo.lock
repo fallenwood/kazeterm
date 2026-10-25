@@ -3942,6 +3942,7 @@ name = "kazeterm"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "clap",
  "config",
  "dirs 7.0.0",
@@ -3983,7 +3984,9 @@ name = "kazeterm-event-system"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "futures",
  "gpui-fast",
+ "libc",
  "serde",
  "serde_json",
  "smol",
@@ -7189,16 +7192,14 @@ dependencies = [
  "anyhow",
  "base64 0.23.1",
  "config",
+ "flate2",
  "futures",
  "gpui-fast",
  "image",
  "insta",
  "itertools 0.15.0",
- "libc",
- "polling",
  "regex",
  "smol",
- "sysinfo 0.39.6",
  "terminal-kernel",
  "themeing",
  "tracing",
@@ -7212,37 +7213,29 @@ name = "terminal-kernel"
 version = "0.4.0"
 dependencies = [
  "alacritty_terminal",
+ "base64 0.23.1",
  "futures",
- "themeing",
+ "libc",
+ "polling",
+ "sysinfo 0.39.6",
+ "windows 0.62.2",
 ]
 
 [[package]]
 name = "terminal-kernel-alacritty"
 version = "0.4.0"
 dependencies = [
- "alacritty_terminal",
- "config",
  "futures",
- "terminal",
  "terminal-kernel",
-]
-
-[[package]]
-name = "terminal-kernel-unix-bundle"
-version = "0.4.0"
-dependencies = [
- "terminal-kernel-vte",
 ]
 
 [[package]]
 name = "terminal-kernel-vte"
 version = "0.4.0"
 dependencies = [
- "config",
  "futures",
  "libc",
  "parking_lot",
- "terminal",
  "terminal-kernel",
  "vte",
 ]

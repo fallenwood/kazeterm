@@ -24,6 +24,6 @@ Provides Kazeterm's configuration domain crate. It owns the serializable applica
 
 - Detailed source map: [src/codemap.md](src/codemap.md)
 - Primary consumer: `crates/kazeterm`, which loads and globally publishes `Config`, watches all resolved config files, initializes embedded/custom themes, builds windows, constructs transition schedules from `Config.animation`, and persists updater/import state.
-- Terminal consumer: `crates/terminal`, which converts `KeybindingConfig` into GPUI bindings and reads terminal, cursor, font, color, and behavior settings through the main application.
-- Theme consumer: `crates/themeing`, whose `SettingsStore` receives the resolved `Palette` from `crates/kazeterm/src/config.rs`.
+- Terminal consumer: `crates/terminal/view`, which converts `KeybindingConfig` into GPUI bindings and reads terminal, cursor, font, color, and behavior settings through the main application. Terminal core/backends do not depend on config; the app translates it into `SessionOptions`.
+- Theme consumer: `crates/themeing`, whose `SettingsStore` receives the resolved `Palette` from `apps/kazeterm/src/config.rs`.
 - External data boundaries: the user's TOML files, custom and embedded theme TOML, `~/.ssh/config`, the host executable/PATH, container-runtime command output, and optional Alacritty TOML.

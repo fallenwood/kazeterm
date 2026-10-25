@@ -27,21 +27,27 @@ Kazeterm is a cross-platform terminal emulator built with the GPUI framework (fr
 ### Crate Structure
 
 ```
+apps/kazeterm/              # Desktop executable and composition root
 crates/
-├── kazeterm-event-system/ # Shared AppEvent types, JSON parsing, readers, dispatch runtime
-├── kazeterm/   # Main application entry point, window management, UI components
-├── terminal/   # Terminal rendering, PTY management, input handling
-├── config/     # Configuration loading, shell profiles, theme palette parsing
-└── themeing/   # Theme management, zoom state, color system
+├── kazeterm-event-system/   # Event protocol, readers, GPUI dispatch
+├── kazeterm-ui-tree/        # Serializable UI state, reducer, diffs
+├── config/                  # Configuration, migrations, profiles, palette
+├── themeing/                # GPUI theme and zoom bridge
+└── terminal/
+    ├── core/                # terminal-kernel: headless contracts, sessions, PTY/protocols
+    ├── view/                # terminal: GPUI presentation and input
+    └── backends/
+        ├── alacritty/       # Cross-platform session factory
+        └── vte/             # Linux-only emulator/session factory
 ```
 
-**Dependency flow:** `kazeterm` → {`kazeterm-event-system`, `config`, `terminal`, `themeing`}, where `terminal` and `themeing` both depend on `config`.
+**Dependency flow:** the executable selects backends and maps config into `SessionOptions`; backends and the GPUI view depend on `terminal-kernel`, never on each other. Core/backends must not import config, theming, or GPUI. All internal paths belong in root `[workspace.dependencies]`. Run `pwsh -NoProfile -File scripts/check-workspace.ps1` to validate boundaries; see `docs/architecture.md`. Repository scripts and their tests use PowerShell 7 (`pwsh`), not Python.
 
 ### Key Technologies
 
-- **GPUI Kit 0.6.0**: Application facade and higher-level UI components
-- **GPUI 0.3.x**: GPU-accelerated runtime, consumed through `gpui-pre`
-- **alacritty_terminal 0.25.1**: ANSI terminal emulation and parsing
+- **GPUI Kit 0.8.0**: Application facade and higher-level UI components
+- **GPUI Fast 0.1.10**: GPU-accelerated runtime, aliased as `gpui`
+- **alacritty_terminal 0.26.0**: Shared ANSI/grid/PTY vocabulary and default emulator
 - **Platform-specific**: Uses Windows APIs directly on Windows, XCB on Linux
 
 ---
@@ -170,7 +176,7 @@ Generates a `ThemeFile` from Alacritty colors. UI is in `import_alacritty_dialog
 
 ---
 
-## Main Application (`crates/kazeterm/`)
+## Main Application (`apps/kazeterm/`)
 
 ### Module Structure
 
@@ -193,7 +199,7 @@ kazeterm/src/
     ├── main_window_search.rs               # Search toggle/connect
     ├── main_window_split_pane_actions.rs   # Split/close/focus/swap pane actions
     ├── menu_builder.rs                     # Tab context menu + new tab dropdown
-    ├── terminal_window.rs                  # Terminal+PTY creation, shell hooks, env setup
+    ├── terminal_window.rs                  # Config-to-session adapter, backend selection, view creation
     ├── split_pane.rs                       # SplitContainer tree (Terminal|Split{dir,first,second,ratio})
     ├── search_bar.rs                       # SearchBar component (Render + EventEmitter)
     ├── tab_switcher.rs                     # TabSwitcher overlay (Render)
@@ -264,17 +270,16 @@ Most operations use direct method calls through the event system or keybinding d
 
 ---
 
-## Terminal Crate (`crates/terminal/`)
+## Terminal View Crate (`crates/terminal/view/`)
 
 ### Module Structure
 
 ```
-terminal/src/
+crates/terminal/view/src/
 ├── lib.rs                    # Crate root, init(), re-exports
 ├── terminal_view.rs          # TerminalView (Render) — top-level GPUI entity
 ├── terminal/
-│   ├── mod.rs                # Terminal struct (wraps Arc<FairMutex<Term>>)
-│   ├── events.rs             # Event/InternalEvent enums
+│   ├── mod.rs                # GPUI model, events, TerminalSession conversion
 │   ├── input.rs              # Keystroke → PTY byte translation
 │   └── mouse_scroll.rs       # Mouse scroll + alt-screen handling
 ├── terminal_element/
@@ -288,8 +293,7 @@ terminal/src/
 │   ├── command.rs            # Protocol types (KittyCommand, StoredImage, ImagePlacement)
 │   ├── parser.rs             # APC payload parser (handles chunked base64)
 │   ├── storage.rs            # KittyImageStorage with LRU eviction (320MB)
-│   ├── placement.rs          # PlacementManager (grid-coordinate placements)
-│   └── pty_filter.rs         # Unix PTY filter (intercepts \x1b_G before alacritty)
+│   └── placement.rs          # PlacementManager (grid-coordinate placements)
 ├── mappings/
 │   ├── mod.rs
 │   ├── colors.rs             # Alacritty → GPUI color mapping
@@ -310,14 +314,16 @@ terminal/src/
 ├── hover_target.rs           # HoverTarget for hyperlinks
 ├── ime_state.rs              # ImeState for input method
 ├── mouse.rs                  # MouseState (click, drag, touch)
-├── osc7.rs                   # OSC 7 CWD extraction
-├── pty_info.rs               # PtyProcessInfo (pid, cwd, fg process)
 └── apca_contrast.rs          # APCA contrast ratio calculation
 ```
 
+PTY/process support, OSC observers, raw graphics interception, and keyboard/DSR
+negotiation live in `crates/terminal/core/src/`. Compatibility re-exports remain
+available under the view crate; concrete backends import only core types.
+
 ### Key Types (exported from crate root)
 
-- `Terminal` — core terminal state wrapping alacritty_terminal
+- `Terminal` — GPUI terminal model owning the resources moved from `TerminalSession`
 - `TerminalView` — GPUI `Render` entity (produces div containing TerminalElement)
 - `TerminalElement` — GPUI `Element` impl (actual canvas: layout → prepaint → paint)
 - `PtyProcessInfo` — PTY process metadata
@@ -333,10 +339,10 @@ terminal/src/
 
 ### PTY Integration
 
-- Created in `terminal_window.rs`: builds `alacritty_terminal::Term`, creates PTY, wraps in `GraphicsPtyFilter` (Unix), spawns IO event loop
-- **Input**: UI → `Terminal::input()` → `Notifier` → `EventLoop` → PTY slave
-- **Output**: child → PTY → `EventLoop` → `TerminalEventListener` channel → batched `process_event()` calls
-- **Kitty graphics**: intercepted by `GraphicsPtyFilter` before alacritty sees them (Unix); on Windows uses named pipe side-channel (`KAZETERM_GRAPHICS_PIPE` env var)
+- Backend factories create the PTY/emulator/event loop from `SessionOptions` and return `(TerminalSession, SessionEvents)`; `terminal_window.rs` moves resources into the GPUI model.
+- **Input**: UI → `Terminal::input()` → core `PtySender` port → backend event loop → PTY
+- **Output**: child → PTY → event loop → `TerminalEventListener` channel → batched `process_event()` calls
+- **Kitty graphics**: core `GraphicsPtyFilter` intercepts Unix graphics commands; the view owns image decoding/storage and rendering. Windows uses core `WindowsDsrFilter` for DSR/keyboard protocol observation.
 
 ### Kitty Graphics Flow
 
@@ -437,10 +443,11 @@ Style lints are allowed to avoid blocking development.
 
 Use `#[cfg(target_os = "...")]` for platform-specific implementations. Key areas:
 - Shell detection (`config/src/shell.rs`) — candidate order differs per OS
-- PTY process info (`terminal/src/pty_info.rs`)
+- PTY process info (`crates/terminal/core/src/pty_info.rs`)
 - System dark mode detection (`kazeterm/src/main.rs`)
 - Window management and icons
-- Kitty graphics: Unix uses PTY filter, Windows uses named pipe side-channel
+- PTY protocols: Unix uses `GraphicsPtyFilter`; Windows uses `WindowsDsrFilter` in terminal core
+- VTE source and manifest dependencies are Linux-only; workspace builds need no manual exclusions
 - UI font: `Segoe UI` (Windows), `Noto Sans` (others)
 
 ## Configuration

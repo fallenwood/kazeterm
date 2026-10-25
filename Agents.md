@@ -6,13 +6,12 @@ Kazeterm is a Rust 2024, GPUI-based terminal emulator. Keep changes small, prese
 
 ### Workspace layout
 
-- `crates/kazeterm`: application bootstrap, GPUI windows/components, updater, workspace persistence, and UI-tree reconciliation.
+- `apps/kazeterm` (`kazeterm`): executable composition root, GPUI windows/components, updater, workspace persistence, and UI-tree reconciliation.
 - `crates/kazeterm-ui-tree`: serializable UI state, actions, reducer, and diffs. High-level UI mutations should flow through `UIAction` and `UITreeStore` when an action already exists.
-- `crates/terminal`: terminal state, input, rendering, search, selection, kitty graphics, scrollbar, and minimap.
-- `crates/terminal-kernel`: shared backend API and Alacritty terminal types.
-- `crates/terminal-kernel-alacritty`: Alacritty PTY/session adapter.
-- `crates/terminal-kernel-vte`: Linux-only VTE backend.
-- `crates/terminal-kernel-unix-bundle`: pulls Unix kernels into workspace builds.
+- `crates/terminal/view` (`terminal`): GPUI terminal state, input, rendering, search, selection, image storage, scrollbar, and minimap.
+- `crates/terminal/core` (`terminal-kernel`): headless backend/session contracts, PTY process information, OSC protocols, and shared terminal types.
+- `crates/terminal/backends/alacritty` (`terminal-kernel-alacritty`): cross-platform Alacritty session factory.
+- `crates/terminal/backends/vte` (`terminal-kernel-vte`): Linux-only VTE backend; builds an empty crate on other targets.
 - `crates/config`: nested config types, defaults, imports, validation, themes, profiles, keybindings, and migrations.
 - `crates/themeing`: GPUI theme/settings bridge.
 - `crates/kazeterm-event-system`: JSON event protocol and event dispatch.
@@ -21,6 +20,9 @@ Kazeterm is a Rust 2024, GPUI-based terminal emulator. Keep changes small, prese
 
 - Read the full implementation and all callers before changing shared behavior; fix root causes at the common boundary.
 - Reuse existing helpers and patterns. Do not add dependencies or abstractions for a small local change.
+- Write repository scripts and their tests in PowerShell 7 (`pwsh`), not Python.
+- Define internal paths only in root `[workspace.dependencies]`; member manifests inherit them with `workspace = true`.
+- Terminal core/backends must remain independent of GPUI, `config`, `themeing`, and the `terminal` presentation crate. Translate config into `SessionOptions` in the app. Check boundaries with `pwsh -NoProfile -File scripts/check-workspace.ps1`.
 - Do not edit `target/`, generated artifacts, or unrelated code. Change `Cargo.lock` only when dependencies change.
 - Preserve `#[cfg(...)]` boundaries. VTE is selectable only on Linux; Alacritty is the default on every platform.
 - For GPUI work, read `.github/skills/gpui/SKILL.md`, its relevant reference, and `anti-patterns.md`. Use `.github/skills/gpui-element/SKILL.md` only for low-level `Element` work.
@@ -47,8 +49,9 @@ Start with the narrowest useful checks, then run workspace checks for shared cha
 cargo fmt --all -- --check
 cargo test --package <crate> <test_name>
 cargo test --workspace
-cargo build --workspace       # Linux/macOS full workspace
-cargo build                   # Windows/default members
+cargo build --workspace       # All platforms; VTE is target-gated
+cargo build                   # Application and its dependencies
+pwsh -NoProfile -File scripts/check-workspace.ps1
 ```
 
 Do not use `release-fast` for normal development or debugging; it is for CI/package builds.

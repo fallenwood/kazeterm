@@ -148,6 +148,30 @@ workspace, swaps the executable on restart, and restores the saved workspace.
 Updater state, including the daily-check timestamp and one-shot restore flag, is
 kept in the same `kazeterm.toml` under `[auto_update]`.
 
+## Workspace structure
+
+```text
+apps/kazeterm/                   # Desktop executable and application composition
+crates/
+├── config/                      # Persisted configuration and migrations
+├── kazeterm-event-system/       # Event protocol and GPUI dispatch integration
+├── kazeterm-ui-tree/            # Serializable UI state, actions, and reducer
+├── themeing/                    # Configuration-to-GPUI theme bridge
+└── terminal/
+    ├── core/                    # Headless contracts, sessions, PTY and OSC support
+    ├── view/                    # GPUI terminal model, input, and rendering
+    └── backends/
+        ├── alacritty/           # Default cross-platform backend
+        └── vte/                 # Linux-only backend
+```
+
+Package names and `cargo test --package ...` commands remain unchanged.
+Internal dependency paths are centralized in root `[workspace.dependencies]`.
+The terminal core and backends do not depend on GPUI or application configuration:
+the executable translates settings into `SessionOptions`, then converts a
+backend's `TerminalSession` into the GPUI terminal model. See
+[the architecture guide](docs/architecture.md) for dependency boundaries.
+
 ## How to Build
 
 ### Environment Setup
@@ -217,14 +241,32 @@ Run all unit and integration tests:
 cargo test --workspace
 ```
 
+Check workspace dependency boundaries and their regression tests (PowerShell 7+;
+no additional modules required; also runs in CI):
+
+```sh
+pwsh -NoProfile -File scripts/check-workspace.ps1
+pwsh -NoProfile -File scripts/test-workspace.ps1
+```
+
+The terminal core and backends can also be tested without compiling GPUI:
+
+```sh
+cargo test -p terminal-kernel -p terminal-kernel-alacritty -p terminal-kernel-vte
+```
+
+`cargo build --workspace` works on every supported platform. The VTE crate and
+its dependencies are enabled only on Linux; no platform-specific workspace
+exclusions or aggregation crate are needed.
+
 ### UI test coverage
 
 Kazeterm's GPUI-based UI is exercised headlessly via `gpui`'s `test-support`
 feature (enabled as a dev-dependency on the `kazeterm` crate):
 
 - **Component tests** live next to the components they exercise
-  (`crates/kazeterm/src/components/*_dialog.rs`, `search_bar.rs`, …) and use
-  `#[gpui::test]` with a shared helper in `crates/kazeterm/src/test_support.rs`
+  (`apps/kazeterm/src/components/*_dialog.rs`, `search_bar.rs`, …) and use
+  `#[gpui::test]` with a shared helper in `apps/kazeterm/src/test_support.rs`
   that installs a default `Config` + `SettingsStore` for each test window.
 - **Keybinding regression tests** in
   `crates/config/tests/default_keybindings.rs` lock down the default bindings
@@ -232,16 +274,16 @@ feature (enabled as a dev-dependency on the `kazeterm` crate):
 - **Event-protocol tests** in
   `crates/kazeterm-event-system/tests/json_event_protocol.rs` guard the
   stdin/socket JSON wire format.
-- **Headless terminal tests** in `crates/terminal/tests/headless_terminal.rs`
+- **Headless terminal tests** in `crates/terminal/view/tests/headless_terminal.rs`
   drive an in-memory `alacritty_terminal::Term` through the ANSI parser — no
   PTY, no child process — and assert on the resulting grid. This is the
   foundation for behavioural testing of escape-sequence handling.
-- **Snapshot tests** in `crates/terminal/tests/snapshot_grid.rs` use
+- **Snapshot tests** in `crates/terminal/view/tests/snapshot_grid.rs` use
   [`insta`](https://insta.rs) to snapshot rendered grids for a set of canned
   ANSI scenarios. Run `cargo insta review --workspace` to accept intentional
   changes; set `INSTA_UPDATE=always` when bulk-regenerating.
 - **End-to-end tests** in
-  `crates/kazeterm/src/components/main_window_e2e_tests.rs` boot a real
+  `apps/kazeterm/src/components/main_window_e2e_tests.rs` boot a real
   `MainWindow` against a fake terminal-session factory
   (`terminal::test_support::fake_terminal_session`). They verify that
   `insert_new_tab` wires through to the factory and that `MainWindow.items`
@@ -259,7 +301,7 @@ cargo test --package terminal --test fake_session
 ```
 
 End-to-end tests now boot `MainWindow` against a fake session factory (see
-`crates/kazeterm/src/components/main_window_e2e_tests.rs`). The only remaining
+`apps/kazeterm/src/components/main_window_e2e_tests.rs`). The only remaining
 layer is optional GPU visual snapshots, which are deliberately not shipped
 (documented in plan.md under "Still not shipped").
 

@@ -65,12 +65,15 @@ jobs:
             libxkbcommon-x11-dev \
             zstd
 
-      - name: Build
-        if: runner.os == 'Windows'
-        run: cargo build --target ${{ matrix.target }} --profile=release-fast
+      - name: Test workspace boundary checker
+        shell: pwsh
+        run: ./scripts/test-workspace.ps1
+
+      - name: Check workspace boundaries
+        shell: pwsh
+        run: ./scripts/check-workspace.ps1
 
       - name: Build
-        if: runner.os != 'Windows'
         run: cargo build --target ${{ matrix.target }} --workspace --profile=release-fast
 
       - name: Install cargo-llvm-cov
@@ -79,7 +82,7 @@ jobs:
 
       - name: Run tests
         if: runner.os == 'Windows' && matrix.arch == 'X64'
-        run: cargo test --target ${{ matrix.target }} --workspace --all-features --exclude terminal-kernel-vte
+        run: cargo test --target ${{ matrix.target }} --workspace --all-features
 
       - name: Run coverage (tests included)
         if: runner.os != 'Windows'

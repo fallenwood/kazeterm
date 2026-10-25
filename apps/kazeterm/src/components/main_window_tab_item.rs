@@ -1,0 +1,27 @@
+use crate::components::search_bar::SearchBarState;
+use crate::components::split_pane::SplitContainer;
+
+/// A single tab containing a terminal or split container
+pub struct TabItem {
+  pub(crate) ui_tree_id: String,
+  pub(crate) index: usize,
+  pub(crate) title: String,
+  /// Custom display title set by the user, overriding the latest automatic title.
+  pub(crate) custom_title: Option<String>,
+  pub(crate) pinned: bool,
+  pub(crate) group_id: Option<String>,
+  pub(crate) shell_path: String,
+  pub(crate) shell_args: Vec<String>,
+  pub(crate) _shell_name: String,
+  pub(crate) split_container: SplitContainer,
+  pub(crate) terminal_subscriptions: Vec<gpui::Subscription>,
+  /// Per-tab search bar state, saved/restored on tab switch.
+  pub(crate) search_bar_state: SearchBarState,
+}
+
+impl TabItem {
+  /// Returns the display title (custom title if set, otherwise the auto-assigned title)
+  pub fn display_title(&self) -> &str {
+    self.custom_title.as_deref().unwrap_or(&self.title)
+  }
+}

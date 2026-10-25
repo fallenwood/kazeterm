@@ -43,6 +43,7 @@ mod app_event;
 mod event_bus;
 mod event_sources;
 mod json_event;
+pub mod remote_control;
 
 pub use app_event::AppEvent;
 pub use event_bus::EventBus;

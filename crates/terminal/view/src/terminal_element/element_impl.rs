@@ -1,0 +1,885 @@
+use gpui::{
+  AbsoluteLength, App, Bounds, Element, FontFeatures, FontStyle, FontWeight, HighlightStyle, Hsla,
+  MouseButton, Pixels, Point, TextRun, TextStyle, UnderlineStyle, WhiteSpace, Window, fill, px,
+  relative,
+};
+use terminal_kernel::{
+  BACKGROUND_COLOR_INDEX, CURSOR_COLOR_INDEX, FOREGROUND_COLOR_INDEX, grid::Dimensions,
+  vte::ansi::CursorShape as AlacCursorShape,
+};
+use themeing::ActiveTheme as _;
+
+use crate::{
+  cursor_layout::CursorLayout,
+  highlighted_range_line::HighlightedRange,
+  kitty_graphics::{VisiblePlacement, command::GraphicsLayer},
+  mappings::colors::resolve_palette_index,
+  minimap::{
+    MINIMAP_WIDTH, MinimapState, minimap_column_capacity, minimap_line_capacity, paint_minimap,
+  },
+  scrollbar::{MIN_THUMB_HEIGHT, SCROLLBAR_WIDTH, ScrollbarState, paint_scrollbar},
+  terminal_input_handler::TerminalInputHandler,
+};
+
+use super::TerminalBounds;
+use super::TerminalContent;
+use super::helpers::{DisplayCursor, to_highlighted_range_lines};
+use super::{GridRenderCache, GridRenderCacheKey, LayoutState, TerminalElement};
+
+impl Element for TerminalElement {
+  type RequestLayoutState = ();
+  type PrepaintState = LayoutState;
+
+  fn id(&self) -> Option<gpui::ElementId> {
+    self.interactivity.element_id.clone()
+  }
+
+  fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+    None
+  }
+
+  fn request_layout(
+    &mut self,
+    global_id: Option<&gpui::GlobalElementId>,
+    inspector_id: Option<&gpui::InspectorElementId>,
+    window: &mut Window,
+    cx: &mut gpui::App,
+  ) -> (gpui::LayoutId, Self::RequestLayoutState) {
+    self.interactivity.occlude_mouse();
+    let height: gpui::Length = relative(1.).into();
+
+    let layout_id = self.interactivity.request_layout(
+      global_id,
+      inspector_id,
+      window,
+      cx,
+      |mut style, window, cx| {
+        style.size.width = relative(1.).into();
+        style.size.height = height;
+        window.request_layout(style, None, cx)
+      },
+    );
+    (layout_id, ())
+  }
+
+  fn prepaint(
+    &mut self,
+    global_id: Option<&gpui::GlobalElementId>,
+    inspector_id: Option<&gpui::InspectorElementId>,
+    bounds: gpui::Bounds<gpui::Pixels>,
+    _: &mut Self::RequestLayoutState,
+    window: &mut Window,
+    cx: &mut gpui::App,
+  ) -> Self::PrepaintState {
+    let inactive = self.inactive;
+    let inactive_opacity = cx
+      .try_global::<::config::Config>()
+      .map(|c| c.pane.get_inactive_opacity())
+      .unwrap_or(0.6);
+    self.interactivity.prepaint(
+      global_id,
+      inspector_id,
+      bounds,
+      bounds.size,
+      window,
+      cx,
+      |_, _, hitbox, window, cx: &mut App| {
+        let hitbox = hitbox.unwrap();
+        let config = cx.global::<::config::Config>();
+        let zoom_state = cx.global::<themeing::ZoomState>();
+        let minimap_enabled = config.terminal.minimap_enabled;
+        let bold_as_bright = config.colors.bold_as_bright;
+
+        let font_family = gpui::SharedString::from(config.font.family.clone());
+        let line_height_multiplier = 1.18_f32;
+        let effective_font_size = zoom_state.effective_font_size(config.font.size);
+        let font_size = AbsoluteLength::from(Pixels::from(effective_font_size));
+        let font_weight = FontWeight::NORMAL;
+        let font_features = FontFeatures::default();
+
+        let minimum_contrast = config.colors.minimum_contrast.max(0.0);
+
+        let theme = cx.theme().clone();
+
+        let mut text_style = TextStyle {
+          font_family,
+          font_features,
+          font_weight,
+          font_fallbacks: None,
+          font_size,
+          font_style: FontStyle::Normal,
+          line_height: relative(line_height_multiplier),
+          background_color: Some(theme.colors().terminal_ansi_background),
+          white_space: WhiteSpace::Normal,
+          color: theme.colors().terminal_foreground,
+          ..Default::default()
+        };
+
+        let text_system = cx.text_system();
+        let gutter;
+        let scrollbar_width = px(SCROLLBAR_WIDTH);
+        let minimap_width = if minimap_enabled {
+          px(MINIMAP_WIDTH)
+        } else {
+          px(0.0)
+        };
+        let (dimensions, _line_height_px) = {
+          let rem_size = window.rem_size();
+          let font_pixels = text_style.font_size.to_pixels(rem_size);
+          let line_height = font_pixels * line_height_multiplier;
+          let font_id = cx.text_system().resolve_font(&text_style.font());
+
+          let cell_width = text_system
+            .advance(font_id, font_pixels, 'm')
+            .unwrap()
+            .width;
+          gutter = cell_width;
+
+          let mut size = bounds.size;
+          size.width -= gutter + scrollbar_width + minimap_width;
+
+          if size.width < cell_width * 2.0 {
+            size.width = cell_width * 2.0;
+          }
+
+          let mut origin = bounds.origin;
+          origin.x += gutter;
+
+          (
+            TerminalBounds::new(line_height, cell_width, Bounds { origin, size }),
+            line_height,
+          )
+        };
+
+        self.terminal.update(cx, |terminal, cx| {
+          terminal.set_size(dimensions);
+          terminal.sync(window, cx);
+        });
+
+        let (minimap_cells, minimap_columns, color_table, content_revision) = {
+          let terminal = self.terminal.read(cx);
+          let (minimap_cells, minimap_columns) = if minimap_enabled {
+            terminal.collect_minimap_cells(
+              minimap_line_capacity(bounds.size.height),
+              minimap_column_capacity(minimap_width),
+            )
+          } else {
+            (Vec::new(), 0)
+          };
+          (
+            minimap_cells,
+            minimap_columns,
+            terminal.last_content.color_table,
+            terminal.content_revision(),
+          )
+        };
+        let terminal_background_color =
+          resolve_palette_index(BACKGROUND_COLOR_INDEX, theme.as_ref(), &color_table);
+        let terminal_foreground_color =
+          resolve_palette_index(FOREGROUND_COLOR_INDEX, theme.as_ref(), &color_table);
+        let cursor_color = resolve_palette_index(CURSOR_COLOR_INDEX, theme.as_ref(), &color_table);
+        text_style.background_color = Some(terminal_background_color);
+        text_style.color = terminal_foreground_color;
+
+        let background_color = terminal_background_color;
+
+        let TerminalContent {
+          cells,
+          mode,
+          display_offset,
+          cursor_char,
+          selection,
+          cursor,
+          search_matches,
+          current_search_match_index,
+          last_hovered_word,
+          history_size,
+          image_placements,
+          ..
+        } = &self.terminal.read(cx).last_content;
+        let image_placements = image_placements.clone();
+
+        let mode = *mode;
+        let display_offset = *display_offset;
+        let history_size = *history_size;
+        let current_match_idx = *current_search_match_index;
+
+        let link_style = HighlightStyle {
+          color: Some(theme.colors().link_text_hover),
+          font_weight: Some(font_weight),
+          font_style: None,
+          background_color: None,
+          underline: Some(UnderlineStyle {
+            thickness: px(1.0),
+            color: Some(theme.colors().link_text_hover),
+            wavy: false,
+          }),
+          strikethrough: None,
+          fade_out: None,
+        };
+
+        let mut relative_highlighted_ranges = Vec::new();
+        for (idx, search_match) in search_matches.iter().enumerate() {
+          let color = if idx + 1 == current_match_idx {
+            theme.colors().search_match_background
+          } else {
+            theme.colors().search_highlight_background
+          };
+          relative_highlighted_ranges.push((search_match.clone(), color));
+        }
+
+        if let Some(selection) = selection {
+          let selection_color = cx.theme().colors().element_selection_background;
+          relative_highlighted_ranges.push((selection.start..=selection.end, selection_color));
+        }
+
+        let hovered_range = last_hovered_word
+          .as_ref()
+          .map(|last_hovered_word| last_hovered_word.word_match.clone());
+        let inactive_factor = if inactive { inactive_opacity } else { 1.0 };
+        let grid_cache_key = GridRenderCacheKey {
+          content_revision,
+          display_offset,
+          theme_identity: std::ptr::from_ref(theme.as_ref()) as usize,
+          font_family: text_style.font_family.clone(),
+          font_size_bits: f32::from(text_style.font_size.to_pixels(window.rem_size())).to_bits(),
+          cell_width_bits: f32::from(dimensions.cell_width()).to_bits(),
+          minimum_contrast_bits: minimum_contrast.to_bits(),
+          inactive_factor_bits: inactive_factor.to_bits(),
+          bold_as_bright,
+          hovered_range,
+        };
+        let cached_grid = self
+          .terminal_view
+          .read(cx)
+          .grid_render_cache
+          .as_ref()
+          .filter(|cache| cache.key == grid_cache_key)
+          .cloned();
+        let mut pending_grid_cache = None;
+        let (rects, batched_text_runs) = if let Some(cache) = cached_grid {
+          (cache.rects, cache.batched_text_runs)
+        } else {
+          let (mut rects, mut batched_text_runs) = TerminalElement::layout_grid(
+            cells.iter(),
+            0,
+            &text_style,
+            last_hovered_word
+              .as_ref()
+              .map(|last_hovered_word| (link_style, &last_hovered_word.word_match)),
+            minimum_contrast,
+            bold_as_bright,
+            &color_table,
+            cx,
+          );
+          if inactive_factor < 1.0 {
+            desaturate_grid(&mut rects, &mut batched_text_runs, inactive_factor);
+          }
+          for run in &mut batched_text_runs {
+            run.shape(&dimensions, window);
+          }
+          let cache = GridRenderCache {
+            key: grid_cache_key,
+            rects: rects.into(),
+            batched_text_runs: batched_text_runs.into(),
+          };
+          let result = (cache.rects.clone(), cache.batched_text_runs.clone());
+          pending_grid_cache = Some(cache);
+          result
+        };
+
+        let cursor = if let AlacCursorShape::Hidden = cursor.shape {
+          None
+        } else {
+          let cursor_point = DisplayCursor::from(cursor.point, display_offset);
+          let cursor_text: gpui::ShapedLine = {
+            let str_trxt = cursor_char.to_string();
+            let len = str_trxt.len();
+            window.text_system().shape_line(
+              str_trxt.into(),
+              text_style.font_size.to_pixels(window.rem_size()),
+              &[TextRun {
+                len,
+                font: text_style.font(),
+                color: terminal_background_color,
+                background_color: None,
+                underline: Default::default(),
+                strikethrough: None,
+              }],
+              None,
+            )
+          };
+
+          let focused = self.focused;
+          TerminalElement::shape_cursor(cursor_point, dimensions, &cursor_text).map(
+            move |(cursor_position, block_width)| {
+              let (shape, text) = match cursor.shape {
+                AlacCursorShape::Block if !focused => (AlacCursorShape::HollowBlock, None),
+                AlacCursorShape::Block => (AlacCursorShape::Block, Some(cursor_text)),
+                AlacCursorShape::Underline => (AlacCursorShape::Underline, None),
+                AlacCursorShape::Beam => (AlacCursorShape::Beam, None),
+                AlacCursorShape::HollowBlock => (AlacCursorShape::HollowBlock, None),
+                AlacCursorShape::Hidden => unreachable!(),
+              };
+
+              CursorLayout::new(
+                cursor_position,
+                block_width,
+                dimensions.line_height,
+                cursor_color,
+                shape,
+                text,
+              )
+            },
+          )
+        };
+
+        let visible_lines = dimensions.screen_lines();
+        let total_lines = visible_lines + history_size;
+        let scrollbar_state =
+          ScrollbarState::new(total_lines, visible_lines, display_offset, history_size);
+
+        let scrollbar_bounds = if scrollbar_state.should_show() {
+          Some(Bounds {
+            origin: Point {
+              x: bounds.origin.x + bounds.size.width - scrollbar_width,
+              y: bounds.origin.y,
+            },
+            size: gpui::Size {
+              width: scrollbar_width,
+              height: bounds.size.height,
+            },
+          })
+        } else {
+          None
+        };
+
+        let (minimap_state, minimap_bounds) = if minimap_enabled {
+          let minimap_state =
+            MinimapState::new(total_lines, visible_lines, display_offset, history_size);
+          let minimap_bounds = Bounds {
+            origin: Point {
+              x: bounds.origin.x + bounds.size.width - scrollbar_width - minimap_width,
+              y: bounds.origin.y,
+            },
+            size: gpui::Size {
+              width: minimap_width,
+              height: bounds.size.height,
+            },
+          };
+          (Some(minimap_state), Some(minimap_bounds))
+        } else {
+          (None, None)
+        };
+
+        let mut layout = LayoutState {
+          hitbox,
+          batched_text_runs,
+          cursor,
+          background_color,
+          dimensions,
+          rects,
+          relative_highlighted_ranges,
+          mode,
+          display_offset,
+          gutter,
+          base_text_style: text_style,
+          scrollbar_state: if scrollbar_state.should_show() {
+            Some(scrollbar_state)
+          } else {
+            None
+          },
+          scrollbar_bounds,
+          minimap_state,
+          minimap_bounds,
+          color_table,
+          minimap_cells,
+          minimap_columns,
+          image_placements,
+          ime_text: None,
+        };
+
+        if let Some(cache) = pending_grid_cache {
+          self.terminal_view.update(cx, |view, _| {
+            view.grid_render_cache = Some(cache);
+          });
+        }
+
+        if inactive && inactive_opacity < 1.0 {
+          desaturate_layout_chrome(&mut layout, inactive_opacity);
+        }
+
+        let marked_text = self
+          .terminal_view
+          .read(cx)
+          .ime_state
+          .as_ref()
+          .map(|state| state.marked_text.clone())
+          .filter(|text| !text.is_empty());
+        layout.ime_text = marked_text.map(|text| {
+          let text_len = text.len();
+          let mut ime_style = layout.base_text_style.clone();
+          ime_style.underline = Some(UnderlineStyle {
+            color: Some(ime_style.color),
+            thickness: px(1.0),
+            wavy: false,
+          });
+          window.text_system().shape_line(
+            text.into(),
+            ime_style.font_size.to_pixels(window.rem_size()),
+            &[TextRun {
+              len: text_len,
+              font: ime_style.font(),
+              color: ime_style.color,
+              background_color: None,
+              underline: ime_style.underline,
+              strikethrough: None,
+            }],
+            None,
+          )
+        });
+
+        layout
+      },
+    )
+  }
+
+  fn paint(
+    &mut self,
+    global_id: Option<&gpui::GlobalElementId>,
+    inspector_id: Option<&gpui::InspectorElementId>,
+    bounds: gpui::Bounds<gpui::Pixels>,
+    _: &mut Self::RequestLayoutState,
+    layout: &mut Self::PrepaintState,
+    window: &mut Window,
+    cx: &mut gpui::App,
+  ) {
+    window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
+      let scroll_top = self.terminal_view.read(cx).scroll_top;
+
+      window.paint_quad(fill(bounds, layout.background_color));
+      let origin =
+        bounds.origin + Point::new(layout.gutter, px(0.)) - Point::new(px(0.), scroll_top);
+
+      let terminal_input_handler = TerminalInputHandler {
+        terminal: self.terminal.clone(),
+        terminal_view: self.terminal_view.clone(),
+        cursor_bounds: layout
+          .cursor
+          .as_ref()
+          .map(|cursor| cursor.bounding_rect(origin)),
+      };
+
+      let (right_click_context_menu, hide_mouse_when_typing) = cx
+        .try_global::<config::Config>()
+        .map(|c| {
+          (
+            c.terminal.right_click_context_menu,
+            c.terminal.hide_mouse_when_typing,
+          )
+        })
+        .unwrap_or((false, false));
+
+      self.register_mouse_listeners(
+        layout.mode,
+        &layout.hitbox,
+        layout.scrollbar_bounds,
+        layout.minimap_bounds,
+        right_click_context_menu,
+        window,
+      );
+      let hide_mouse_cursor = self.focused
+        && self
+          .terminal
+          .read(cx)
+          .should_hide_mouse_cursor(hide_mouse_when_typing);
+
+      if !hide_mouse_cursor
+        && window.modifiers().secondary()
+        && bounds.contains(&window.mouse_position())
+        && self.terminal_view.read(cx).hover.is_some()
+      {
+        window.set_cursor_style(gpui::CursorStyle::PointingHand, &layout.hitbox);
+      } else if !hide_mouse_cursor {
+        window.set_cursor_style(gpui::CursorStyle::IBeam, &layout.hitbox);
+      }
+
+      let original_cursor = layout.cursor.take();
+      self.interactivity.paint(
+        global_id,
+        inspector_id,
+        bounds,
+        Some(&layout.hitbox),
+        window,
+        cx,
+        |_, window, cx| {
+          window.handle_input(&self.focus, terminal_input_handler, cx);
+
+          paint_image_layer(
+            &layout.image_placements,
+            GraphicsLayer::BelowBackground,
+            origin,
+            &layout.dimensions,
+            window,
+          );
+
+          for rect in layout.rects.iter() {
+            rect.paint(origin, &layout.dimensions, window);
+          }
+
+          paint_image_layer(
+            &layout.image_placements,
+            GraphicsLayer::BelowText,
+            origin,
+            &layout.dimensions,
+            window,
+          );
+
+          for (relative_highlighted_range, color) in layout.relative_highlighted_ranges.iter() {
+            if let Some((start_y, highlighted_range_lines)) =
+              to_highlighted_range_lines(relative_highlighted_range, layout, origin)
+            {
+              let corner_radius = 0.15 * layout.dimensions.line_height;
+              let hr = HighlightedRange {
+                start_y,
+                line_height: layout.dimensions.line_height,
+                lines: highlighted_range_lines,
+                color: *color,
+                corner_radius,
+              };
+              hr.paint(true, bounds, window);
+            }
+          }
+
+          for batch in layout.batched_text_runs.iter() {
+            batch.paint(origin, &layout.dimensions, window, cx);
+          }
+
+          if let Some(shaped_line) = &layout.ime_text
+            && let Some(cursor_layout) = &original_cursor
+          {
+            let ime_position = cursor_layout.bounding_rect(origin).origin;
+            shaped_line
+              .paint(
+                ime_position,
+                layout.dimensions.line_height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+              )
+              .unwrap_or_default();
+          }
+
+          if self.cursor_visible
+            && let Some(mut cursor) = original_cursor
+          {
+            cursor.paint(origin, window, cx);
+          }
+
+          paint_image_layer(
+            &layout.image_placements,
+            GraphicsLayer::AboveText,
+            origin,
+            &layout.dimensions,
+            window,
+          );
+        },
+      );
+
+      // Paint scrollbar outside the main terminal content area
+      if let (Some(scrollbar_state), Some(scrollbar_bounds)) =
+        (&layout.scrollbar_state, &layout.scrollbar_bounds)
+      {
+        let theme = cx.theme();
+        let track_color = theme.colors().scrollbar_track_background;
+        let thumb_color = theme.colors().scrollbar_thumb_background;
+        let hovered = scrollbar_bounds.contains(&window.mouse_position());
+        paint_scrollbar(
+          *scrollbar_bounds,
+          scrollbar_state,
+          track_color,
+          thumb_color,
+          hovered,
+          window,
+        );
+
+        let scrollbar_bounds = *scrollbar_bounds;
+        let scrollbar_state_for_down = scrollbar_state.clone();
+        let terminal_for_down = self.terminal.clone();
+        let terminal_view_for_down = self.terminal_view.clone();
+        window.on_mouse_event(move |e: &gpui::MouseDownEvent, _phase, _window, cx| {
+          if e.button == MouseButton::Left && scrollbar_bounds.contains(&e.position) {
+            let relative_y = e.position.y - scrollbar_bounds.origin.y;
+            let position_ratio = relative_y / scrollbar_bounds.size.height;
+
+            if scrollbar_state_for_down.is_on_thumb(position_ratio, scrollbar_bounds.size.height) {
+              let (thumb_top_px, _) =
+                scrollbar_state_for_down.thumb_pixel_bounds(scrollbar_bounds.size.height);
+              let click_offset_from_thumb_px: f32 = (relative_y - thumb_top_px).into();
+              let mouse_y: f32 = relative_y.into();
+              terminal_view_for_down.update(cx, |view, cx| {
+                view.scrollbar_drag_state = Some((click_offset_from_thumb_px, mouse_y));
+                cx.notify();
+              });
+            } else {
+              let new_offset = scrollbar_state_for_down.position_to_offset(position_ratio);
+              terminal_for_down.update(cx, |terminal, cx| {
+                terminal.scroll(terminal_kernel::grid::Scroll::Delta(
+                  new_offset as i32 - terminal.last_content.display_offset as i32,
+                ));
+                cx.notify();
+              });
+            }
+          }
+        });
+
+        const MIN_DRAG_DELTA_PX: f32 = 3.0;
+
+        let scrollbar_bounds_for_move = scrollbar_bounds;
+        let terminal_for_move = self.terminal.clone();
+        let terminal_view_for_move = self.terminal_view.clone();
+        window.on_mouse_event(move |e: &gpui::MouseMoveEvent, _phase, _window, cx| {
+          let drag_state = terminal_view_for_move.read(cx).scrollbar_drag_state;
+
+          if let Some((click_offset_from_thumb_px, last_mouse_y)) = drag_state
+            && e.pressed_button == Some(MouseButton::Left)
+          {
+            let relative_y = e.position.y - scrollbar_bounds_for_move.origin.y;
+            let current_mouse_y: f32 = relative_y.into();
+
+            if (current_mouse_y - last_mouse_y).abs() < MIN_DRAG_DELTA_PX {
+              return;
+            }
+
+            let thumb_top_px = px(current_mouse_y - click_offset_from_thumb_px);
+            let track_height = scrollbar_bounds_for_move.size.height;
+
+            let history_size = terminal_for_move.read(cx).last_content.history_size;
+
+            if history_size > 0 {
+              let terminal_content = &terminal_for_move.read(cx).last_content;
+              let visible_lines = terminal_content.terminal_bounds.num_lines();
+              let total_lines = visible_lines + history_size;
+
+              let thumb_size_ratio = visible_lines as f32 / total_lines as f32;
+              let thumb_height = (track_height * thumb_size_ratio).max(px(MIN_THUMB_HEIGHT));
+              let scrollable_height = track_height - thumb_height;
+
+              if scrollable_height > px(0.0) {
+                let thumb_top_clamped = thumb_top_px.clamp(px(0.0), scrollable_height);
+                let normalized: f32 = thumb_top_clamped / scrollable_height;
+
+                let new_offset = ((1.0 - normalized) * history_size as f32) as usize;
+
+                let current_offset = terminal_content.display_offset;
+                if new_offset != current_offset {
+                  terminal_for_move.update(cx, |terminal, cx| {
+                    terminal.scroll(terminal_kernel::grid::Scroll::Delta(
+                      new_offset as i32 - terminal.last_content.display_offset as i32,
+                    ));
+                    cx.notify();
+                  });
+                }
+              }
+
+              terminal_view_for_move.update(cx, |view, _| {
+                if let Some((offset, _)) = view.scrollbar_drag_state {
+                  view.scrollbar_drag_state = Some((offset, current_mouse_y));
+                }
+              });
+            }
+          }
+        });
+
+        let terminal_view_for_up = self.terminal_view.clone();
+        window.on_mouse_event(move |e: &gpui::MouseUpEvent, _phase, _window, cx| {
+          if e.button == MouseButton::Left {
+            let is_dragging = terminal_view_for_up.read(cx).scrollbar_drag_state.is_some();
+            if is_dragging {
+              terminal_view_for_up.update(cx, |view, cx| {
+                view.scrollbar_drag_state = None;
+                cx.notify();
+              });
+            }
+          }
+        });
+      }
+
+      // Paint minimap
+      if let (Some(minimap_state), Some(minimap_bounds)) =
+        (&layout.minimap_state, &layout.minimap_bounds)
+      {
+        let theme = cx.theme();
+        let background_color = theme.colors().terminal_ansi_background;
+        let viewport_color = theme.colors().scrollbar_thumb_background;
+        paint_minimap(
+          *minimap_bounds,
+          &layout.minimap_cells,
+          minimap_state.visible_lines,
+          layout.minimap_columns,
+          minimap_state,
+          theme,
+          &layout.color_table,
+          background_color,
+          viewport_color,
+          window,
+        );
+
+        // Minimap click-to-scroll
+        let minimap_bounds = *minimap_bounds;
+        let minimap_state_clone = minimap_state.clone();
+        let terminal_for_minimap = self.terminal.clone();
+        window.on_mouse_event(move |e: &gpui::MouseDownEvent, _phase, _window, cx| {
+          if e.button == MouseButton::Left && minimap_bounds.contains(&e.position) {
+            let relative_y = e.position.y - minimap_bounds.origin.y;
+            let position_ratio: f32 = (relative_y / minimap_bounds.size.height).into();
+            let new_offset = minimap_state_clone.position_to_offset(position_ratio);
+            terminal_for_minimap.update(cx, |terminal, cx| {
+              terminal.scroll(terminal_kernel::grid::Scroll::Delta(
+                new_offset as i32 - terminal.last_content.display_offset as i32,
+              ));
+              cx.notify();
+            });
+          }
+        });
+      }
+    });
+  }
+}
+
+/// Placements arrive sorted by (z-index, internal image ID); preserve that order within
+/// each layer. The terminal background is already painted before all three.
+fn paint_image_layer(
+  placements: &[VisiblePlacement],
+  layer: GraphicsLayer,
+  origin: Point<Pixels>,
+  dimensions: &TerminalBounds,
+  window: &mut Window,
+) {
+  for placement in placements {
+    if GraphicsLayer::for_z_index(placement.z_index) != layer {
+      continue;
+    }
+    let (bounds, image_bounds) = image_paint_bounds(placement, origin, dimensions);
+    let _ = window.paint_image(
+      bounds,
+      image_bounds,
+      gpui::Corners::default(),
+      placement.render_image.clone(),
+      0,
+      false,
+    );
+  }
+}
+
+/// Clip to the cell grid, not the whole element (which includes gutter/chrome).
+/// Keep the full image transform unchanged so viewport clipping samples the
+/// correct portion of a crop, including placements starting above the viewport.
+fn image_paint_bounds(
+  placement: &VisiblePlacement,
+  origin: Point<Pixels>,
+  dimensions: &TerminalBounds,
+) -> (Bounds<Pixels>, Bounds<Pixels>) {
+  let viewport = Bounds::new(
+    dimensions.bounds.origin,
+    gpui::size(
+      dimensions.cell_width() * dimensions.num_columns() as f32,
+      dimensions.line_height() * dimensions.num_lines() as f32,
+    ),
+  );
+  (
+    Bounds::new(placement.bounds.origin + origin, placement.bounds.size).intersect(&viewport),
+    Bounds::new(
+      placement.image_bounds.origin + origin,
+      placement.image_bounds.size,
+    ),
+  )
+}
+
+/// Blend a color toward grey based on an opacity factor.
+/// `factor` of 1.0 returns the color unchanged; 0.0 returns a fully desaturated grey.
+fn desaturate_color(color: Hsla, factor: f32) -> Hsla {
+  // Convert to perceived luminance grey, then blend
+  let grey_lightness = 0.5;
+  Hsla {
+    h: color.h,
+    s: color.s * factor,
+    l: color.l * factor + grey_lightness * (1.0 - factor),
+    a: color.a,
+  }
+}
+
+fn desaturate_grid(
+  rects: &mut [crate::layout_rect::LayoutRect],
+  batched_text_runs: &mut [crate::batched_text_run::BatchedTextRun],
+  factor: f32,
+) {
+  for rect in rects {
+    rect.color = desaturate_color(rect.color, factor);
+  }
+
+  for run in batched_text_runs {
+    run.style.color = desaturate_color(run.style.color, factor);
+  }
+}
+
+/// Apply desaturation to non-grid colors for inactive panes. Grid colors are
+/// cached after desaturation so they are handled separately on cache misses.
+fn desaturate_layout_chrome(layout: &mut LayoutState, factor: f32) {
+  layout.background_color = desaturate_color(layout.background_color, factor);
+  layout.base_text_style.color = desaturate_color(layout.base_text_style.color, factor);
+
+  for (_, color) in &mut layout.relative_highlighted_ranges {
+    *color = desaturate_color(*color, factor);
+  }
+
+  if let Some(cursor) = &mut layout.cursor {
+    cursor.color = desaturate_color(cursor.color, factor);
+  }
+}
+
+#[cfg(test)]
+mod graphics_tests {
+  use super::*;
+
+  #[test]
+  fn graphics_paint_clips_to_grid_without_changing_source_sampling() {
+    use crate::kitty_graphics::{KittyCommand, KittyImageStorage};
+    use gpui::{point, size};
+
+    let mut storage = KittyImageStorage::new();
+    storage
+      .store(&KittyCommand {
+        image_id: 1,
+        source_width: 1,
+        source_height: 1,
+        payload: vec![0; 4],
+        ..KittyCommand::default()
+      })
+      .unwrap();
+    let placement = VisiblePlacement {
+      image_id: 1,
+      internal_image_id: storage.peek(1).unwrap().internal_id,
+      render_image: storage.peek(1).unwrap().render_image.clone(),
+      bounds: Bounds::new(point(px(-10.), px(-15.)), size(px(120.), px(90.))),
+      image_bounds: Bounds::new(point(px(-30.), px(-35.)), size(px(160.), px(130.))),
+      z_index: 0,
+    };
+    let dimensions = TerminalBounds::new(
+      px(20.),
+      px(10.),
+      Bounds::new(point(px(20.), px(30.)), size(px(99.), px(49.))),
+    );
+    // Includes smooth scrolling; the clip stays anchored to the viewport.
+    let (clip, image) = image_paint_bounds(&placement, point(px(20.), px(25.)), &dimensions);
+    assert_eq!(
+      clip,
+      Bounds::new(point(px(20.), px(30.)), size(px(90.), px(40.)))
+    );
+    assert_eq!(
+      image,
+      Bounds::new(point(px(-10.), px(-10.)), size(px(160.), px(130.)))
+    );
+  }
+}

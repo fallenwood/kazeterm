@@ -5,6 +5,6 @@ publish.workspace = true
 edition.workspace = true
 
 [dependencies]
-config = { path = "../config" }
+config.workspace = true
 gpui = { workspace = true, default-features = false }
 gpui-kit.workspace = true
