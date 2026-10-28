@@ -17,6 +17,7 @@ pub(super) enum Section {
 }
 
 impl Section {
+  #[cfg(test)]
   pub(super) const ALL: [Self; 14] = [
     Self::Startup,
     Self::Appearance,

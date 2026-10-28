@@ -354,7 +354,89 @@ fn page_with_defaults(cx: &mut TestAppContext) -> WindowHandle<SettingsPage> {
 }
 
 #[gpui::test]
-fn settings_button_colors_follow_theme_mode(cx: &mut TestAppContext) {
+fn settings_rows_use_compact_controls_and_stack_in_narrow_windows(cx: &mut TestAppContext) {
+  let window = page_with_defaults(cx);
+  for (width, stacked) in [(1200.0, false), (600.0, true)] {
+    cx.simulate_window_resize(window.into(), gpui::size(gpui::px(width), gpui::px(700.0)));
+    for font_size in [18.0, 22.0] {
+      window
+        .update(cx, |_, _, cx| {
+          cx.global_mut::<Config>().font.ui_size = font_size;
+          themeing::SettingsStore::init_gpui_kit_theme(cx);
+          cx.notify();
+        })
+        .unwrap();
+      cx.run_until_parked();
+      let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+      let row = visual.debug_bounds("settings-field-window-width").unwrap();
+      let control = visual
+        .debug_bounds("settings-control-window-width")
+        .unwrap();
+      assert!(control.left() >= row.left() && control.right() <= row.right());
+      assert!(control.top() >= row.top() && control.bottom() <= row.bottom());
+      if stacked {
+        assert!(
+          control.size.width > row.size.width * 0.75,
+          "{row:?}, {control:?}"
+        );
+        assert!(control.top() > row.top() + gpui::px(30.0));
+      } else {
+        assert_eq!(control.size.width, gpui::px(260.0));
+        assert!(control.size.width < row.size.width * 0.5);
+      }
+      let save = visual.debug_bounds("settings-save").unwrap();
+      assert!(save.right() <= gpui::px(width) && save.bottom() <= gpui::px(700.0));
+    }
+  }
+}
+
+#[gpui::test]
+fn settings_search_clear_restores_category_without_losing_draft(cx: &mut TestAppContext) {
+  let window = page_with_defaults(cx);
+  cx.simulate_window_resize(window.into(), gpui::size(gpui::px(1000.0), gpui::px(700.0)));
+  let size_ix = FIELDS
+    .iter()
+    .position(|spec| spec.table == "font" && spec.key == "size")
+    .unwrap();
+  window
+    .update(cx, |page, window, cx| {
+      page.section = Section::Font;
+      page.set_field(size_ix, "24".into(), window, cx);
+      page
+        .search
+        .update(cx, |input, cx| input.set_value("window width", window, cx));
+    })
+    .unwrap();
+  cx.run_until_parked();
+  let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+  assert!(visual.debug_bounds("settings-field-window-width").is_some());
+  assert!(visual.debug_bounds("settings-field-font-family").is_none());
+  window
+    .update(cx, |page, window, cx| {
+      page.search.update(cx, |input, cx| {
+        input.set_value("no-such-setting", window, cx)
+      });
+    })
+    .unwrap();
+  cx.run_until_parked();
+  assert!(visual.debug_bounds("settings-empty-state").is_some());
+  let clear = visual.debug_bounds("settings-clear-search").unwrap();
+  visual.simulate_click(clear.center(), gpui::Modifiers::default());
+  cx.run_until_parked();
+  window
+    .update(cx, |page, _, cx| {
+      assert!(page.search.read(cx).value().is_empty());
+      assert_eq!(page.section, Section::Font);
+      assert!(page.dirty);
+      assert_eq!(page.form.as_ref().unwrap().fields[size_ix].value(cx), "24");
+    })
+    .unwrap();
+  assert!(visual.debug_bounds("settings-field-font-family").is_some());
+  assert!(visual.debug_bounds("settings-empty-state").is_none());
+}
+
+#[gpui::test]
+fn settings_actions_and_navigation_follow_theme_mode(cx: &mut TestAppContext) {
   use gpui_kit::component::{Colorize as _, Theme, ThemeMode};
 
   let luminance = |color: gpui::Hsla| {
@@ -377,7 +459,7 @@ fn settings_button_colors_follow_theme_mode(cx: &mut TestAppContext) {
       (::config::ThemeMode::System, true, true),
       (::config::ThemeMode::Light, true, false),
     ] {
-      let fill = window
+      let (navigation_fill, navigation_indicator) = window
         .update(cx, |_, _, cx| {
           let mut config = cx.global::<Config>().clone();
           config.colors.theme = name.into();
@@ -453,18 +535,25 @@ fn settings_button_colors_follow_theme_mode(cx: &mut TestAppContext) {
               );
             }
           }
-          fill
+          (theme.tab_active, palette.text_accent)
         })
         .unwrap();
       cx.run_until_parked();
       let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
       visual.update(|window, _| {
+        // GPUI paints translucent surfaces and their borders as separate quads.
         assert!(
           window
             .painted_quads()
             .iter()
-            .any(|quad| quad.background == fill.into()),
-          "selected category should repaint with the {name} {mode:?} fill",
+            .any(|quad| quad.background == navigation_fill.into()),
+          "selected category should use the {name} {mode:?} tab surface",
+        );
+        assert!(
+          window.painted_quads().iter().any(|quad| {
+            quad.border_color == navigation_indicator && quad.border_widths.left.as_f32() > 0.0
+          }),
+          "selected category should use the {name} {mode:?} accent edge",
         );
       });
     }
@@ -472,7 +561,7 @@ fn settings_button_colors_follow_theme_mode(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn settings_navigation_has_no_outline_but_back_and_open_file_do(cx: &mut TestAppContext) {
+fn settings_navigation_and_toolbar_controls_use_flat_surfaces(cx: &mut TestAppContext) {
   let window = page_with_defaults(cx);
   cx.simulate_window_resize(window.into(), gpui::size(gpui::px(800.0), gpui::px(1000.0)));
   cx.run_until_parked();
@@ -498,10 +587,13 @@ fn settings_navigation_has_no_outline_but_back_and_open_file_do(cx: &mut TestApp
       !has_outline(navigation),
       "category buttons should be borderless"
     );
-    assert!(has_outline(back), "Back should retain its outline");
     assert!(
-      has_outline(open_file),
-      "Open TOML file should retain its outline"
+      !has_outline(back),
+      "Back should match the flat workspace toolbar"
+    );
+    assert!(
+      !has_outline(open_file),
+      "Open TOML file should match the flat workspace toolbar"
     );
   });
 }

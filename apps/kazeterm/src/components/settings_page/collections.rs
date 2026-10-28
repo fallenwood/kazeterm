@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 
 use ::config::{Config, KeybindingConfig, ParsedKeybinding, Profile};
-use gpui::*;
+use gpui::{prelude::FluentBuilder, *};
 use gpui_kit::component::{
   ActiveTheme, Disableable, IconName, Sizable,
   button::{Button, ButtonVariants},
@@ -10,7 +10,7 @@ use gpui_kit::component::{
   v_flex,
 };
 
-use super::{EditorInput, SettingsForm, SettingsPage, fields::Section, settings_dropdown};
+use super::{EditorInput, SettingsForm, SettingsPage, chrome, fields::Section, settings_dropdown};
 
 pub(super) struct ProfileEditor {
   id: usize,
@@ -259,6 +259,7 @@ impl SettingsPage {
       return Vec::new();
     };
     let busy = self.busy;
+    let stacked = window.viewport_size().width < px(1000.0);
     let mut rows = Vec::new();
     match self.section {
       Section::Profiles => {
@@ -273,7 +274,9 @@ impl SettingsPage {
                   "settings-remove-arg-{id}-{arg_ix}"
                 )))
                 .icon(IconName::Close)
-                .primary()
+                .accessibility_label("Remove argument")
+                .tooltip("Remove argument")
+                .danger()
                 .outline()
                 .small()
                 .disabled(busy)
@@ -289,7 +292,10 @@ impl SettingsPage {
             v_flex()
               .gap_3()
               .p_4()
-              .rounded_md()
+              .w_full()
+              .min_w_0()
+              .flex_shrink_0()
+              .rounded(px(chrome::CONTROL_RADIUS))
               .border_1()
               .border_color(cx.theme().border)
               .child(
@@ -298,8 +304,20 @@ impl SettingsPage {
                   .gap_2()
                   .child(
                     div()
+                      .flex_1()
+                      .min_w_0()
+                      .overflow_hidden()
+                      .text_ellipsis()
+                      .whitespace_nowrap()
                       .font_weight(FontWeight::SEMIBOLD)
-                      .child(format!("Profile {}", ix + 1)),
+                      .child({
+                        let name = profile.name.value(cx);
+                        if name.trim().is_empty() {
+                          format!("Profile {}", ix + 1)
+                        } else {
+                          name
+                        }
+                      }),
                   )
                   .child(
                     Button::new(("settings-remove-profile", id))
@@ -349,6 +367,8 @@ impl SettingsPage {
           Button::new("settings-add-profile")
             .label("Add profile")
             .icon(IconName::Plus)
+            .outline()
+            .small()
             .disabled(busy)
             .on_click(cx.listener(|this, _, window, cx| {
               if let Some(form) = &mut this.form {
@@ -371,57 +391,80 @@ impl SettingsPage {
       Section::Keybindings => {
         let action_names = actions();
         for (ix, binding) in form.bindings.iter().enumerate() {
+          let binding_id = binding.id;
           let actions = action_names.clone();
           let view = cx.entity().downgrade();
           rows.push(
-            v_flex()
-              .gap_2()
+            h_flex()
+              .debug_selector(move || format!("settings-binding-{binding_id}"))
+              .items_end()
+              .gap_3()
               .p_3()
-              .rounded_md()
+              .w_full()
+              .min_w_0()
+              .flex_shrink_0()
+              .rounded(px(chrome::CONTROL_RADIUS))
               .border_1()
               .border_color(cx.theme().border)
-              .child(labeled_input("Shortcut", &binding.key, busy, cx))
+              .when(stacked, |row| row.flex_col().items_stretch())
               .child(
-                h_flex()
-                  .gap_2()
-                  .flex_wrap()
-                  .child(settings_dropdown(
-                    ("settings-binding-action", binding.id),
-                    binding.action.clone(),
-                    busy,
-                    window,
-                    cx,
-                    move |mut menu, _, _| {
-                      for action in &actions {
-                        let action = action.clone();
-                        let view = view.clone();
-                        menu = menu.item(PopupMenuItem::new(action.clone()).on_click(
-                          move |_, _, cx| {
-                            let _ = view.update(cx, |this, cx| {
-                              if let Some(form) = &mut this.form {
-                                form.bindings[ix].action = action.clone();
-                              }
-                              this.changed(cx);
-                            });
-                          },
-                        ));
-                      }
-                      menu
-                    },
-                  ))
+                labeled_input("Shortcut", &binding.key, busy, cx)
+                  .when(!stacked, |field| field.flex_1()),
+              )
+              .child(
+                v_flex()
+                  .min_w_0()
+                  .gap_1()
+                  .when(!stacked, |field| field.flex_1())
                   .child(
-                    Button::new(("settings-remove-binding", binding.id))
-                      .label("Remove")
-                      .primary()
-                      .outline()
-                      .small()
-                      .disabled(busy)
-                      .on_click(cx.listener(move |this, _, _, cx| {
-                        if let Some(form) = &mut this.form {
-                          form.bindings.remove(ix);
-                        }
-                        this.changed(cx);
-                      })),
+                    div()
+                      .text_sm()
+                      .text_color(cx.theme().muted_foreground)
+                      .child("Action"),
+                  )
+                  .child(
+                    h_flex()
+                      .gap_2()
+                      .child(div().flex_1().min_w_0().child(settings_dropdown(
+                        ("settings-binding-action", binding.id),
+                        binding.action.clone(),
+                        busy,
+                        window,
+                        cx,
+                        move |mut menu, _, _| {
+                          for action in &actions {
+                            let action = action.clone();
+                            let view = view.clone();
+                            menu = menu.item(PopupMenuItem::new(action.clone()).on_click(
+                              move |_, _, cx| {
+                                let _ = view.update(cx, |this, cx| {
+                                  if let Some(form) = &mut this.form {
+                                    form.bindings[ix].action = action.clone();
+                                  }
+                                  this.changed(cx);
+                                });
+                              },
+                            ));
+                          }
+                          menu
+                        },
+                      )))
+                      .child(
+                        Button::new(("settings-remove-binding", binding.id))
+                          .icon(IconName::Close)
+                          .accessibility_label("Remove shortcut")
+                          .tooltip("Remove shortcut")
+                          .danger()
+                          .outline()
+                          .small()
+                          .disabled(busy)
+                          .on_click(cx.listener(move |this, _, _, cx| {
+                            if let Some(form) = &mut this.form {
+                              form.bindings.remove(ix);
+                            }
+                            this.changed(cx);
+                          })),
+                      ),
                   ),
               )
               .into_any_element(),
@@ -431,6 +474,8 @@ impl SettingsPage {
           Button::new("settings-add-binding")
             .label("Add shortcut")
             .icon(IconName::Plus)
+            .outline()
+            .small()
             .disabled(busy)
             .on_click(cx.listener(|this, _, window, cx| {
               if let Some(form) = &mut this.form {
@@ -449,18 +494,29 @@ impl SettingsPage {
       Section::Environment => {
         for (ix, entry) in form.environment.iter().enumerate() {
           rows.push(
-            v_flex()
-              .gap_2()
+            h_flex()
+              .items_end()
+              .gap_3()
               .p_3()
-              .rounded_md()
+              .w_full()
+              .min_w_0()
+              .flex_shrink_0()
+              .rounded(px(chrome::CONTROL_RADIUS))
               .border_1()
               .border_color(cx.theme().border)
-              .child(labeled_input("Variable name", &entry.name, busy, cx))
-              .child(labeled_input("Value", &entry.value, busy, cx))
+              .when(stacked, |row| row.flex_col().items_stretch())
+              .child(
+                labeled_input("Variable name", &entry.name, busy, cx)
+                  .when(!stacked, |field| field.flex_1()),
+              )
+              .child(
+                labeled_input("Value", &entry.value, busy, cx)
+                  .when(!stacked, |field| field.flex_1()),
+              )
               .child(
                 Button::new(("settings-remove-env", entry.id))
                   .label("Remove")
-                  .primary()
+                  .danger()
                   .outline()
                   .small()
                   .disabled(busy)
@@ -478,6 +534,8 @@ impl SettingsPage {
           Button::new("settings-add-env")
             .label("Add variable")
             .icon(IconName::Plus)
+            .outline()
+            .small()
             .disabled(busy)
             .on_click(cx.listener(|this, _, window, cx| {
               if let Some(form) = &mut this.form {
@@ -496,18 +554,26 @@ impl SettingsPage {
       Section::Imports => {
         for (ix, entry) in form.imports.iter().enumerate() {
           rows.push(
-            v_flex()
-              .gap_2()
+            h_flex()
+              .items_end()
+              .gap_3()
               .p_3()
-              .rounded_md()
+              .w_full()
+              .min_w_0()
+              .flex_shrink_0()
+              .rounded(px(chrome::CONTROL_RADIUS))
               .border_1()
               .border_color(cx.theme().border)
-              .child(labeled_input(
-                &format!("Import {} (TOML path)", ix + 1),
-                &entry.path,
-                busy,
-                cx,
-              ))
+              .when(stacked, |row| row.flex_col().items_stretch())
+              .child(
+                labeled_input(
+                  &format!("Import {} (TOML path)", ix + 1),
+                  &entry.path,
+                  busy,
+                  cx,
+                )
+                .when(!stacked, |field| field.flex_1()),
+              )
               .child(
                 h_flex()
                   .gap_2()
@@ -540,7 +606,7 @@ impl SettingsPage {
                   .child(
                     Button::new(("settings-remove-import", entry.id))
                       .label("Remove")
-                      .primary()
+                      .danger()
                       .outline()
                       .small()
                       .disabled(busy)
@@ -559,6 +625,8 @@ impl SettingsPage {
           Button::new("settings-add-import")
             .label("Add import")
             .icon(IconName::Plus)
+            .outline()
+            .small()
             .disabled(busy)
             .on_click(cx.listener(|this, _, window, cx| {
               if let Some(form) = &mut this.form {

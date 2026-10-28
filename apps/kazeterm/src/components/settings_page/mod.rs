@@ -1,5 +1,6 @@
 mod collections;
 mod fields;
+mod layout;
 #[cfg(test)]
 mod tests;
 
@@ -15,11 +16,11 @@ use gpui_kit::component::{
   v_flex,
 };
 
-use super::menu_builder::scrollable_menu;
+use super::{chrome, menu_builder::scrollable_menu};
 use collections::{BindingEditor, EnvironmentEditor, ImportEditor, ProfileEditor};
 use fields::{FIELDS, FieldKind, Section};
 
-const SIDEBAR_WIDTH: f32 = 180.0;
+const SIDEBAR_WIDTH: f32 = 200.0;
 
 fn settings_dropdown(
   id: impl Into<ElementId>,
@@ -402,6 +403,7 @@ impl SettingsPage {
     let Some(form) = &self.form else {
       return Vec::new();
     };
+    let stacked = window.viewport_size().width < px(900.0);
     FIELDS
       .iter()
       .enumerate()
@@ -444,15 +446,61 @@ impl SettingsPage {
             .into_any_element(),
           _ => input.render(spec.label, self.busy).into_any_element(),
         };
-        v_flex()
+        let is_toggle = matches!(spec.kind, FieldKind::Bool);
+        h_flex()
           .debug_selector(move || format!("settings-field-{}-{}", spec.table, spec.key))
-          .gap_2()
-          .p_4()
-          .rounded_md()
-          .border_1()
-          .border_color(cx.theme().border)
-          .child(div().font_weight(FontWeight::SEMIBOLD).child(spec.label))
-          .child(div().w_full().child(control))
+          .w_full()
+          .min_w_0()
+          .gap_3()
+          .px_4()
+          .py_3()
+          .border_b_1()
+          .border_color(cx.theme().border.opacity(0.5))
+          .when(stacked && !is_toggle, |row| row.flex_col().items_start())
+          .child(
+            v_flex()
+              .flex_1()
+              .min_w_0()
+              .gap_1()
+              .when(!query.is_empty(), |label| {
+                label.child(
+                  div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(spec.section.label()),
+                )
+              })
+              .when(stacked && !is_toggle, |label| label.w_full().flex_none())
+              .child(
+                h_flex()
+                  .w_full()
+                  .min_w_0()
+                  .gap_2()
+                  .child(div().flex_1().min_w_0().child(spec.label))
+                  .child(
+                    Button::new(("settings-field-help", ix))
+                      .icon(IconName::Info)
+                      .accessibility_label(format!("About {}", spec.label))
+                      .tooltip(spec.description)
+                      .ghost()
+                      .xsmall(),
+                  ),
+              ),
+          )
+          .child(
+            div()
+              .debug_selector(move || format!("settings-control-{}-{}", spec.table, spec.key))
+              .min_w_0()
+              .flex_shrink_0()
+              .when(!is_toggle, |control| {
+                if stacked {
+                  control.w_full()
+                } else {
+                  control.w(px(260.0))
+                }
+              })
+              .child(control),
+          )
           .into_any_element()
       })
       .collect()
@@ -504,10 +552,13 @@ impl SettingsPage {
     if let Some(action) = self.pending {
       return v_flex()
         .debug_selector(|| "settings-footer".into())
+        .flex_shrink_0()
         .gap_2()
-        .p_3()
+        .px_5()
+        .py_3()
         .border_t_1()
         .border_color(cx.theme().border)
+        .bg(cx.theme().title_bar)
         .child("You have unsaved changes.")
         .when_some(self.error.clone(), |footer, error| {
           footer.child(div().text_sm().text_color(cx.theme().danger).child(error))
@@ -554,10 +605,13 @@ impl SettingsPage {
     }
     v_flex()
       .debug_selector(|| "settings-footer".into())
+      .flex_shrink_0()
       .gap_2()
-      .p_3()
+      .px_5()
+      .py_3()
       .border_t_1()
       .border_color(cx.theme().border)
+      .bg(cx.theme().title_bar)
       .when_some(self.error.clone(), |footer, error| {
         footer.child(div().text_sm().text_color(cx.theme().danger).child(error))
       })
@@ -575,10 +629,10 @@ impl SettingsPage {
           .flex_wrap()
           .justify_end()
           .child(
-            Button::new("settings-reload")
-              .label("Reload file")
-              .primary()
-              .outline()
+            chrome::toolbar_button("settings-reload")
+              .label("Reload")
+              .tooltip("Reload settings from the TOML file")
+              .ghost()
               .small()
               .disabled(self.busy)
               .on_click(
@@ -587,8 +641,8 @@ impl SettingsPage {
           )
           .child(
             Button::new("settings-revert")
-              .label("Revert changes")
-              .primary()
+              .label("Revert")
+              .tooltip("Restore the last loaded settings")
               .outline()
               .small()
               .disabled(self.busy || !self.dirty)
@@ -598,7 +652,8 @@ impl SettingsPage {
           )
           .child(
             Button::new("settings-save")
-              .label("Save")
+              .debug_selector(|| "settings-save".into())
+              .label("Save changes")
               .primary()
               .small()
               .disabled(self.busy || !self.dirty)
@@ -617,7 +672,22 @@ impl Focusable for SettingsPage {
 impl SettingsPage {
   fn render_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
     let query = self.search.read(cx).value().trim().to_lowercase();
-    let mut content = self.render_fields(&query, window, cx);
+    let fields = self.render_fields(&query, window, cx);
+    let mut content = Vec::new();
+    if !fields.is_empty() {
+      content.push(
+        v_flex()
+          .w_full()
+          .min_w_0()
+          .flex_shrink_0()
+          .rounded(px(chrome::CONTROL_RADIUS))
+          .border_1()
+          .border_color(cx.theme().border)
+          .overflow_hidden()
+          .children(fields)
+          .into_any_element(),
+      );
+    }
     if query.is_empty() {
       content.extend(self.render_collections(window, cx));
     } else {
@@ -632,25 +702,15 @@ impl SettingsPage {
             Button::new(("settings-search-section", section as usize))
               .label(format!("Open {}", section.label()))
               .on_click(cx.listener(move |this, _, window, cx| {
-                this.section = section;
-                this
-                  .search
-                  .update(cx, |input, cx| input.set_value("", window, cx));
-                cx.notify();
+                this.select_section(section, window, cx);
               }))
               .into_any_element(),
           );
         }
       }
     }
-    let no_results = content.is_empty() && self.form.is_some();
-    v_flex()
-      .size_full()
-      .min_h_0()
-      .bg(cx.theme().background)
-      .text_color(cx.theme().foreground)
-      .font_family(cx.theme().font_family.clone())
-      .text_size(cx.theme().font_size)
+    let no_results = content.is_empty();
+    chrome::page(cx)
       .track_focus(&self.focus_handle)
       .key_context("Settings")
       .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
@@ -694,108 +754,20 @@ impl SettingsPage {
           }
         }
       }))
-      .child(
-        h_flex()
-          .gap_3()
-          .py_3()
-          .border_b_1()
-          .border_color(cx.theme().border)
-          .child(
-            div()
-              .w(px(SIDEBAR_WIDTH))
-              .flex_shrink_0()
-              .px_2()
-              // Reserve the same right border as the sidebar without drawing a divider here.
-              .border_r_1()
-              .border_color(cx.theme().transparent)
-              .child(
-                Button::new("settings-back")
-                  .debug_selector(|| "settings-back".into())
-                  .icon(IconName::ArrowLeft)
-                  .label("Back")
-                  .primary()
-                  .outline()
-                  .w_full()
-                  .disabled(self.busy)
-                  .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))),
-              ),
-          )
-          .child(
-            div()
-              .text_lg()
-              .font_weight(FontWeight::SEMIBOLD)
-              .child("Settings"),
-          ),
-      )
+      .child(self.render_header(cx))
       .child(
         h_flex()
           .flex_1()
           .min_h_0()
           .min_w_0()
-          .child(
-            v_flex()
-              .w(px(SIDEBAR_WIDTH))
-              .flex_shrink_0()
-              .h_full()
-              .p_2()
-              .gap_1()
-              .border_r_1()
-              .border_color(cx.theme().border)
-              .child(
-                div()
-                  .id("settings-navigation")
-                  .debug_selector(|| "settings-navigation".into())
-                  .flex_1()
-                  .min_h_0()
-                  .overflow_y_scroll()
-                  .children(Section::ALL.into_iter().map(|section| {
-                    Button::new(("settings-section", section as usize))
-                      .label(section.label())
-                      .ghost()
-                      .w_full()
-                      .when(section == self.section, |button| button.primary())
-                      .on_click(cx.listener(move |this, _, window, cx| {
-                        this.section = section;
-                        this
-                          .search
-                          .update(cx, |input, cx| input.set_value("", window, cx));
-                        this.scroll.set_offset(point(px(0.0), px(0.0)));
-                        cx.notify();
-                      }))
-                  })),
-              )
-              .child(
-                Button::new("settings-open-toml")
-                  .debug_selector(|| "settings-open-toml".into())
-                  .label("Open TOML file")
-                  .primary()
-                  .outline()
-                  .small()
-                  .on_click(cx.listener(|this, _, _, cx| {
-                    if let Some(file) = &this.file {
-                      cx.open_url(&format!("file://{}", file.path().display()));
-                    } else if let Some(path) = Config::get_config_file_path() {
-                      cx.open_url(&format!("file://{}", path.display()));
-                    }
-                  })),
-              ),
-          )
+          .child(self.render_sidebar(&query, cx))
           .child(
             v_flex()
               .flex_1()
               .h_full()
               .min_w_0()
               .min_h_0()
-              .child(
-                div()
-                  .debug_selector(|| "settings-search".into())
-                  .p_3()
-                  .child(
-                    Input::new(&self.search)
-                      .aria_label("Search settings")
-                      .w_full(),
-                  ),
-              )
+              .child(self.render_section_header(&query, window, cx))
               .child(
                 v_flex()
                   .id("settings-content")
@@ -803,15 +775,9 @@ impl SettingsPage {
                   .min_h_0()
                   .overflow_y_scroll()
                   .track_scroll(&self.scroll)
-                  .p_4()
+                  .px_5()
+                  .pb_5()
                   .gap_3()
-                  .child(div().text_xl().font_weight(FontWeight::SEMIBOLD).child(
-                    if query.is_empty() {
-                      self.section.label()
-                    } else {
-                      "Search results"
-                    },
-                  ))
                   .when(
                     self
                       .form
@@ -822,14 +788,16 @@ impl SettingsPage {
                         div()
                           .p_3()
                           .rounded_md()
-                          .bg(cx.theme().muted)
+                          .bg(cx.theme().secondary)
                           .text_sm()
                           .child("Imported files may override these settings."),
                       )
                     },
                   )
                   .children(content)
-                  .when(no_results, |body| body.child("No matching settings.")),
+                  .when(no_results, |body| {
+                    body.child(self.render_empty_state(&query, cx))
+                  }),
               )
               .child(self.render_footer(cx)),
           ),
