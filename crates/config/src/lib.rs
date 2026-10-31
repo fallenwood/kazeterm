@@ -519,8 +519,10 @@ impl CursorConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct NotificationConfig {
-  /// Allow native desktop notifications for command completion and terminal bells.
+  /// Allow native desktop notifications for command completion, bells, and OSC 7501 status.
   pub enabled: bool,
+  /// Allow OSC 7501 status notifications when desktop notifications are enabled.
+  pub osc7501_enabled: bool,
   /// Minimum idle time (in seconds) since last input before a command completion
   /// triggers a native OS notification. Set to 0 to notify on every prompt return.
   pub long_running_threshold_secs: u64,
@@ -534,6 +536,7 @@ impl Default for NotificationConfig {
   fn default() -> Self {
     Self {
       enabled: false,
+      osc7501_enabled: true,
       long_running_threshold_secs: 10,
       interval_secs: 0,
     }
@@ -1148,25 +1151,38 @@ mod tests {
   #[test]
   fn notification_defaults_are_disabled_and_explicit_choices_roundtrip() {
     assert!(!NotificationConfig::default().enabled);
-    for (content, enabled, threshold) in [
-      ("", false, 10),
+    assert!(NotificationConfig::default().osc7501_enabled);
+    for (content, enabled, osc7501_enabled, threshold) in [
+      ("", false, true, 10),
       (
         "[notification]\nlong_running_threshold_secs = 20",
         false,
+        true,
         20,
       ),
-      ("[notification]\nenabled = false", false, 10),
-      ("[notification]\nenabled = true", true, 10),
+      ("[notification]\nenabled = false", false, true, 10),
+      ("[notification]\nenabled = true", true, true, 10),
+      ("[notification]\nosc7501_enabled = false", false, false, 10),
+      (
+        "[notification]\nenabled = true\nosc7501_enabled = false",
+        true,
+        false,
+        10,
+      ),
+      ("[notification]\nosc7501_enabled = true", false, true, 10),
     ] {
       let config: Config = toml::from_str(content).unwrap();
       assert_eq!(config.notification.enabled, enabled);
+      assert_eq!(config.notification.osc7501_enabled, osc7501_enabled);
       assert_eq!(config.notification.long_running_threshold_secs, threshold);
       assert_eq!(config.notification.interval_secs, 0);
       let serialized = toml::to_string(&config).unwrap();
       let restored: Config = toml::from_str(&serialized).unwrap();
       assert_eq!(restored.notification.enabled, enabled);
+      assert_eq!(restored.notification.osc7501_enabled, osc7501_enabled);
     }
     assert!(toml::from_str::<Config>("[notification]\nenabled = 'false'").is_err());
+    assert!(toml::from_str::<Config>("[notification]\nosc7501_enabled = 'false'").is_err());
   }
 
   fn rgba(r: u8, g: u8, b: u8, a: u8) -> Rgba {

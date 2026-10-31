@@ -1021,6 +1021,45 @@ copy = "ctrl-shift-c"
 }
 
 #[test]
+fn migrate_20261031_1_adds_osc7501_notification_switch_without_overwriting_choices() {
+  for (body, enabled, osc7501_enabled) in [
+    ("", false, true),
+    (
+      "[notification]\nlong_running_threshold_secs = 23\ninterval_secs = 7",
+      false,
+      true,
+    ),
+    ("[notification]\nenabled = true", true, true),
+    (
+      "[notification]\nenabled = true\nosc7501_enabled = false\ninterval_secs = 7",
+      true,
+      false,
+    ),
+    (
+      "[notification]\nenabled = false\nosc7501_enabled = true",
+      false,
+      true,
+    ),
+  ] {
+    let mut value: Value = toml::from_str(&format!("version = \"20261031.1\"\n{body}\n")).unwrap();
+    let before = value.get("notification").cloned();
+    assert!(apply_migrations(&mut value));
+    assert_eq!(value["version"].as_str(), Some(CURRENT_CONFIG_VERSION));
+    if let Some(Value::Table(before)) = before {
+      for (key, previous) in before {
+        assert_eq!(value["notification"][&key], previous);
+      }
+    }
+    let config: crate::Config = value.clone().try_into().unwrap();
+    assert_eq!(config.notification.enabled, enabled);
+    assert_eq!(config.notification.osc7501_enabled, osc7501_enabled);
+    let once = value.clone();
+    assert!(!apply_migrations(&mut value));
+    assert_eq!(value, once);
+  }
+}
+
+#[test]
 fn migrate_20260422_1_adds_auto_update_config() {
   let mut config: Value = toml::from_str(
     r#"

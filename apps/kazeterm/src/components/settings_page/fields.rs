@@ -465,7 +465,15 @@ pub(super) const FIELDS: &[FieldSpec] = &[
     table: "notification",
     key: "enabled",
     label: "Enable desktop notifications",
-    description: "Allow desktop notifications for command completion and terminal bells.",
+    description: "Allow desktop notifications for command completion, terminal bells, and OSC 7501 program status.",
+    kind: FieldKind::Bool,
+  },
+  FieldSpec {
+    section: Section::Notifications,
+    table: "notification",
+    key: "osc7501_enabled",
+    label: "Enable OSC 7501 notifications",
+    description: "Notify on OSC 7501 completion, error, and blocked states. Requires desktop notifications; does not change status indicators.",
     kind: FieldKind::Bool,
   },
   FieldSpec {

@@ -95,6 +95,8 @@ fn editor_roundtrip_multiple_sections() {
   edited.cursor.shape = "beam".into();
   assert!(!edited.notification.enabled);
   edited.notification.enabled = true;
+  assert!(edited.notification.osc7501_enabled);
+  edited.notification.osc7501_enabled = false;
   edited.notification.interval_secs = 15;
   edited.terminal.working_directory = Some("project".into());
   edited.terminal.env.insert("EDITOR".into(), "vim".into());
@@ -178,10 +180,24 @@ future = { value = "two" }
 
 #[test]
 fn editor_notification_switch_preserves_import_priority_and_partial_overlays() {
-  for (base, overlay, enabled) in [
-    ("", "enabled = true", true),
-    ("enabled = true", "interval_secs = 5", true),
-    ("enabled = true", "enabled = false", false),
+  for (base, overlay, enabled, osc7501_enabled) in [
+    ("", "enabled = true", true, true),
+    ("enabled = true", "interval_secs = 5", true, true),
+    ("enabled = true", "enabled = false", false, true),
+    ("", "osc7501_enabled = false", false, false),
+    ("osc7501_enabled = false", "interval_secs = 5", false, false),
+    (
+      "osc7501_enabled = false",
+      "osc7501_enabled = true",
+      false,
+      true,
+    ),
+    (
+      "osc7501_enabled = true",
+      "osc7501_enabled = false",
+      false,
+      false,
+    ),
   ] {
     let fixture = Fixture::new();
     let import_path = fixture.0.join("notification.toml");
@@ -193,7 +209,9 @@ fn editor_notification_switch_preserves_import_priority_and_partial_overlays() {
     let mut edited = file.config().clone();
     edited.font.size = 22.0;
     file.save(&edited).unwrap();
-    assert_eq!(file.load_effective().unwrap().notification.enabled, enabled);
+    let notification = file.load_effective().unwrap().notification;
+    assert_eq!(notification.enabled, enabled);
+    assert_eq!(notification.osc7501_enabled, osc7501_enabled);
     assert_eq!(fs::read_to_string(&import_path).unwrap(), import);
     fixture.assert_no_staging_files();
   }
