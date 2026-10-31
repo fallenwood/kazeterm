@@ -3,9 +3,7 @@ use std::time::{Duration, Instant};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_kit::component::{
-  ActiveTheme, Icon, IconName, Sizable, StyledExt, TITLE_BAR_HEIGHT, TitleBar,
-  button::{Button, ButtonVariants},
-  h_flex,
+  ActiveTheme, Icon, IconName, Sizable, StyledExt, TITLE_BAR_HEIGHT, TitleBar, h_flex,
   label::Label,
   menu::{ContextMenuExt, DropdownMenu, PopupMenu},
   spinner::Spinner,
@@ -14,6 +12,7 @@ use gpui_kit::component::{
 use smol::Timer;
 use themeing::SettingsStore;
 
+use super::chrome;
 use super::main_window::{
   KeyDebugModifiers, KeyDebugPressedKey, KeyDebugRecentKey, MainWindow, TabItem,
 };
@@ -896,10 +895,7 @@ impl Render for MainWindow {
     if let Some(page) = &self.settings_page {
       let view = cx.entity();
       let titlebar = if window.is_fullscreen() {
-        div()
-          .h(TITLE_BAR_HEIGHT)
-          .bg(cx.theme().title_bar)
-          .into_any_element()
+        chrome::toolbar(cx).h(TITLE_BAR_HEIGHT).into_any_element()
       } else {
         TitleBar::new()
           .on_close_window(move |_, window, cx| {
@@ -909,10 +905,7 @@ impl Render for MainWindow {
           .into_any_element()
       };
       // Keep the terminal entities alive, but remove their input handlers and layout from this page.
-      return div()
-        .flex()
-        .flex_col()
-        .size_full()
+      return chrome::page(cx)
         .child(titlebar)
         .child(
           div()
@@ -1034,10 +1027,7 @@ impl Render for MainWindow {
     let menu_view = view.clone();
 
     let colors = setting_store.theme().colors().clone();
-    div()
-      .flex()
-      .flex_col()
-      .size_full()
+    chrome::page(cx)
       .key_context("MainWindow")
       .on_key_down(cx.listener(move |this, e: &KeyDownEvent, window, cx| {
         let key_debug_modifiers = KeyDebugModifiers {
@@ -1353,9 +1343,7 @@ impl Render for MainWindow {
                           let all_terminals = item.split_container.all_terminals();
                           let has_hidden_panes = self.active_tab_has_hidden_panes();
                           let can_toggle_hidden_panes = self.active_tab_can_toggle_hidden_panes();
-                          // Define colors for selected tab highlight
-                          let selected_bg: gpui::Hsla = colors.tab_active_background;
-                          let normal_bg = colors.tab_inactive_background;
+                          // Define colors for tab indicators and hover.
                           let hover_bg = colors.element_hover;
                           let text_color = colors.text;
                           let text_muted = colors.text_muted;
@@ -1439,17 +1427,10 @@ impl Render for MainWindow {
                                         .items_center()
                                         .min_w(px(tab_label_min_width))
                                         .max_w(px(tab_label_max_width))
-                                        // Background styling
-                                        .when(is_selected, |this| {
-                                          this
-                                            .bg(selected_bg)
-                                            .border_b_2()
-                                            .border_color(selection_color)
-                                        })
+                                        .map(|this| chrome::navigation_item(this, is_selected, false, selection_color, cx))
                                         .when(!is_selected, |this| {
-                                          this.bg(normal_bg).hover(|style| style.bg(hover_bg))
+                                          this.hover(|style| style.bg(hover_bg))
                                         })
-                                        .rounded_t_md()
                                         // Shell icon
                                         .child(
                                           div()
@@ -1564,9 +1545,7 @@ impl Render for MainWindow {
                   .gap_0()
                   .pl_1()
                   .child(
-                    Button::new("toggle-tab-bar")
-                      .ghost()
-                      .small()
+                    chrome::toolbar_button("toggle-tab-bar")
                       .icon(if tab_bar_visible {
                         IconName::PanelLeftClose
                       } else {
@@ -1585,9 +1564,7 @@ impl Render for MainWindow {
                       })),
                   )
                   .child(
-                    Button::new("new")
-                      .ghost()
-                      .small()
+                    chrome::toolbar_button("new")
                       .icon(IconName::Plus)
                       .tooltip(format!("New Tab ({})", new_tab_shortcut))
                       .on_mouse_down(MouseButton::Left, |_, _, cx| {
@@ -1598,9 +1575,7 @@ impl Render for MainWindow {
                       })),
                   )
                   .child(
-                    Button::new("more")
-                      .ghost()
-                      .small()
+                    chrome::toolbar_button("more")
                       .icon(IconName::ChevronDown)
                       .dropdown_menu({
                         let view = menu_view.clone();
@@ -1624,17 +1599,10 @@ impl Render for MainWindow {
               );
 
         if window.is_fullscreen() {
-          div()
-            .flex_shrink_0()
+          chrome::toolbar(cx)
             .id("title-bar")
-            .flex()
-            .flex_row()
-            .items_center()
             .h(TITLE_BAR_HEIGHT)
             .pl_3()
-            .border_b_1()
-            .border_color(cx.theme().title_bar_border)
-            .bg(cx.theme().title_bar)
             .child(titlebar_content)
             .into_any_element()
         } else {
@@ -1742,7 +1710,7 @@ impl Render for MainWindow {
                     .w(vertical_tabbar_render_width)
                     .overflow_hidden()
                     .opacity(vertical_tabbar_opacity)
-                    .bg(colors.title_bar_background)
+                    .bg(cx.theme().title_bar)
                     .p_1()
                     .child(
                       TerminalTabBar::new("tabs-vertical")
@@ -1782,8 +1750,6 @@ impl Render for MainWindow {
                                let all_terminals = item.split_container.all_terminals();
                                let has_hidden_panes = self.active_tab_has_hidden_panes();
                                let can_toggle_hidden_panes = self.active_tab_can_toggle_hidden_panes();
-                               let selected_bg: gpui::Hsla = colors.tab_active_background;
-                              let normal_bg = colors.tab_inactive_background;
                               let hover_bg = colors.element_hover;
                               let text_color = colors.text;
                               let text_muted = colors.text_muted;
@@ -1865,16 +1831,10 @@ impl Render for MainWindow {
                                             .pr_1()
                                             .py_1()
                                             .items_center()
-                                            .when(is_selected, |this| {
-                                              this
-                                                .bg(selected_bg)
-                                                .border_l_2()
-                                                .border_color(selection_color)
-                                            })
+                                            .map(|this| chrome::navigation_item(this, is_selected, true, selection_color, cx))
                                             .when(!is_selected, |this| {
-                                              this.bg(normal_bg).hover(|style| style.bg(hover_bg))
+                                              this.hover(|style| style.bg(hover_bg))
                                             })
-                                            .rounded_md()
                                             .child(
                                               div()
                                                 .flex_shrink_0()

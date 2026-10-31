@@ -95,20 +95,22 @@ mod tests {
   use super::*;
 
   #[test]
-  fn program_status_icons_are_available_from_application_assets() {
+  fn status_and_selection_icons_are_available_from_application_assets() {
+    // These controls use the app bundle, not GPUI Kit's default icon bundle.
     for icon in [
       IconName::Pause,
       IconName::Loader,
       IconName::CircleCheck,
       IconName::CircleAlert,
       IconName::CircleX,
+      IconName::Check,
     ] {
       let path = icon.path();
       let data = Assets
         .load(&path)
-        .unwrap_or_else(|error| panic!("missing program status icon {path}: {error}"))
-        .unwrap_or_else(|| panic!("empty program status icon {path}"));
-      assert!(!data.is_empty(), "empty program status icon {path}");
+        .unwrap_or_else(|error| panic!("missing UI icon {path}: {error}"))
+        .unwrap_or_else(|| panic!("empty UI icon {path}"));
+      assert!(!data.is_empty(), "empty UI icon {path}");
     }
   }
 }

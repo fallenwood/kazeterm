@@ -1,4 +1,5 @@
 mod about_dialog;
+mod chrome;
 mod close_confirm_dialog;
 mod dragged_tab;
 mod import_alacritty_dialog;
