@@ -132,54 +132,11 @@ impl Args {
 
 /// Initialize theme system with embedded assets and custom path from config
 fn init_theme_system(config: &Config) {
-  use std::path::PathBuf;
-
   // Register embedded theme loader and lister
   ::config::register_embedded_theme_loader(crate::assets::embedded_theme_loader);
   ::config::register_embedded_theme_lister(crate::assets::embedded_theme_lister);
 
-  // Set custom themes path if configured
-  if let Some(ref themes_path) = config.appearance.themes_path {
-    let path = PathBuf::from(themes_path);
-    if path.exists() && path.is_dir() {
-      tracing::info!("Using custom themes path: {}", path.display());
-      ::config::set_custom_themes_path(path);
-    } else {
-      tracing::warn!(
-        "Custom themes path does not exist or is not a directory: {}",
-        themes_path
-      );
-    }
-  } else {
-    // Default themes path: ~/.config/kazeterm/themes/ (Linux) or %APPDATA%/kazeterm/themes/ (Windows)
-    #[cfg(target_os = "windows")]
-    {
-      if let Some(app_data) = dirs::data_dir() {
-        let default_themes_path = app_data.join("kazeterm").join("themes");
-        if default_themes_path.exists() && default_themes_path.is_dir() {
-          tracing::debug!(
-            "Using default themes path: {}",
-            default_themes_path.display()
-          );
-          ::config::set_custom_themes_path(default_themes_path);
-        }
-      }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-      if let Some(home_dir) = dirs::home_dir() {
-        let default_themes_path = home_dir.join(".config").join("kazeterm").join("themes");
-        if default_themes_path.exists() && default_themes_path.is_dir() {
-          tracing::debug!(
-            "Using default themes path: {}",
-            default_themes_path.display()
-          );
-          ::config::set_custom_themes_path(default_themes_path);
-        }
-      }
-    }
-  }
+  crate::config::configure_theme_path(config);
 }
 
 /// Detect system dark mode preference using GPUI's cross-platform appearance API.

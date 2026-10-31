@@ -12,7 +12,7 @@ use gpui::{App, AppContext, AsyncApp, CursorHideMode, WindowBackgroundAppearance
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use smol::channel::unbounded;
 
-use crate::config::create_settings_store;
+use crate::config::{configure_theme_path, create_settings_store};
 use ::config::Config;
 
 /// Debounce duration for file changes (in milliseconds)
@@ -316,11 +316,7 @@ fn reload_config_and_theme(cx: &mut App, change_type: FileChangeType) {
 }
 
 pub(crate) fn apply_loaded_config(new_config: Config, cx: &mut App) {
-  if let Some(themes_path) = &new_config.appearance.themes_path {
-    ::config::set_custom_themes_path(PathBuf::from(themes_path));
-  } else {
-    ::config::clear_custom_themes_path();
-  }
+  configure_theme_path(&new_config);
 
   let settings = create_settings_store(&new_config, crate::system_is_dark(cx));
   cx.set_global(new_config.clone());

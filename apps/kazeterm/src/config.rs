@@ -1,5 +1,33 @@
+use std::path::{Path, PathBuf};
+
 use config::{Config, ThemeMode};
 use gpui::Hsla;
+
+/// Keep startup and hot reload on the same custom theme directory.
+pub(crate) fn configure_theme_path(config: &Config) {
+  match resolve_themes_path(
+    config.appearance.themes_path.as_deref(),
+    &Config::get_config_path(),
+  ) {
+    Some(path) => {
+      tracing::debug!("Using themes path: {}", path.display());
+      config::set_custom_themes_path(path);
+    }
+    None => {
+      config::clear_custom_themes_path();
+      if let Some(path) = &config.appearance.themes_path {
+        tracing::warn!("Custom themes path does not exist or is not a directory: {path}");
+      }
+    }
+  }
+}
+
+fn resolve_themes_path(custom_path: Option<&str>, config_dir: &Path) -> Option<PathBuf> {
+  let path = custom_path
+    .map(PathBuf::from)
+    .unwrap_or_else(|| config_dir.join("themes"));
+  path.is_dir().then_some(path)
+}
 
 pub(crate) fn apply_background_opacity(color: Hsla, opacity: f32) -> Hsla {
   if opacity < 1.0 {
@@ -67,5 +95,47 @@ pub fn create_settings_store(config: &Config, system_is_dark: bool) -> themeing:
     }),
     is_dark,
     is_system,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::resolve_themes_path;
+
+  #[test]
+  fn theme_directory_resolution_preserves_defaults_and_explicit_overrides() {
+    struct TestDirectory(std::path::PathBuf);
+    impl Drop for TestDirectory {
+      fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.0).unwrap();
+      }
+    }
+    let unique = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+      "kazeterm-theme-path-{}-{unique}",
+      std::process::id()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let _directory = TestDirectory(root.clone());
+    assert_eq!(resolve_themes_path(None, &root), None);
+
+    let default = root.join("themes");
+    let custom = root.join("custom themes");
+    std::fs::create_dir(&default).unwrap();
+    std::fs::create_dir(&custom).unwrap();
+    assert_eq!(resolve_themes_path(None, &root), Some(default.clone()));
+    assert_eq!(resolve_themes_path(custom.to_str(), &root), Some(custom),);
+    // Removing an explicit override must restore the default, not disable custom themes.
+    let restored = resolve_themes_path(None, &root).unwrap();
+    assert_eq!(restored, default);
+    let theme = restored.join("two or three.toml");
+    std::fs::write(&theme, "name = 'Custom'\n[dark]\nbackground = '#123456'").unwrap();
+    assert!(config::parse_theme_content(&std::fs::read_to_string(&theme).unwrap()).is_some());
+    for invalid in [root.join("missing"), theme] {
+      assert_eq!(resolve_themes_path(invalid.to_str(), &root), None);
+    }
   }
 }

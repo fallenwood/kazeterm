@@ -3,6 +3,7 @@ mod fields;
 mod layout;
 #[cfg(test)]
 mod tests;
+mod theme_gallery;
 
 use ::config::{Config, ConfigFile};
 use gpui::{prelude::FluentBuilder, *};
@@ -19,6 +20,7 @@ use gpui_kit::component::{
 use super::{chrome, menu_builder::scrollable_menu};
 use collections::{BindingEditor, EnvironmentEditor, ImportEditor, ProfileEditor};
 use fields::{FIELDS, FieldKind, Section};
+use theme_gallery::ThemePreview;
 
 const SIDEBAR_WIDTH: f32 = 200.0;
 
@@ -130,7 +132,7 @@ pub(crate) struct SettingsPage {
   search: Entity<InputState>,
   _search_subscription: Subscription,
   scroll: ScrollHandle,
-  themes: Vec<String>,
+  themes: Vec<ThemePreview>,
   dirty: bool,
   busy: bool,
   error: Option<String>,
@@ -173,8 +175,7 @@ impl SettingsPage {
     self.status = "Loading settings...".into();
     cx.notify();
     self.task = cx.spawn_in(window, async move |this, cx| {
-      let (result, themes) =
-        smol::unblock(|| (ConfigFile::load(), ::config::list_available_themes())).await;
+      let (result, themes) = smol::unblock(|| (ConfigFile::load(), ThemePreview::load_all())).await;
       let _ = this.update_in(cx, |this, window, cx| {
         this.busy = false;
         this.themes = themes;
@@ -381,7 +382,6 @@ impl SettingsPage {
   fn choices(&self, kind: FieldKind, cx: &App) -> Vec<String> {
     match kind {
       FieldKind::Choice(values) => values.iter().map(|value| value.to_string()).collect(),
-      FieldKind::Theme => self.themes.clone(),
       FieldKind::DefaultProfile => std::iter::once(String::new())
         .chain(
           self
@@ -404,9 +404,11 @@ impl SettingsPage {
       return Vec::new();
     };
     let stacked = window.viewport_size().width < px(900.0);
-    FIELDS
-      .iter()
-      .enumerate()
+    let fields = FIELDS.iter().enumerate();
+    fields
+      .clone()
+      .filter(|(_, spec)| spec.table == "colors" && spec.key == "theme_mode")
+      .chain(fields.filter(|(_, spec)| !(spec.table == "colors" && spec.key == "theme_mode")))
       .filter(|(_, spec)| {
         if query.is_empty() {
           spec.section == self.section
@@ -426,6 +428,9 @@ impl SettingsPage {
       .map(|(ix, spec)| {
         let input = &form.fields[ix];
         let value = input.value(cx);
+        if matches!(spec.kind, FieldKind::Theme) {
+          return self.render_theme_gallery(ix, window, cx).into_any_element();
+        }
         let control = match spec.kind {
           FieldKind::Bool => Switch::new(("settings-toggle", ix))
             .accessibility_label(spec.label)
@@ -437,12 +442,6 @@ impl SettingsPage {
             .into_any_element(),
           FieldKind::Choice(_) | FieldKind::DefaultProfile => self
             .choice_button(ix, &value, window, cx)
-            .into_any_element(),
-          FieldKind::Theme => h_flex()
-            .w_full()
-            .gap_2()
-            .child(input.render(spec.label, self.busy))
-            .child(self.choice_button(ix, &value, window, cx))
             .into_any_element(),
           _ => input.render(spec.label, self.busy).into_any_element(),
         };
@@ -677,6 +676,7 @@ impl SettingsPage {
     if !fields.is_empty() {
       content.push(
         v_flex()
+          .debug_selector(|| "settings-fields-panel".into())
           .w_full()
           .min_w_0()
           .flex_shrink_0()
@@ -771,6 +771,7 @@ impl SettingsPage {
               .child(
                 v_flex()
                   .id("settings-content")
+                  .debug_selector(|| "settings-content".into())
                   .flex_1()
                   .min_h_0()
                   .overflow_y_scroll()

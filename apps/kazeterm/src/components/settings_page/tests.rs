@@ -284,6 +284,11 @@ fn settings_save_hot_reloads_open_windows_without_restarting_terminals(cx: &mut 
     assert!(config.tab.vertical);
     assert_eq!(config.appearance.background_opacity, 0.6);
     assert_eq!(cx.global::<themeing::SettingsStore>().theme().id, "nord");
+    let default_theme_path = Config::get_config_path().join("themes");
+    assert_eq!(
+      config::get_custom_themes_path(),
+      default_theme_path.is_dir().then_some(default_theme_path),
+    );
     let theme = cx.global::<gpui_kit::component::Theme>();
     assert_eq!(theme.font_size, gpui::px(20.0));
     assert_eq!(theme.mono_font_size, gpui::px(24.0));
