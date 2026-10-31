@@ -58,6 +58,8 @@ pub struct ProgramStatusRecord {
   /// Empty string denotes the root record.
   pub id: String,
   pub state: ProgramState,
+  /// Stable across metadata refreshes; changes on state/kind transitions or recreation.
+  pub state_revision: u64,
   pub kind: Option<BlockedKind>,
   pub progress: Option<u8>,
   pub app: Option<String>,
@@ -186,6 +188,7 @@ fn parse_report(body: &[u8]) -> Option<Report> {
   Some(Report::Set(ProgramStatusRecord {
     id: id.to_owned(),
     state,
+    state_revision: 0,
     kind,
     progress,
     app: app.filter(|value| valid_segment(value)).map(str::to_owned),
@@ -208,7 +211,19 @@ impl RecordStore {
         let prefix = format!("{id}/");
         self.retain(|record| !id.is_empty() && record.id != id && !record.id.starts_with(&prefix));
       }
-      Report::Set(record) => {
+      Report::Set(mut record) => {
+        record.state_revision = self
+          .records
+          .iter()
+          .find(|previous| {
+            previous.id == record.id
+              && previous.state == record.state
+              && previous.kind == record.kind
+          })
+          .map_or_else(
+            || self.revision.wrapping_add(1),
+            |previous| previous.state_revision,
+          );
         self.records.retain(|existing| existing.id != record.id);
         if self.records.len() == MAX_RECORDS {
           self.records.pop_front();
@@ -428,6 +443,36 @@ mod tests {
 
   fn records(tracker: &ProgramStatusTracker) -> Vec<ProgramStatusRecord> {
     tracker.0.lock().unwrap().snapshot()
+  }
+
+  #[test]
+  fn program_status_state_revision_tracks_lifecycle_not_repeated_reports() {
+    let tracker = ProgramStatusTracker::default();
+    let mut parser = ProgramStatusParser::new(tracker.clone());
+    report(&mut parser, "state=done:id=task:app=build");
+    let first = records(&tracker)[0].state_revision;
+    report(&mut parser, "state=done:id=task:app=build:msg=bmV3");
+    assert_eq!(records(&tracker)[0].state_revision, first);
+    // Intermediate working state can be coalesced out of the UI snapshot.
+    report(&mut parser, "state=working:id=task");
+    report(&mut parser, "state=done:id=task");
+    let second = records(&tracker)[0].state_revision;
+    assert_ne!(second, first);
+    report(&mut parser, "state=clear:id=task");
+    report(&mut parser, "state=done:id=task");
+    assert_ne!(records(&tracker)[0].state_revision, second);
+    report(
+      &mut parser,
+      "state=blocked:id=task:kind=permission:progress=10",
+    );
+    let permission = records(&tracker)[0].state_revision;
+    report(
+      &mut parser,
+      "state=blocked:id=task:kind=permission:progress=20",
+    );
+    assert_eq!(records(&tracker)[0].state_revision, permission);
+    report(&mut parser, "state=blocked:id=task:kind=auth");
+    assert_ne!(records(&tracker)[0].state_revision, permission);
   }
 
   #[test]

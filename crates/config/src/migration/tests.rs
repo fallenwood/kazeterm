@@ -51,6 +51,43 @@ vertical_tabs = false
 }
 
 #[test]
+fn notification_migration_defaults_off_without_overwriting_explicit_settings() {
+  for (body, enabled) in [
+    ("", false),
+    (
+      "[notification]\nlong_running_threshold_secs = 42\ninterval_secs = 9",
+      false,
+    ),
+    (
+      "[notification]\nenabled = true\nlong_running_threshold_secs = 42\ninterval_secs = 9",
+      true,
+    ),
+    ("[notification]\nenabled = false", false),
+  ] {
+    let mut config: Value = toml::from_str(&format!("version = '20260905.1'\n{body}")).unwrap();
+    assert!(apply_migrations(&mut config));
+    assert_eq!(config["version"].as_str(), Some(CURRENT_CONFIG_VERSION));
+    assert_eq!(
+      get_nested(&config, "notification", "enabled").and_then(Value::as_bool),
+      Some(enabled)
+    );
+    if body.contains("42") {
+      assert_eq!(
+        config["notification"]["long_running_threshold_secs"].as_integer(),
+        Some(42)
+      );
+      assert_eq!(
+        config["notification"]["interval_secs"].as_integer(),
+        Some(9)
+      );
+    }
+    let migrated = config.clone();
+    assert!(!apply_migrations(&mut config));
+    assert_eq!(config, migrated);
+  }
+}
+
+#[test]
 fn no_migration_needed_for_current_version() {
   let mut config = make_current_config();
   let migrated = apply_migrations(&mut config);
@@ -981,6 +1018,45 @@ copy = "ctrl-shift-c"
     config.get("version").unwrap().as_str().unwrap(),
     CURRENT_CONFIG_VERSION
   );
+}
+
+#[test]
+fn migrate_20261031_1_adds_osc7501_notification_switch_without_overwriting_choices() {
+  for (body, enabled, osc7501_enabled) in [
+    ("", false, true),
+    (
+      "[notification]\nlong_running_threshold_secs = 23\ninterval_secs = 7",
+      false,
+      true,
+    ),
+    ("[notification]\nenabled = true", true, true),
+    (
+      "[notification]\nenabled = true\nosc7501_enabled = false\ninterval_secs = 7",
+      true,
+      false,
+    ),
+    (
+      "[notification]\nenabled = false\nosc7501_enabled = true",
+      false,
+      true,
+    ),
+  ] {
+    let mut value: Value = toml::from_str(&format!("version = \"20261031.1\"\n{body}\n")).unwrap();
+    let before = value.get("notification").cloned();
+    assert!(apply_migrations(&mut value));
+    assert_eq!(value["version"].as_str(), Some(CURRENT_CONFIG_VERSION));
+    if let Some(Value::Table(before)) = before {
+      for (key, previous) in before {
+        assert_eq!(value["notification"][&key], previous);
+      }
+    }
+    let config: crate::Config = value.clone().try_into().unwrap();
+    assert_eq!(config.notification.enabled, enabled);
+    assert_eq!(config.notification.osc7501_enabled, osc7501_enabled);
+    let once = value.clone();
+    assert!(!apply_migrations(&mut value));
+    assert_eq!(value, once);
+  }
 }
 
 #[test]

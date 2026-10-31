@@ -203,6 +203,7 @@ mod color_tests {
     let record = ProgramStatusRecord {
       id: "build/test".into(),
       state: ProgramState::Blocked,
+      state_revision: 0,
       kind: Some(BlockedKind::Question),
       progress: Some(40),
       app: Some("cargo".into()),

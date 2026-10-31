@@ -104,8 +104,6 @@ pub struct MainWindow {
   /// Shell error dialog state
   pub(crate) shell_error_dialog: Option<Entity<ShellErrorDialog>>,
   pub(crate) _shell_error_subscription: Option<gpui::Subscription>,
-  /// Tracks the last time an OS notification was sent, for throttling.
-  pub(crate) last_notification_time: Option<std::time::Instant>,
   /// Whether the tab bar is currently visible
   pub(crate) tab_bar_visible: bool,
   /// Subscription for system appearance changes (used by ThemeMode::System)
@@ -273,7 +271,6 @@ impl MainWindow {
       ui_tree_json_prompt_pending: false,
       shell_error_dialog: None,
       _shell_error_subscription: None,
-      last_notification_time: None,
       tab_bar_visible: true,
       _appearance_subscription: appearance_subscription,
       _window_activation_subscription: window_activation_subscription,

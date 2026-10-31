@@ -110,6 +110,58 @@ Enable the bottom-right shortcut inspector with:
 key_debug_mode = true
 ```
 
+### Desktop notifications
+
+Desktop notifications are disabled by default. To enable them, use
+**Settings → Notifications → Enable desktop notifications**, or set:
+
+```toml
+[notification]
+enabled = true
+osc7501_enabled = true
+long_running_threshold_secs = 10
+interval_secs = 0
+```
+
+Set `enabled = false` to disable all desktop notifications. This does not mute
+the terminal bell sound or hide visual bell indicators. Imported settings keep
+their usual higher priority. The notification interval is shared across windows.
+The idle threshold applies to command-completion and Bell fallback notifications;
+explicit OSC 7501 status notifications do not require a minimum idle time.
+
+Use **Enable OSC 7501 notifications** or `osc7501_enabled = false` to disable only
+the structured status notification source. This switch defaults to `true` to
+preserve existing behavior, but both switches must be enabled for OSC notifications.
+Saving applies the change without restarting a terminal. Status indicators and
+event deduplication remain active while this source is disabled. Re-enabling it
+does not replay old statuses; a Bell or prompt signal cannot bypass suppression
+of the same structured event. Ordinary commands without OSC status can still
+notify when the desktop-notification master switch is enabled.
+
+Notification titles and messages identify their source:
+
+- **Command finished** uses the terminal title recorded before the prompt returned,
+  or the current title if the previous one is empty. It does not report an exit status.
+- **Terminal bell** uses the current terminal/program title. A bell does not imply
+  that a command finished or succeeded.
+- **OSC 7501 program status** notifies on `done`, `error`, and `blocked`, including
+  permission, question, and authentication requests. Content includes the
+  application, task title/ID, and message. `idle` and `working` only update the UI.
+
+The tab name is included when it adds context. Missing titles use a source-specific
+message instead of a blank notification.
+
+Repeated OSC reports for the same terminal, task ID, state, and blocked kind do
+not notify again, even when `interval_secs = 0`. Text/progress refreshes do not
+create a new event. A new `working`/`idle` phase or clearing/recreating the task
+allows a later completion/request to notify again, even if intermediate reports
+arrive between UI snapshots. Other terminals and task IDs remain independent.
+Bell and prompt-return fallback signals are coalesced for 200 ms, with structured
+OSC content taking priority. An already-delivered fallback is also coalesced with
+the next late structured event in that input cycle. New input cancels a stale
+pending fallback. Deduplication follows terminals across tab/window moves; closed
+terminals do not deliver pending notifications.
+
 ### Transition animations
 
 Geometry changes such as vertical tab-bar transitions and window resizing share

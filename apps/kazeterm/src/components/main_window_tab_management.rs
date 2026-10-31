@@ -360,7 +360,10 @@ impl MainWindow {
     cx: &mut Context<Self>,
   ) {
     match event {
-      terminal::TerminalEvent::ProgramStatusChanged => cx.notify(),
+      terminal::TerminalEvent::ProgramStatusChanged => {
+        this.maybe_send_program_notifications(terminal_view, cx);
+        cx.notify();
+      }
       terminal::TerminalEvent::CloseTerminal(terminal_index) => {
         // Find the tab containing this terminal
         let terminal_entity_id = terminal_view.entity_id();
@@ -499,7 +502,10 @@ impl MainWindow {
     split_container
       .all_terminals()
       .into_iter()
-      .map(|(_, terminal)| cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event))
+      .map(|(_, terminal)| {
+        Self::rebind_notification_owner(&terminal, cx);
+        cx.subscribe_in(&terminal, window, Self::subscribe_terminal_view_event)
+      })
       .collect()
   }
 
