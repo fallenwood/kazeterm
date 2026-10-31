@@ -51,6 +51,43 @@ vertical_tabs = false
 }
 
 #[test]
+fn notification_migration_defaults_off_without_overwriting_explicit_settings() {
+  for (body, enabled) in [
+    ("", false),
+    (
+      "[notification]\nlong_running_threshold_secs = 42\ninterval_secs = 9",
+      false,
+    ),
+    (
+      "[notification]\nenabled = true\nlong_running_threshold_secs = 42\ninterval_secs = 9",
+      true,
+    ),
+    ("[notification]\nenabled = false", false),
+  ] {
+    let mut config: Value = toml::from_str(&format!("version = '20260905.1'\n{body}")).unwrap();
+    assert!(apply_migrations(&mut config));
+    assert_eq!(config["version"].as_str(), Some(CURRENT_CONFIG_VERSION));
+    assert_eq!(
+      get_nested(&config, "notification", "enabled").and_then(Value::as_bool),
+      Some(enabled)
+    );
+    if body.contains("42") {
+      assert_eq!(
+        config["notification"]["long_running_threshold_secs"].as_integer(),
+        Some(42)
+      );
+      assert_eq!(
+        config["notification"]["interval_secs"].as_integer(),
+        Some(9)
+      );
+    }
+    let migrated = config.clone();
+    assert!(!apply_migrations(&mut config));
+    assert_eq!(config, migrated);
+  }
+}
+
+#[test]
 fn no_migration_needed_for_current_version() {
   let mut config = make_current_config();
   let migrated = apply_migrations(&mut config);

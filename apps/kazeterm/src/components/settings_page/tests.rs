@@ -249,6 +249,7 @@ fn settings_save_hot_reloads_open_windows_without_restarting_terminals(cx: &mut 
           ("font", "ui_size", "20"),
           ("colors", "theme", "nord"),
           ("tab", "vertical", "true"),
+          ("notification", "enabled", "true"),
           ("appearance", "background_opacity", "0.8"),
         ] {
           let ix = FIELDS
@@ -261,6 +262,7 @@ fn settings_save_hot_reloads_open_windows_without_restarting_terminals(cx: &mut 
       });
       main.attach_settings_page(page.clone(), window, cx);
       assert_eq!(cx.global::<Config>().font.size, 18.0);
+      assert!(!cx.global::<Config>().notification.enabled);
       page
     })
     .unwrap();
@@ -282,6 +284,7 @@ fn settings_save_hot_reloads_open_windows_without_restarting_terminals(cx: &mut 
     assert_eq!(config.font.size, 24.0);
     assert_eq!(config.font.ui_size, 20.0);
     assert!(config.tab.vertical);
+    assert!(config.notification.enabled);
     assert_eq!(config.appearance.background_opacity, 0.6);
     assert_eq!(cx.global::<themeing::SettingsStore>().theme().id, "nord");
     let default_theme_path = Config::get_config_path().join("themes");
@@ -313,6 +316,7 @@ fn settings_save_hot_reloads_open_windows_without_restarting_terminals(cx: &mut 
   let saved = files.load();
   assert_eq!(saved.config().font.size, 24.0);
   assert_eq!(saved.config().appearance.background_opacity, 0.8);
+  assert!(saved.config().notification.enabled);
   clear_terminal_session_factory_for_testing();
 }
 

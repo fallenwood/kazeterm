@@ -93,6 +93,8 @@ fn editor_roundtrip_multiple_sections() {
   edited.tab.vertical = true;
   edited.pane.inactive_opacity = 0.8;
   edited.cursor.shape = "beam".into();
+  assert!(!edited.notification.enabled);
+  edited.notification.enabled = true;
   edited.notification.interval_secs = 15;
   edited.terminal.working_directory = Some("project".into());
   edited.terminal.env.insert("EDITOR".into(), "vim".into());
@@ -172,6 +174,29 @@ future = { value = "two" }
     before["profiles"][0]["future"]
   );
   fixture.assert_no_staging_files();
+}
+
+#[test]
+fn editor_notification_switch_preserves_import_priority_and_partial_overlays() {
+  for (base, overlay, enabled) in [
+    ("", "enabled = true", true),
+    ("enabled = true", "interval_secs = 5", true),
+    ("enabled = true", "enabled = false", false),
+  ] {
+    let fixture = Fixture::new();
+    let import_path = fixture.0.join("notification.toml");
+    let import = format!("[notification]\n{overlay}\n");
+    fs::write(&import_path, &import).unwrap();
+    let mut file = fixture.write(&format!(
+      "imports = ['notification.toml']\n[notification]\n{base}\n"
+    ));
+    let mut edited = file.config().clone();
+    edited.font.size = 22.0;
+    file.save(&edited).unwrap();
+    assert_eq!(file.load_effective().unwrap().notification.enabled, enabled);
+    assert_eq!(fs::read_to_string(&import_path).unwrap(), import);
+    fixture.assert_no_staging_files();
+  }
 }
 
 #[test]

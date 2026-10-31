@@ -519,6 +519,8 @@ impl CursorConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct NotificationConfig {
+  /// Allow native desktop notifications for command completion and terminal bells.
+  pub enabled: bool,
   /// Minimum idle time (in seconds) since last input before a command completion
   /// triggers a native OS notification. Set to 0 to notify on every prompt return.
   pub long_running_threshold_secs: u64,
@@ -531,6 +533,7 @@ pub struct NotificationConfig {
 impl Default for NotificationConfig {
   fn default() -> Self {
     Self {
+      enabled: false,
       long_running_threshold_secs: 10,
       interval_secs: 0,
     }
@@ -1141,6 +1144,30 @@ pub fn to_hex_string(rgba: &Rgba) -> String {
 mod tests {
   use super::*;
   use std::time::{SystemTime, UNIX_EPOCH};
+
+  #[test]
+  fn notification_defaults_are_disabled_and_explicit_choices_roundtrip() {
+    assert!(!NotificationConfig::default().enabled);
+    for (content, enabled, threshold) in [
+      ("", false, 10),
+      (
+        "[notification]\nlong_running_threshold_secs = 20",
+        false,
+        20,
+      ),
+      ("[notification]\nenabled = false", false, 10),
+      ("[notification]\nenabled = true", true, 10),
+    ] {
+      let config: Config = toml::from_str(content).unwrap();
+      assert_eq!(config.notification.enabled, enabled);
+      assert_eq!(config.notification.long_running_threshold_secs, threshold);
+      assert_eq!(config.notification.interval_secs, 0);
+      let serialized = toml::to_string(&config).unwrap();
+      let restored: Config = toml::from_str(&serialized).unwrap();
+      assert_eq!(restored.notification.enabled, enabled);
+    }
+    assert!(toml::from_str::<Config>("[notification]\nenabled = 'false'").is_err());
+  }
 
   fn rgba(r: u8, g: u8, b: u8, a: u8) -> Rgba {
     Rgba {

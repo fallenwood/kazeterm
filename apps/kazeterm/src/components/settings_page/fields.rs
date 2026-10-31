@@ -463,6 +463,14 @@ pub(super) const FIELDS: &[FieldSpec] = &[
   FieldSpec {
     section: Section::Notifications,
     table: "notification",
+    key: "enabled",
+    label: "Enable desktop notifications",
+    description: "Allow desktop notifications for command completion and terminal bells.",
+    kind: FieldKind::Bool,
+  },
+  FieldSpec {
+    section: Section::Notifications,
+    table: "notification",
     key: "long_running_threshold_secs",
     label: "Idle threshold (seconds)",
     description: "Minimum time since terminal input before a prompt return or bell can notify. Set to 0 to remove the idle requirement.",

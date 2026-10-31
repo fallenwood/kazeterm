@@ -110,6 +110,23 @@ Enable the bottom-right shortcut inspector with:
 key_debug_mode = true
 ```
 
+### Desktop notifications
+
+Desktop notifications are disabled by default. To enable them, use
+**Settings → Notifications → Enable desktop notifications**, or set:
+
+```toml
+[notification]
+enabled = true
+long_running_threshold_secs = 10
+interval_secs = 0
+```
+
+Set `enabled = false` to disable command-completion and Bell-triggered desktop
+notifications. This does not mute the terminal bell sound or hide visual bell
+indicators. Idle thresholds and notification intervals apply only when enabled.
+Imported settings keep their usual higher priority.
+
 ### Transition animations
 
 Geometry changes such as vertical tab-bar transitions and window resizing share

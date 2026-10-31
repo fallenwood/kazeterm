@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use gpui::{Context, Entity};
 use terminal::TerminalView;
 
@@ -8,18 +10,25 @@ pub(crate) enum NotificationReason {
   Bell,
 }
 
+fn notification_is_due(
+  config: &config::NotificationConfig,
+  idle_duration: Duration,
+  since_last: Option<Duration>,
+) -> bool {
+  config.enabled
+    && idle_duration >= Duration::from_secs(config.long_running_threshold_secs)
+    && since_last.is_none_or(|elapsed| elapsed >= Duration::from_secs(config.interval_secs))
+}
+
 impl MainWindow {
-  /// Possibly send a desktop notification, respecting idle-time and throttle config.
+  /// Possibly send a desktop notification, respecting enable, idle-time, and throttle settings.
   pub(crate) fn maybe_send_notification(
     &mut self,
     terminal_view: &Entity<TerminalView>,
     reason: NotificationReason,
     cx: &mut Context<Self>,
   ) {
-    let threshold_secs = cx
-      .global::<config::Config>()
-      .notification
-      .long_running_threshold_secs;
+    let notification = &cx.global::<config::Config>().notification;
     let idle_duration = terminal_view
       .read(cx)
       .terminal()
@@ -27,13 +36,11 @@ impl MainWindow {
       .last_input_time
       .elapsed();
 
-    let interval_secs = cx.global::<config::Config>().notification.interval_secs;
-    let interval_ok = match self.last_notification_time {
-      Some(last) => last.elapsed() >= std::time::Duration::from_secs(interval_secs),
-      None => true,
-    };
-
-    if idle_duration >= std::time::Duration::from_secs(threshold_secs) && interval_ok {
+    if notification_is_due(
+      notification,
+      idle_duration,
+      self.last_notification_time.map(|last| last.elapsed()),
+    ) {
       let body = {
         let terminal = terminal_view.read(cx).terminal().read(cx);
         match reason {
@@ -238,6 +245,47 @@ impl MainWindow {
           tracing::debug!("Failed to spawn canberra-gtk-play for bell sound: {error}");
         }
       });
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::notification_is_due;
+  use std::time::Duration;
+
+  #[test]
+  fn notification_policy_requires_opt_in_and_respects_time_limits() {
+    for enabled in [false, true] {
+      let mut config = config::NotificationConfig {
+        enabled,
+        long_running_threshold_secs: 10,
+        interval_secs: 5,
+      };
+      for (idle, since_last, due) in [
+        (0, None, false),
+        (9, None, false),
+        (10, None, true),
+        (20, Some(4), false),
+        (20, Some(5), true),
+        (20, Some(6), true),
+      ] {
+        assert_eq!(
+          notification_is_due(
+            &config,
+            Duration::from_secs(idle),
+            since_last.map(Duration::from_secs)
+          ),
+          enabled && due,
+        );
+      }
+      config.long_running_threshold_secs = 0;
+      config.interval_secs = 0;
+      assert_eq!(notification_is_due(&config, Duration::ZERO, None), enabled);
+      assert_eq!(
+        notification_is_due(&config, Duration::ZERO, Some(Duration::ZERO)),
+        enabled
+      );
     }
   }
 }
